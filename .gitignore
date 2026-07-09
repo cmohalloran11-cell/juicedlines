@@ -23,9 +23,10 @@ __pycache__/
 venv/
 env/
 
-# os / editor
+# os / editor / tooling
 .DS_Store
 Thumbs.db
 *.swp
 .idea/
 .vscode/
+.claude/
