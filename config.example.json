@@ -1,0 +1,4 @@
+{
+  "_comment": "Copy this file to config.json and paste your real PrizePicks cookie. config.json is gitignored so your cookie never gets committed. The _px3 PerimeterX token rotates ~every 30 min — re-paste a fresh cookie string from your browser DevTools (Network tab → any prizepicks.com request → Cookie header) when PrizePicks starts returning 403.",
+  "prizepicks_cookie": "PASTE_FULL_COOKIE_STRING_HERE_INCLUDING__px3"
+}

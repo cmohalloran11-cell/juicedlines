@@ -1,0 +1,31 @@
+# secrets / credentials — NEVER COMMIT
+# config.json holds the live PrizePicks _px3 cookie (see config.example.json)
+config.json
+.env
+*.key
+secrets.json
+
+# runtime data / databases (regenerated at runtime)
+history.db
+*.db
+*.sqlite
+*.sqlite3
+
+# user-provided data drops for the WC model (headers in wc/data/csv.py)
+wc/data/files/*.csv
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
