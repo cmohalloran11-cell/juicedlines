@@ -1,3 +1,0 @@
-# Drop wc CSV data here (fixtures.csv, strength.csv, players.csv, odds.csv) and
-# set the matching source to `csv` in wc/config.yaml. Headers are documented in
-# wc/data/csv.py. The .csv files themselves are gitignored.

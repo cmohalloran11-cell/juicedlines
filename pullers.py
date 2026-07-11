@@ -28,10 +28,13 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import json as _json
+
+import requests
 
 _BD = Path(__file__).parent.parent / "betting_dashboard"
 _CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -51,11 +54,8 @@ try:
 except ImportError:
     _KALSHI_OK = False
 
-try:
-    from prizepicks import PrizePicks, Projection
-    _PP_OK = True
-except ImportError:
-    _PP_OK = False
+# PrizePicks now reads straight from the partner API (see fetch_prizepicks) — no
+# library, no cookie. The old `prizepicks` client is intentionally not imported.
 
 try:
     from underdog import Underdog, UnderdogProp
@@ -79,11 +79,11 @@ _UD_SPORT_MAP: dict[str, str] = {
     "MLB": "MLB",
     "FIFA": "World Cup",
     "KBO": "other",
-    "WNBA": "other",
+    "WNBA": "WNBA",
     "PGA": "other",
     "NFL": "other",
     "CFL": "other",
-    "TENNIS": "other",
+    "TENNIS": "Tennis",
     "MMA": "other",
     "BOXING": "other",
     "ESPORTS": "other",
@@ -94,6 +94,14 @@ _UD_SPORT_MAP: dict[str, str] = {
 
 _PP_LEAGUE_MLB = {"mlb", "baseball"}
 _PP_LEAGUE_WC  = {"fifa", "world cup", "soccer", "copa", "euro 2024", "euro"}
+_PP_LEAGUE_TENNIS = {"tennis", "atp", "wta"}
+
+
+def _tennis_opp(p) -> str | None:
+    """Opponent name from a tennis prop title, e.g. 'Sinner Games O/U (vs Zverev)'."""
+    title = ((getattr(p, "raw", {}) or {}).get("over_under") or {}).get("title", "") or getattr(p, "player_name", "") or ""
+    m = re.search(r"\(vs\.?\s+(.+?)\)\s*$", title)
+    return m.group(1).strip() if m else None
 
 
 def _sport_from_text(*texts: str | None) -> str:
@@ -109,9 +117,20 @@ def _sport_from_pp_league(league: str | None) -> str:
     if not league:
         return "other"
     l = league.strip().lower()
-    # Guard against non-soccer leagues that share a token (e.g. "EUROGOLF").
-    if any(x in l for x in ("golf", "tennis", "basket", "hockey", "nascar",
-                            "cricket", "rugby", "nba", "nfl", "wnba")):
+    # Basketball — must precede the nba/basket guard below (WNBA & NBASL contain "nba").
+    # Exclude period/half/quarter/season sub-leagues (WNBA1H, WNBA1Q, NBASL2H, WNBASZN…):
+    # their stat_type is plain "Points"/"Rebounds" with a small line, which the full-game
+    # model would wildly over-project. Only the full-game league maps to the sport.
+    _period = ("1h", "2h", "1q", "2q", "3q", "4q", "szn")
+    if "wnba" in l:
+        return "other" if any(t in l for t in _period) else "WNBA"
+    if "nbasl" in l or "summer league" in l:
+        return "other" if any(t in l for t in _period) else "NBA Summer League"
+    if any(x in l for x in _PP_LEAGUE_TENNIS):
+        return "Tennis"
+    # Guard against leagues that share a token (e.g. "EUROGOLF", regular-season NBA).
+    if any(x in l for x in ("golf", "basket", "hockey", "nascar",
+                            "cricket", "rugby", "nba", "nfl")):
         return "other"
     if l in _PP_LEAGUE_MLB or "mlb" in l or "baseball" in l:
         return "MLB"
@@ -178,7 +197,7 @@ def _ud_dedup(props: list["UnderdogProp"]) -> list[dict[str, Any]]:
                 "stat_type": stat,
                 "line": p.line,
                 "odds_type": "boosted" if p.is_boosted else "standard",
-                "matchup": None,
+                "matchup": _tennis_opp(p) if sport == "Tennis" else None,
                 "start_time": None,
                 "status": p.status,
                 "over_implied": None,
@@ -217,7 +236,8 @@ def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | N
         props = ud.get_props()
 
         # Filter to wanted sports
-        wanted = {"MLB", "World Cup"} if not sport_filter or sport_filter == "all" else {sport_filter}
+        wanted = ({"MLB", "World Cup", "Tennis", "WNBA", "NBA Summer League"}
+                  if not sport_filter or sport_filter == "all" else {sport_filter})
         filtered = [p for p in props
                     if _UD_SPORT_MAP.get(p.sport or "", "other") in wanted]
 
@@ -279,72 +299,140 @@ def fetch_kalshi(sport_filter: str | None = None) -> tuple[list[dict], str | Non
 
 
 # ──────────────────────────────────────────── PrizePicks adapter ──────────────
+# PrizePicks' public app API (api.prizepicks.com) is behind DataDome bot protection
+# (403 → geo.captcha-delivery.com), which no static cookie survives — it rotates and
+# fingerprints the browser. The PARTNER API host serves the identical JSON:API feed
+# with NO bot wall and NO auth, so we read straight from it. No cookie, no library.
+_PP_PARTNER = "https://partner-api.prizepicks.com"
+_PP_WANTED = ("MLB", "World Cup", "Tennis", "WNBA", "NBA Summer League")
 
-def _pp_line(p: "Projection") -> dict[str, Any]:
-    sport = _sport_from_pp_league(p.league)
+# PrizePicks is a flat pick'em — no per-pick moneyline. A STANDARD leg's implied
+# price is the break-even of a 2-pick Power play (pays 3x → each leg needs a
+# 3^(1/2)≈1.732 decimal payout, i.e. ~57.7% win prob / American ≈ -137). We attach
+# that as `pickem_price` so the EV engine can price standard PrizePicks legs.
+# Demon/goblin legs carry their own multiplier, which this feed does NOT expose,
+# so we leave those unpriced rather than guess.
+_PP_PICKEM_DECIMAL = 3.0 ** 0.5
+
+
+def _decimal_to_american(d: float) -> int:
+    return round((d - 1) * 100) if d >= 2 else round(-100 / (d - 1))
+
+
+_PP_PICKEM_AMERICAN = _decimal_to_american(_PP_PICKEM_DECIMAL)   # -137
+
+# The partner host throttles hard — only ~3 requests before a 429 that escalates
+# with each retry. So we make ONE all-sports call per fetch (no per-league fan-out;
+# ~12k projections come back in a single response), back off on 429, and cache the
+# result so board refreshes never re-hammer it.
+_PP_TTL = 90.0            # seconds to reuse a full successful pull
+_pp_result_cache: dict = {}                      # sport_filter -> (ts, lines)
+
+
+def _pp_session() -> requests.Session:
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
+        "Accept": "application/json",
+    })
+    return s
+
+
+def _pp_get(s: requests.Session, url: str, params: dict | None = None,
+            retries: int = 3) -> requests.Response:
+    """GET with 429 backoff (honours Retry-After, else exponential)."""
+    r = None
+    for i in range(retries):
+        r = s.get(url, params=params, timeout=30)
+        if r.status_code != 429:
+            return r
+        wait = 0.0
+        try:
+            wait = float(r.headers.get("Retry-After", "") or 0)
+        except ValueError:
+            wait = 0.0
+        time.sleep(min(wait or 1.5 * (2 ** i), 8.0))
+    return r
+
+
+def _pp_line(proj: dict, idx: dict) -> dict[str, Any]:
+    """Map one JSON:API projection (+ the payload's `included` index) to a Line."""
+    attr = proj.get("attributes", {}) or {}
+    rel = proj.get("relationships", {}) or {}
+
+    def resolve(name: str) -> dict:
+        ref = ((rel.get(name) or {}).get("data")) or {}
+        return idx.get((ref.get("type"), ref.get("id")), {}) or {}
+
+    pl = resolve("new_player")
+    pa = pl.get("attributes", {}) or {}
+    lg = resolve("league")
+    league_name = (lg.get("attributes", {}) or {}).get("name") or pa.get("league")
+    sport = _sport_from_pp_league(league_name)
     return {
-        "id": f"pp_{p.id}",
+        "id": f"pp_{proj.get('id')}",
         "source": "prizepicks",
         "sport": sport,
-        "player": p.player_name,
-        "team": p.team,
-        "position": p.position,
-        "stat_type": p.stat_type,
-        "line": p.line_score,
-        "odds_type": p.odds_type or "standard",
-        "matchup": p.description,
-        "start_time": p.start_time,
-        "status": p.status,
+        "player": pa.get("display_name") or pa.get("name"),
+        "team": pa.get("team"),
+        "position": pa.get("position"),
+        "stat_type": attr.get("stat_type"),
+        "line": attr.get("line_score"),
+        "odds_type": attr.get("odds_type") or "standard",
+        "matchup": attr.get("description"),   # for tennis this is the opponent name
+        "start_time": attr.get("start_time"),
+        "status": attr.get("status"),
         "over_implied": None,
         "under_implied": None,
         "over_price": None,
         "under_price": None,
-        "headshot": p.image_url,           # PrizePicks ships a player headshot
-        "country": p.team if sport == "World Cup" else None,
+        # standard pick'em legs get the 2-pick Power break-even price for EV; the
+        # feed doesn't expose demon/goblin multipliers, so those stay unpriced.
+        "pickem_price": _PP_PICKEM_AMERICAN if (attr.get("odds_type") or "standard") == "standard" else None,
+        "headshot": pa.get("image_url"),      # PrizePicks ships a player headshot
+        "country": pa.get("team") if sport == "World Cup" else None,
         "meta": {
-            "player_id": p.player_id,
-            "league": p.league,
-            "league_id": p.league_id,
-            "is_promo": p.is_promo,
-            "rank": p.rank,
+            "player_id": pl.get("id"),
+            "league": league_name,
+            "league_id": lg.get("id"),
+            "is_promo": attr.get("is_promo"),
+            "rank": attr.get("rank"),
         },
     }
 
 
 def fetch_prizepicks(sport_filter: str | None = None) -> tuple[list[dict], str | None]:
-    if not _PP_OK:
-        return [], "prizepicks module not available"
+    key = sport_filter or "all"
+    now = time.time()
+    hit = _pp_result_cache.get(key)
+    if hit and now - hit[0] < _PP_TTL:
+        return hit[1], None
     try:
-        cfg = _load_config()
-        extra_headers: dict[str, str] = {}
-        if cfg.get("prizepicks_cookie"):
-            extra_headers["Cookie"] = cfg["prizepicks_cookie"]
-        pp = PrizePicks(request_delay=0.5, headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-            ),
-            "Accept": "application/json",
-            "Origin": "https://app.prizepicks.com",
-            "Referer": "https://app.prizepicks.com/",
-            **extra_headers,
-        })
-        leagues = pp.get_leagues()
-        wanted: list[str] = []
-        for lg in leagues:
-            s = _sport_from_pp_league(lg.name)
-            if sport_filter and sport_filter != "all":
-                if s.lower() != sport_filter.lower():
-                    continue
-            else:
-                if s not in ("MLB", "World Cup"):
-                    continue
-            if (lg.projections_count or 0) > 0:
-                wanted.append(lg.id)
+        s = _pp_session()
+        # ONE request returns every projection across all sports (~12k). This is far
+        # more reliable than per-league fan-out, which 429s after ~3 calls. Filter to
+        # the sports the board uses client-side.
+        r = _pp_get(s, f"{_PP_PARTNER}/projections", params={"per_page": 5000})
+        if r.status_code != 200:
+            return [], f"PrizePicks partner API {r.status_code} (rate-limited); retrying next refresh"
+        payload = r.json()
+        idx = {(i.get("type"), i.get("id")): i for i in payload.get("included", [])}
+        want = None if (not sport_filter or sport_filter == "all") else sport_filter.lower()
         lines: list[dict] = []
-        for lid in wanted:
-            projs = pp.get_projections(league_id=lid)
-            lines.extend(_pp_line(p) for p in projs)
+        for p in payload.get("data", []):
+            row = _pp_line(p, idx)
+            # models are per-player → drop multi-player / labelled combo props
+            if (row["player"] and " + " in row["player"]) or \
+               (row["stat_type"] and "(Combo)" in row["stat_type"]):
+                continue
+            if want is None:
+                if row["sport"] not in _PP_WANTED:
+                    continue
+            elif row["sport"].lower() != want:
+                continue
+            lines.append(row)
+        _pp_result_cache[key] = (now, lines)
         return lines, None
     except Exception as exc:
         return [], str(exc)

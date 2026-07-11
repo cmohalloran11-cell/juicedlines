@@ -114,6 +114,9 @@ input[type=text]{min-width:190px}
 .sport-pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:10px;font-weight:700;letter-spacing:.02em}
 .sport-pill.MLB{background:rgba(155,232,20,.14);color:var(--green)}
 .sport-pill.WC{background:rgba(46,230,192,.14);color:var(--teal)}
+.sport-pill.TN{background:rgba(255,210,26,.14);color:var(--yellow)}
+.sport-pill.WNBA{background:rgba(255,154,46,.16);color:var(--orange)}
+.sport-pill.SL{background:rgba(255,120,80,.16);color:#ff7d55}
 .sport-pill.other{background:var(--card2);color:var(--muted)}
 
 /* group rows */
@@ -303,7 +306,6 @@ input[type=text]{min-width:190px}
   <div class="tab" data-tab="edges" onclick="switchTab('edges')">Edges</div>
   <div class="tab" data-tab="parlay" onclick="switchTab('parlay')">Parlay</div>
   <div class="tab" data-tab="scorecard" onclick="switchTab('scorecard')">Scorecard</div>
-  <div class="tab" data-tab="wc" onclick="switchTab('wc')">WC Model</div>
 </div>
 
 <!-- ════════════ SCORECARD ════════════ -->
@@ -388,66 +390,6 @@ input[type=text]{min-width:190px}
 </div>
 
 <!-- ════════════ WC MODEL ════════════ -->
-<div id="tab-wc" class="content" style="display:none">
-<style>
-#tab-wc h4{margin:20px 0 8px;font-size:15px}
-#tab-wc .muted-note{color:var(--muted);font-size:12.5px;line-height:1.6;margin-bottom:12px}
-.wc-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}
-#tab-wc .seg{display:inline-flex;flex-wrap:wrap;border:1px solid rgba(182,240,26,.25);border-radius:8px;overflow:hidden}
-#tab-wc .seg button{background:transparent;color:var(--muted);border:0;padding:6px 13px;font-size:12.5px;cursor:pointer;border-right:1px solid rgba(182,240,26,.15)}
-#tab-wc .seg button:last-child{border-right:0}
-#tab-wc .seg button.active{background:var(--accent);color:#0a120a;font-weight:700}
-.wc-exp{font-size:11px;padding:5px 10px;border:1px solid rgba(255,255,255,.15);border-radius:6px;color:var(--muted);text-decoration:none}
-.wc-exp:hover{border-color:var(--accent);color:var(--accent)}
-.wc-meta{font-size:12.5px;color:var(--muted);margin:6px 0 4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.wc-meta b{color:var(--text)}
-.wc-tag{background:rgba(255,154,46,.15);color:var(--orange);border-radius:5px;padding:2px 7px;font-size:11px}
-#wc-value,#wc-projections{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.wc-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
-.wc-tbl th,.wc-tbl td{white-space:nowrap}
-@media(max-width:520px){.wc-tbl th,.wc-tbl td{padding:6px 6px;font-size:11.5px}.wc-controls{gap:6px}}
-.wc-tbl th{text-align:left;color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.1)}
-.wc-tbl td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05)}
-.wc-tbl tr:hover td{background:rgba(255,255,255,.02)}
-.wc-prob{font-family:var(--mono);font-weight:700}
-.wc-edge.pos{color:var(--green)}.wc-edge.neg{color:var(--red)}
-.wc-conf{font-size:10px;padding:2px 6px;border-radius:5px}
-.wc-conf.confirmed{background:rgba(155,232,20,.15);color:var(--green)}
-.wc-conf.probable{background:rgba(255,210,26,.15);color:var(--yellow)}
-.wc-conf.rotation{background:rgba(255,77,95,.15);color:var(--red)}
-#tab-wc select,#wc-search{padding:7px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);font-size:12.5px}
-</style>
-  <div style="max-width:1000px;margin:0 auto">
-    <h3 style="margin:18px 0 4px">World Cup 2026 — Model</h3>
-    <div class="muted-note">Dixon-Coles goal expectancy → 10k Monte-Carlo sims → player allocation
-      (goals by xG share, shots-on-target/cards/saves from per-90 rates with knockout intensity).
-      Running on <b>sample data</b> until real sources are wired (see <code>wc/README</code>).
-      Value = model probability − book implied probability.</div>
-    <div class="wc-controls">
-      <div class="seg" id="wc-match-seg"><span class="muted-note" style="margin:0;padding:6px 10px">Loading…</span></div>
-      <div style="margin-left:auto;display:flex;gap:8px">
-        <a class="wc-exp" id="wc-csv" href="#" target="_blank">⬇ CSV</a>
-        <a class="wc-exp" id="wc-json" href="#" target="_blank">⬇ JSON</a>
-      </div>
-    </div>
-    <div id="wc-meta" class="wc-meta"></div>
-    <h4>⭐ Value Finder <span style="color:var(--muted);font-weight:400;font-size:12px">— biggest model-vs-book mismatches</span></h4>
-    <div id="wc-value"></div>
-    <h4>Projections</h4>
-    <div class="wc-controls">
-      <select id="wc-market" onchange="renderWC()">
-        <option value="">All markets</option>
-        <option value="Anytime Goal">Anytime Goal</option>
-        <option value="Shots on Target">Shots on Target</option>
-        <option value="Anytime Card">Cards</option>
-        <option value="Saves">GK Saves</option>
-      </select>
-      <input id="wc-search" placeholder="Filter player / team…" oninput="renderWC()">
-    </div>
-    <div id="wc-projections"></div>
-  </div>
-</div>
-
 <!-- ════════════ BOARD ════════════ -->
 <div id="tab-board" class="content">
   <div class="filters">
@@ -457,6 +399,9 @@ input[type=text]{min-width:190px}
         <option value="all">All Sports</option>
         <option value="MLB">⚾ MLB</option>
         <option value="World Cup">⚽ World Cup</option>
+        <option value="Tennis">🎾 Tennis</option>
+        <option value="WNBA">🏀 WNBA</option>
+        <option value="NBA Summer League">🏀 NBA Summer League</option>
       </select>
     </div>
     <div class="filter-group">
@@ -507,7 +452,7 @@ input[type=text]{min-width:190px}
     </div>
     <div class="filter-group">
       <label>Sport</label>
-      <select id="e-sport" onchange="runEdges()"><option value="all">All</option><option value="MLB">MLB</option><option value="World Cup">World Cup</option></select>
+      <select id="e-sport" onchange="runEdges()"><option value="all">All</option><option value="MLB">MLB</option><option value="World Cup">World Cup</option><option value="Tennis">Tennis</option><option value="WNBA">WNBA</option><option value="NBA Summer League">NBA Summer League</option></select>
     </div>
     <div class="filter-group">
       <label>Book</label>
@@ -644,7 +589,7 @@ function groupLines(lines){
     if(!g.flag && l.flag) g.flag=l.flag;
   }
   let arr=[...map.values()];
-  const sportRank={'MLB':0,'World Cup':1,'other':2};
+  const sportRank={'MLB':0,'World Cup':1,'WNBA':2,'NBA Summer League':3,'Tennis':4,'other':5};
   arr.sort((a,b)=>{
     if(sortMode==='name') return a.displayName.localeCompare(b.displayName);
     const sr=(sportRank[a.sport]??3)-(sportRank[b.sport]??3);
@@ -799,9 +744,10 @@ function instantDrawer(line){
 }
 
 function drawerHTML(line, a, hist){
-  if(line.sport==='World Cup' || (a.sport==='World Cup')) return soccerDrawer(line,a,hist);
+  const light = line.sport==='World Cup' || line.sport==='Tennis' || a.sport==='World Cup' || a.sport==='Tennis';
+  if(light) return soccerDrawer(line,a,hist);
   if(!a.available) return mlbUnavailable(line,a,hist);
-  return mlbDrawer(line,a,hist);
+  return mlbDrawer(line,a,hist);   // MLB + basketball (hit-rate + recent games)
 }
 
 function heroHead(a, line){
@@ -975,10 +921,10 @@ function soccerDrawer(line,a,hist){
     const kind=a.proj_kind;
     const probCell=a.model_prob!=null?`<div class="proj-cell"><div class="v">${Math.round(a.model_prob*100)}%</div><div class="l">P(over)</div></div>`:'';
     const nCell=(kind==='espn'&&a.model_n)?`<div class="proj-cell"><div class="v">${a.model_n}</div><div class="l">Games</div></div>`:'';
-    const note=kind==='espn'?'Blend of the player’s recent ESPN match form and the market line (club form is bias-adjusted toward the World Cup line), with a Poisson P(over).'
+    const note=a.note||(kind==='espn'?'Blend of the player’s recent ESPN match form and the market line (club form is bias-adjusted toward the World Cup line), with a Poisson P(over).'
               :kind==='poisson'?'Poisson expected count calibrated to the de-vigged market price.'
-              :'Cross-book consensus line (no player-stat feed or price for this prop).';
-    const title=kind==='espn'?'Form Projection (ESPN)':'Model Projection';
+              :'Cross-book consensus line (no player-stat feed or price for this prop).');
+    const title=kind==='espn'?'Form Projection (ESPN)':kind==='tennis'?'Serve/Return Model':'Model Projection';
     projCard=`<div class="dr-section"><h4><span class="ic">📊</span> ${title}</h4>
       <div class="hit-card"><div class="hit-proj" style="border:none;padding:0">
         <div class="proj-cell"><div class="v">${a.model_proj}</div><div class="l">Proj</div></div>
@@ -987,6 +933,16 @@ function soccerDrawer(line,a,hist){
         ${probCell}${nCell}
       </div><div style="font-size:11px;color:var(--muted2);margin-top:10px">${note}</div></div></div>`;
   }
+  // Tennis: serve/return + Elo splits from the model.
+  let tennisCard='';
+  if(a.serve_pct!=null){
+    tennisCard=`<div class="dr-section"><h4><span class="ic">🎾</span> Serve / Return${a.tour?' · '+esc(a.tour):''}</h4>
+      <div class="split-grid">
+        <div class="split-cell"><div class="v">${a.serve_pct}%</div><div class="l">Serve pts won</div></div>
+        <div class="split-cell"><div class="v">${a.return_pct}%</div><div class="l">Return pts won</div></div>
+        ${a.elo?`<div class="split-cell"><div class="v">${a.elo}</div><div class="l">Elo</div></div>`:''}
+      </div></div>`;
+  }
   return heroHead({player:a.player||line.player,player_type:a.player_type,headshot:a.headshot||line.headshot,team:a.team,opponent:null},line)+
     `<div class="dr-body">
       <div class="dr-section"><h4><span class="ic">🎯</span> Prop</h4>
@@ -994,6 +950,7 @@ function soccerDrawer(line,a,hist){
         <div style="font-size:13px;color:var(--muted)">${esc(prettyCountry(a.team&&a.team.name)||'')}${line.matchup?' · '+esc(line.matchup):''}</div>
         <div style="font-size:13px;color:var(--orange);font-family:var(--mono);margin-top:8px">${prices}</div></div></div>
       ${projCard}
+      ${tennisCard}
       ${move}
       ${lineShopHTML(line)}
     </div>`;
@@ -1060,11 +1017,15 @@ function lineEV(l){
   if(l.model_prob==null) return null;
   const ot=l.odds_type||'standard';
   const overOnly=(ot==='demon'||ot==='goblin'); // demon/goblin are over-only picks
-  const dO=americanToDecimal(l.over_price), dU=americanToDecimal(l.under_price);
+  // PrizePicks has no per-pick moneyline; a standard pick'em leg carries a derived
+  // break-even price (pickem_price, both sides). Fall back to it when no book price.
+  const oP = l.over_price!=null ? l.over_price : l.pickem_price;
+  const uP = l.under_price!=null ? l.under_price : (overOnly ? null : l.pickem_price);
+  const dO=americanToDecimal(oP), dU=americanToDecimal(uP);
   const ok=d=>d!=null && d>=EV_DEC_MIN && d<=EV_DEC_MAX;
   let best=null;
-  if(ok(dO)){const ev=l.model_prob*dO-1; best={ev,side:'Over',prob:l.model_prob,price:l.over_price};}
-  if(!overOnly && ok(dU)){const ev=(1-l.model_prob)*dU-1; if(best==null||ev>best.ev) best={ev,side:'Under',prob:1-l.model_prob,price:l.under_price};}
+  if(ok(dO)){const ev=l.model_prob*dO-1; best={ev,side:'Over',prob:l.model_prob,price:oP};}
+  if(!overOnly && ok(dU)){const ev=(1-l.model_prob)*dU-1; if(best==null||ev>best.ev) best={ev,side:'Under',prob:1-l.model_prob,price:uP};}
   return best;
 }
 
@@ -1082,7 +1043,7 @@ function runEdges(){
 
   let items=[];
   if(edgeMode==='ev'){
-    hint.textContent='Positive expected value: model win probability × book payout. Needs book prices (Underdog/Kalshi).';
+    hint.textContent="Positive expected value: model prob × payout. Underdog/Kalshi use posted prices; PrizePicks standard picks use the 2-pick pick'em break-even (57.7%). Demon/goblin need a multiplier the feed omits.";
     for(const l of pool){
       const ev=lineEV(l);
       if(!ev) continue;
@@ -1106,7 +1067,7 @@ function runEdges(){
   }
 
   if(!items.length){
-    document.getElementById('edge-list').innerHTML='<div class="no-data">No edges match these filters'+(edgeMode==='ev'?' (EV needs book prices — try Underdog props or switch to Proj Diff).':'.')+'</div>';
+    document.getElementById('edge-list').innerHTML='<div class="no-data">No edges match these filters'+(edgeMode==='ev'?" (EV needs prices — Underdog/Kalshi or PrizePicks standard picks; demon/goblin have none. Try Proj Diff.)":'.')+'</div>';
     return;
   }
   items=items.slice(0,150);
@@ -1122,7 +1083,10 @@ function edgeCardHTML(i,maxM){
   if(edgeMode==='ev'){
     const evp=(i.ev*100); const good=evp>0;
     metricHTML=`<div class="edge-pct ${good?'pos':'neg'}">${good?'+':''}${evp.toFixed(1)}%</div><div class="edge-metric-lbl">EV</div>`;
-    sub=`Proj ${i.proj} · Line ${l.line} · ${Math.round(i.prob*100)}% model · ${i.price} ${esc(l.source)}`;
+    // PrizePicks EV comes from the pick'em break-even, not a posted price — label it so.
+    const isPickem=(l.over_price==null && l.under_price==null && l.pickem_price!=null);
+    const priceLbl=isPickem?"pick'em":i.price;
+    sub=`Proj ${i.proj} · Line ${l.line} · ${Math.round(i.prob*100)}% model · ${priceLbl} ${esc(l.source)}`;
   } else {
     const epct=l.line?((i.edge/Math.abs(l.line||1))*100):0;
     metricHTML=`<div class="edge-pct ${pos?'pos':'neg'}">${i.edge>0?'+':''}${i.edge}</div><div class="edge-metric-lbl">${l.proj_kind==='consensus'?'vs consensus':'proj−line'}</div>`;
@@ -1146,70 +1110,9 @@ function switchTab(name){
   document.getElementById('tab-edges').style.display=name==='edges'?'':'none';
   document.getElementById('tab-parlay').style.display=name==='parlay'?'':'none';
   document.getElementById('tab-scorecard').style.display=name==='scorecard'?'':'none';
-  document.getElementById('tab-wc').style.display=name==='wc'?'':'none';
   if(name==='edges') runEdges();
   if(name==='parlay') renderSuggestedParlays();
   if(name==='scorecard') loadScorecard();
-  if(name==='wc') loadWC();
-}
-
-// ════════════ WC model tab ════════════
-let wcData=null, wcMatch=null, wcLoading=false;
-async function loadWC(){
-  if(wcData||wcLoading) return renderWC();     // fetch once; re-render on tab switch
-  wcLoading=true;
-  document.getElementById('wc-projections').innerHTML='<div class="loading-row"><span class="spinner"></span> Running simulations…</div>';
-  try{
-    const m=await fetch(API_BASE+'/api/wc/matches').then(r=>r.json());
-    const seg=document.getElementById('wc-match-seg');
-    seg.innerHTML=(m.matches||[]).map((x,i)=>`<button data-m="${x.id}" class="${i===0?'active':''}" onclick="setWCMatch('${x.id}')">${esc(x.home)} v ${esc(x.away)}</button>`).join('') || '<span class="muted-note" style="margin:0;padding:6px 10px">No fixtures</span>';
-    if(!wcMatch && m.matches&&m.matches.length) wcMatch=m.matches[0].id;
-    const res=await fetch(API_BASE+'/api/wc').then(r=>r.json());
-    wcData=res.results||[];
-  }catch(e){ document.getElementById('wc-projections').innerHTML='<div class="no-data">Could not load the WC model.</div>'; }
-  wcLoading=false;
-  renderWC();
-}
-function setWCMatch(id){ wcMatch=id; document.querySelectorAll('#wc-match-seg button').forEach(b=>b.classList.toggle('active',b.dataset.m===id)); renderWC(); }
-function wcConf(c){ const cls=(c||'').indexOf('rotation')===0?'rotation':c; return `<span class="wc-conf ${cls}">${esc(c||'')}</span>`; }
-function renderWC(){
-  if(!wcData) return;
-  const r=wcData.find(x=>x.fixture.id===wcMatch)||wcData[0]; if(!r) return;
-  document.getElementById('wc-csv').href=API_BASE+'/api/wc/export?fmt=csv&match='+encodeURIComponent(r.fixture.id);
-  document.getElementById('wc-json').href=API_BASE+'/api/wc/export?fmt=json&match='+encodeURIComponent(r.fixture.id);
-  const f=r.fixture, meta=r.meta;
-  document.getElementById('wc-meta').innerHTML=
-    `<span>xG: <b>${esc(f.home)} ${meta.lambda_home}</b> – <b>${meta.mu_away} ${esc(f.away)}</b></span>`+
-    `<span>Exp goals <b>${meta.exp_total_goals}</b></span>`+
-    (f.knockout?`<span class="wc-tag">Knockout · cards ×${meta.card_intensity}</span>`:'')+
-    (f.rivalry?`<span class="wc-tag">Rivalry</span>`:'');
-  // value finder
-  const V=r.value||[];
-  document.getElementById('wc-value').innerHTML = V.length ? `<table class="wc-tbl"><thead><tr>
-    <th>Player</th><th>Market</th><th>Price</th><th>Model</th><th>Implied</th><th>Edge</th><th>EV</th><th>Conf</th></tr></thead><tbody>`+
-    V.map(v=>{const ec=v.edge>=0?'pos':'neg';const lbl=wcMktLabel(v.market,v.line,v.side);
-      return `<tr><td>${esc(v.player)}</td><td>${lbl}</td><td>${v.price>0?'+':''}${v.price}</td>
-      <td class="wc-prob">${Math.round(v.model_prob*100)}%</td><td>${Math.round(v.implied_prob*100)}%</td>
-      <td class="wc-edge ${ec}">${v.edge>0?'+':''}${(v.edge*100).toFixed(1)}%</td>
-      <td class="wc-edge ${ec}">${v.ev>0?'+':''}${(v.ev*100).toFixed(0)}%</td><td>${wcConf(v.confidence)}</td></tr>`;}).join('')+
-    `</tbody></table>` : '<div class="muted-note">No sportsbook odds supplied for this match — add them via the odds source to see value.</div>';
-  // projections
-  const mk=document.getElementById('wc-market').value, q=(document.getElementById('wc-search').value||'').toLowerCase();
-  let rows=r.projections||[];
-  if(mk) rows=rows.filter(p=>p.market.indexOf(mk)>=0);
-  if(q) rows=rows.filter(p=>(p.player+' '+p.team).toLowerCase().indexOf(q)>=0);
-  document.getElementById('wc-projections').innerHTML=`<table class="wc-tbl"><thead><tr>
-    <th>Player</th><th>Team</th><th>Market</th><th>Prob</th><th>Conf</th></tr></thead><tbody>`+
-    rows.slice(0,150).map(p=>`<tr><td>${esc(p.player)}</td><td>${esc(p.team)}</td><td>${esc(p.market)}</td>
-      <td class="wc-prob">${Math.round(p.prob*100)}%</td><td>${wcConf(p.confidence)}</td></tr>`).join('')+
-    `</tbody></table>`;
-}
-function wcMktLabel(m,line,side){
-  if(m==='goal') return 'Anytime Goal';
-  if(m==='card') return 'Anytime Card';
-  if(m==='sot') return `SoT ${side} ${line}`;
-  if(m==='saves') return `Saves ${side} ${line}`;
-  return esc(m);
 }
 
 async function loadScorecard(){
@@ -1442,13 +1345,17 @@ function setStatus(state,msg,errors){
     const titles=Object.entries(errors).map(([k,v])=>`${k}: ${v}`).join('\n');
     const isMock='mock_fallback' in errors;
     const real=Object.keys(errors).filter(k=>k!=='mock_fallback');
-    badge.innerHTML=`<span class="err-badge" title="${esc(titles)}">${isMock?'⚡ demo data':'⚠ '+real.length+' source issue'+(real.length>1?'s':'')}</span>`;
+    const nice={prizepicks:'PrizePicks',underdog:'Underdog',kalshi:'Kalshi'};
+    const names=real.map(k=>nice[k]||k).join(', ');
+    // Name the offline source(s) directly; the full reason is in the hover tooltip.
+    const label=isMock?'⚡ demo data':`⚠ ${names} degraded`;
+    badge.innerHTML=`<span class="err-badge" title="${esc(titles)}">${esc(label)}</span>`;
   }else badge.innerHTML='';
 }
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function cssId(s){return String(s).replace(/[^a-z0-9]/gi,'_');}
 function srcShort(s){return ({underdog:'UD',prizepicks:'PP',kalshi:'KAL'})[s]||s;}
-function sportCls(s){return s==='MLB'?'MLB':s==='World Cup'?'WC':'other';}
+function sportCls(s){return s==='MLB'?'MLB':s==='World Cup'?'WC':s==='Tennis'?'TN':s==='WNBA'?'WNBA':s==='NBA Summer League'?'SL':'other';}
 const ISO3={PRT:'Portugal',DEU:'Germany',GBR:'England',NLD:'Netherlands',HRV:'Croatia',URY:'Uruguay',CHE:'Switzerland',DNK:'Denmark',ESP:'Spain',FRA:'France',ARG:'Argentina',BRA:'Brazil',ENG:'England',ITA:'Italy',BEL:'Belgium',USA:'USA',MEX:'Mexico',COL:'Colombia',JPN:'Japan',KOR:'South Korea',MAR:'Morocco',SEN:'Senegal',POL:'Poland',AUS:'Australia',CAN:'Canada',GHA:'Ghana',ECU:'Ecuador',SRB:'Serbia',EGY:'Egypt',NGA:'Nigeria',CMR:'Cameroon',PRY:'Paraguay',PER:'Peru',CHL:'Chile',AUT:'Austria',TUR:'Turkey',NOR:'Norway',SWE:'Sweden'};
 function prettyCountry(c){if(!c)return '';const u=String(c).toUpperCase();return ISO3[u]||c;}
 function fbAvatar(name,big){

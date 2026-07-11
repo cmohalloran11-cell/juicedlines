@@ -11,8 +11,8 @@ history.db
 *.sqlite
 *.sqlite3
 
-# user-provided data drops for the WC model (headers in wc/data/csv.py)
-wc/data/files/*.csv
+# cached Sackmann-mirror CSVs (CC NON-COMMERCIAL — runtime cache, do not distribute)
+tennis/data/cache/
 
 # python
 __pycache__/

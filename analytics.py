@@ -811,6 +811,21 @@ def enrich_lines(lines: list[dict]) -> None:
                         l["team"] = (teams["_by_id"].get(tid, {}) or {}).get("abbr")
         elif sport == "World Cup":
             l["flag"] = _flag(l.get("country") or l.get("team"))
+        elif sport in ("WNBA", "NBA Summer League"):
+            try:
+                from basketball.analytics import team_asset
+                from basketball import projections as _bp
+                # resolve the player → their ESPN team (always has a logo); the book's
+                # own team abbr often doesn't match ESPN's, so it's only a fallback.
+                ref = _bp.resolve(sport, l.get("player"))
+                a = (team_asset(sport, ref.team) if ref else None) or team_asset(sport, l.get("team"))
+                if a:
+                    if a.get("logo"):
+                        l["team_logo"] = a["logo"]
+                    if a.get("abbr"):
+                        l["team"] = a["abbr"]          # normalize to the ESPN abbr
+            except Exception:
+                pass
 
 
 # ──────────────────────────────────── model projections (board) ──────────────
@@ -1019,6 +1034,20 @@ def attach_projections(lines: list[dict]) -> None:
             l["model_n"] = len(vals)
 
     _attach_soccer_projections(lines)
+
+    # tennis: serve/return + Monte-Carlo model on live ATP/WTA prop lines
+    try:
+        from tennis.board import attach_tennis
+        attach_tennis(lines)
+    except Exception as exc:
+        print(f"[tennis] attach failed: {exc}")
+
+    # basketball: per-possession core on live WNBA + NBA Summer League prop lines
+    try:
+        from basketball.board import attach_basketball
+        attach_basketball(lines)
+    except Exception as exc:
+        print(f"[basketball] attach failed: {exc}")
 
 
 # ───────────────────────────────────── soccer Poisson model ──────────────────
@@ -1318,6 +1347,12 @@ def analyze(line: dict) -> dict:
             return analyze_mlb(line)
         if sport == "World Cup":
             return analyze_soccer(line)
+        if sport in ("WNBA", "NBA Summer League"):
+            from basketball.analytics import analyze as _bball
+            return _bball(line)
+        if sport == "Tennis":
+            from tennis.analytics import analyze as _tennis
+            return _tennis(line)
     except Exception as exc:
         return {"available": False, "reason": f"analytics error: {exc}"}
     return {"available": False, "reason": f"No analytics wired for {sport} yet."}

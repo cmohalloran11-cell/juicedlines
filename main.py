@@ -23,7 +23,7 @@ from typing import Any
 
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import db
@@ -250,34 +250,6 @@ def api_scorecard(sport: str = Query("", description="MLB | World Cup | empty = 
     """Running model-vs-market scorecard: hit-rate vs the close, plays, and CLV.
     Builds up over time as the CLV ledger logs lines and grades outcomes."""
     return db.scorecard(sport or None)
-
-
-# ── World Cup prop model (wc/ package; Dixon-Coles + Monte-Carlo) ──────────────
-
-@app.get("/api/wc/matches")
-def api_wc_matches():
-    from wc import projections
-    return {"matches": projections.matches()}
-
-
-@app.get("/api/wc")
-async def api_wc(match: str = Query("", description="fixture id; empty = all fixtures")):
-    """Projections + value finder for WC fixtures (runs the sim off the event loop)."""
-    from wc import projections
-    loop = asyncio.get_event_loop()
-    results = await loop.run_in_executor(None, projections.run, match or None)
-    return {"results": results}
-
-
-@app.get("/api/wc/export")
-def api_wc_export(fmt: str = Query("csv", description="csv | json"),
-                  match: str = Query("", description="fixture id; empty = all")):
-    from wc import projections
-    results = projections.run(match or None)
-    if fmt == "json":
-        return PlainTextResponse(projections.to_json(results), media_type="application/json")
-    return PlainTextResponse(projections.to_csv(results), media_type="text/csv",
-                             headers={"Content-Disposition": "attachment; filename=wc_projections.csv"})
 
 
 @app.post("/api/snapshot")

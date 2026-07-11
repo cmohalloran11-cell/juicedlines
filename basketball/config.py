@@ -1,0 +1,76 @@
+"""
+Basketball config — the two league configs plug into one shared core here.
+
+Everything the core needs to differ between WNBA and Summer League lives in
+`leagues`: the prior each rate regresses to, how minutes are projected, the
+pace baseline, and the variance width. Tune here without touching the model.
+"""
+
+from __future__ import annotations
+
+CONFIG = {
+    # ── shared core knobs ─────────────────────────────────────────────────────
+    "model": {
+        "n_sims": 10000,
+        "recency_halflife": 6,        # games; exponential recency weight on rates
+    },
+    "confidence": {                   # effective (recency-weighted) games → flag
+        "high": 8,
+        "medium": 3,
+    },
+
+    # ── per-league configs (the override hooks) ───────────────────────────────
+    "leagues": {
+        "WNBA": {
+            "espn_path": "basketball/wnba",
+            "gamelog_mode": "athlete",    # ESPN populates WNBA season gamelogs
+            "game_minutes": 40,       # WNBA plays 4×10
+            "league_pace": 96.0,      # possessions/game — refined live from box scores
+            "roster_depth": 10,       # tight rotations → starters play more
+            # rate shrinkage: pseudo-possessions of the positional prior. Low, so a
+            # healthy WNBA sample dominates the rough positional prior → tight rates.
+            "shrink_poss": 120,
+            # minutes: the player's own recency-weighted minutes (short half-life →
+            # tracks current role). No pull to a global midpoint for players with a
+            # sample; the midpoint only applies to zero-game players (via the fallback).
+            "minutes_shrink_games": 0,
+            "prior": "positional",    # regress rates toward WNBA positional averages
+            # variance widths (fraction of the projected mean)
+            "min_sd_frac": 0.13,      # minutes are fairly stable in WNBA
+            "pace_sd_frac": 0.05,
+            "disp": 0.10,             # per-stat overdispersion (NegBin); small = tight
+        },
+        "NBA Summer League": {
+            "espn_path": "basketball/nba-summer-las-vegas",
+            "gamelog_mode": "boxscore",   # ESPN has no SL gamelog → derive from box scores
+            "game_minutes": 40,
+            "league_pace": 102.0,     # SL runs faster and much more variable
+            "roster_depth": 12,
+            # HEAVY rate shrinkage — the tiny SL sample barely moves the translated prior.
+            "shrink_poss": 1400,
+            # minutes, by contrast, RESPOND to revealed rotations: before any games the
+            # draft-slot prior holds; after game 1–2 the observed minutes take over.
+            "minutes_shrink_games": 3,
+            "prior": "translated",    # draft slot + archetype + translated pre-NBA rates
+            # wide everything — post fewer markets, later, gated by confidence
+            "min_sd_frac": 0.32,      # coaches distribute minutes almost arbitrarily
+            "pace_sd_frac": 0.13,
+            "disp": 0.22,
+        },
+    },
+
+    "keys": {},
+}
+
+
+def cfg(*path, default=None):
+    d = CONFIG
+    for p in path:
+        if not isinstance(d, dict) or p not in d:
+            return default
+        d = d[p]
+    return d
+
+
+def league_cfg(league: str) -> dict:
+    return CONFIG["leagues"].get(league, {})
