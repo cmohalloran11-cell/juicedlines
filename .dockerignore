@@ -1,0 +1,16 @@
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+# never bake secrets or runtime state into the image
+config.json
+.env
+*.db
+history.db
+# CC non-commercial Sackmann cache (regenerated at runtime)
+tennis/data/cache/
+.DS_Store
+Thumbs.db

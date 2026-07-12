@@ -33,7 +33,9 @@ from typing import Any, Callable, Optional
 # Reuse the betting_dashboard MLB client (session, cache, name-normalisation,
 # the empirical hit-rate model, and the player→id index).
 _BD = Path(__file__).parent.parent / "betting_dashboard"
-if str(_BD) not in sys.path:
+# Local dev uses the sibling betting_dashboard; a standalone deploy uses the vendored
+# mlb_model.py alongside this file (see also underdog.py/kalshi.py).
+if _BD.exists() and str(_BD) not in sys.path:
     sys.path.insert(0, str(_BD))
 
 try:

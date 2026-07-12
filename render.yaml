@@ -1,0 +1,14 @@
+# Render Blueprint — deploy JUICED as a persistent web service.
+# In Render: New → Blueprint → point at this repo. (Free tier sleeps after 15 min
+# idle; upgrade to a paid instance to keep the background refresh loop always on.)
+services:
+  - type: web
+    name: juiced
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"

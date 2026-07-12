@@ -266,5 +266,10 @@ async def api_snapshot(sport: str = "all"):
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+    # Hosts (Render/Railway/Fly/Docker) inject the port via $PORT. Reload only in dev
+    # (set DEV=1) — it must be off in production so the background refresh loop is stable.
+    uvicorn.run("main:app", host="0.0.0.0",
+                port=int(os.environ.get("PORT", "8001")),
+                reload=bool(os.environ.get("DEV")))

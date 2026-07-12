@@ -45,7 +45,9 @@ def _load_config() -> dict:
         return _json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
     except Exception:
         return {}
-if str(_BD) not in sys.path:
+# Local dev pulls the clients from the sibling betting_dashboard; a standalone deploy
+# has vendored copies (underdog.py/kalshi.py/mlb_model.py) alongside this file instead.
+if _BD.exists() and str(_BD) not in sys.path:
     sys.path.insert(0, str(_BD))
 
 try:
