@@ -28,10 +28,18 @@ continuous updates are Option B.)
 2. Enable write for the Action: **Settings → Actions → General → Workflow permissions →
    Read and write**. Then let the workflow run once (**Actions → refresh board → Run
    workflow**) — it creates the `data` and `deploy` branches.
-3. Host the **`deploy`** branch:
-   - **Vercel:** Project **Settings → Git → Production Branch = `deploy`** → Framework
-     Preset **Other**, no build command → Redeploy.
-   - **Cloudflare Pages:** new project → Production branch **`deploy`** → no build.
+3. Host it on **Vercel** — Production Branch = `main`, **Root Directory = `static`**:
+   - **Settings → Build and Deployment → Root Directory → `static`** → Framework Preset
+     **Other**, Build Command empty → Redeploy. Vercel serves `main/static/index.html` as
+     static files; the page pulls `board.json` live from the `data` branch via raw, so the
+     host never redeploys on a data change.
+   - ⚠️ Root Directory **must** be `static`. The page lives in `static/`, not the repo
+     root, so leaving Root Directory blank serves the root and **404s** (`NOT_FOUND`).
+   - **Cloudflare Pages:** Production branch **`main`**, build output directory **`static`**,
+     no build command.
+   - (The Action also publishes a `deploy` branch with `index.html` at its root — that's an
+     alternative you'd host with a blank Root Directory. Unused when you serve `main` +
+     Root Directory `static` as above; pick one, don't mix.)
 4. Open the URL. The board self-updates every ~5 min from the `data` branch via raw — the
    host never has to redeploy for a data change.
 
