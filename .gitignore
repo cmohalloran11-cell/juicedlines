@@ -14,6 +14,9 @@ history.db
 # cached Sackmann-mirror CSVs (CC NON-COMMERCIAL — runtime cache, do not distribute)
 tennis/data/cache/
 
+# static build artifact (the GitHub Action rebuilds it and pushes it to the deploy branch)
+static/board.json
+
 # python
 __pycache__/
 *.py[cod]

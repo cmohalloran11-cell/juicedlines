@@ -1,0 +1,41 @@
+name: refresh board
+
+# Rebuilds static/board.json on a schedule and force-pushes the static site to the
+# `deploy` branch. Host (Vercel/Cloudflare Pages) serves `deploy` — no server, no
+# credit card. Force-push keeps the branch at a single commit (no history bloat).
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"     # every ~20 minutes
+  workflow_dispatch: {}         # manual "Run workflow" button
+  push:
+    branches: [main]            # rebuild when the code changes
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-board
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Build board.json
+        run: python build_static.py
+      - name: Publish static site → deploy branch
+        run: |
+          cd static
+          git init -q
+          git checkout -q -b deploy
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "board $(date -u +%FT%TZ)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" deploy

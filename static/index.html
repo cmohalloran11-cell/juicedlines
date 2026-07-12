@@ -511,14 +511,26 @@ const SRC_FAVI = {
 // data actually changed (updated_at) so it stays live without flickering.
 let _pollTimer=null, _lastUpdated=null, _rendered=false;
 const POLL_MS=25000;
+let STATIC_MODE=false;   // true when there's no live backend → serve the prebuilt board.json
+async function fetchBoard(){
+  // Live server first; on a static host (no backend) fall back to the prebuilt board.json
+  // (rebuilt by the GitHub Action every ~20 min).
+  if(!STATIC_MODE){
+    try{
+      const r = await fetch(API_BASE+'/api/lines',{cache:'no-store'});
+      if(r.ok) return await r.json();
+    }catch(e){}
+    STATIC_MODE=true;
+  }
+  return await (await fetch('./board.json?t='+Math.floor(Date.now()/60000),{cache:'no-store'})).json();
+}
 async function loadLines(force=false){
   clearTimeout(_pollTimer);
   if(force) document.getElementById('rf-ic').innerHTML='<span class="spinner"></span>';
   if(!_rendered) setStatus('loading');
   let delay=POLL_MS;
   try{
-    const r = await fetch(API_BASE+'/api/lines',{cache:'no-store'});
-    const data = await r.json();
+    const data = await fetchBoard();
     allLines = data.lines || [];
     document.getElementById('last-updated').textContent = data.updated_at ? 'Updated '+fmtTime(data.updated_at) : '';
     const errs = data.errors||{};
@@ -543,6 +555,7 @@ async function loadLines(force=false){
     delay=5000;
   }finally{
     document.getElementById('rf-ic').textContent='↺';
+    if(STATIC_MODE) delay=300000;   // static board.json updates every ~20 min — poll gently
     _pollTimer=setTimeout(()=>loadLines(), delay);   // never stop fetching
   }
 }
@@ -719,6 +732,11 @@ async function openDrawer(lineId){
   // Instant hero from data we already have, so the drawer feels immediate while
   // the deeper analytics (hit-rate, vs-pitcher) stream in.
   document.getElementById('drawer-content').innerHTML = instantDrawer(line);
+
+  if(STATIC_MODE){   // no backend — show a projection drawer built from the line itself
+    document.getElementById('drawer-content').innerHTML = soccerDrawer(line, staticAnalytics(line), []);
+    return;
+  }
 
   const [analytics, hist] = await Promise.all([
     fetch(API_BASE+'/api/analytics?id='+encodeURIComponent(lineId)).then(r=>r.json()).then(d=>d.analytics).catch(()=>({available:false,reason:'failed to load'})),
@@ -910,6 +928,17 @@ function mlbUnavailable(line,a,hist){
     </div>`;
 }
 
+// Static-mode drawer data: everything the light drawer needs, from the line itself.
+function staticAnalytics(line){
+  const hasTeam = line.team||line.team_logo||line.flag;
+  return {available:true, sport:line.sport, player:line.player, player_type:line.position||'',
+    headshot:line.headshot, team:hasTeam?{abbr:line.team, logo:line.team_logo, flag:line.flag}:null,
+    matchup:line.matchup, stat:line.stat_type, line:line.line,
+    over_price:line.over_price, under_price:line.under_price,
+    model_proj:line.model_proj, model_edge:line.model_edge, model_prob:line.model_prob,
+    model_n:line.model_n, proj_kind:line.proj_kind,
+    note:'Static snapshot — model projection shown. Live recent-games / hit-rate analytics are on the full server version.'};
+}
 function soccerDrawer(line,a,hist){
   const prices=(line.over_price||line.under_price)?`Over ${line.over_price||'—'} / Under ${line.under_price||'—'}`:(line.over_implied!=null?`Yes ${Math.round(line.over_implied*100)}%`:'');
   const move=(a.movement&&a.movement.length>1)||hist.length>1?`<div class="dr-section"><h4><span class="ic">📈</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
