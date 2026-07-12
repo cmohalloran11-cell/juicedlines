@@ -46,11 +46,15 @@ CONFIG = {
             "game_minutes": 40,
             "league_pace": 102.0,     # SL runs faster and much more variable
             "roster_depth": 12,
-            # HEAVY rate shrinkage — the tiny SL sample barely moves the translated prior.
-            "shrink_poss": 1400,
-            # minutes, by contrast, RESPOND to revealed rotations: before any games the
-            # draft-slot prior holds; after game 1–2 the observed minutes take over.
-            "minutes_shrink_games": 3,
+            # LIGHT shrinkage — the actual SL games are the best (only) signal we have, so
+            # lean on them: a player's real SL production drives the projection. Small
+            # samples stay noisy (kept low confidence), but the projection is real, not a
+            # line mirror. (Without a draft/college prior feed, heavy shrinkage just erased
+            # the only usable data.)
+            "shrink_poss": 70,
+            # minutes: use the player's actual SL minutes (like WNBA); the draft-slot
+            # baseline only applies to players with zero games so far.
+            "minutes_shrink_games": 0,
             "prior": "translated",    # draft slot + archetype + translated pre-NBA rates
             # wide everything — post fewer markets, later, gated by confidence
             "min_sd_frac": 0.32,      # coaches distribute minutes almost arbitrarily
