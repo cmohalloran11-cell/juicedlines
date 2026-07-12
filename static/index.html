@@ -512,9 +512,11 @@ const SRC_FAVI = {
 let _pollTimer=null, _lastUpdated=null, _rendered=false;
 const POLL_MS=25000;
 let STATIC_MODE=false;   // true when there's no live backend → serve the prebuilt board.json
+// In production the board comes from GitHub raw (the Action force-pushes it to the `data`
+// branch every ~5 min; raw updates instantly with no host redeploy, dodging Vercel's
+// ~100/day deploy cap). Local/dev falls back to the co-located ./board.json.
+const BOARD_URL='https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/board.json';
 async function fetchBoard(){
-  // Live server first; on a static host (no backend) fall back to the prebuilt board.json
-  // (rebuilt by the GitHub Action every ~20 min).
   if(!STATIC_MODE){
     try{
       const r = await fetch(API_BASE+'/api/lines',{cache:'no-store'});
@@ -522,7 +524,12 @@ async function fetchBoard(){
     }catch(e){}
     STATIC_MODE=true;
   }
-  return await (await fetch('./board.json?t='+Math.floor(Date.now()/60000),{cache:'no-store'})).json();
+  const bust=Math.floor(Date.now()/300000);          // 5-min bucket (raw caches ~5 min)
+  const local=/^(localhost|127|0\.0\.0\.0|\[?::1)/.test(location.hostname)||location.protocol==='file:';
+  if(!local){
+    try{ const r=await fetch(BOARD_URL+'?t='+bust,{cache:'no-store'}); if(r.ok) return await r.json(); }catch(e){}
+  }
+  return await (await fetch('./board.json?t='+bust,{cache:'no-store'})).json();   // fallback
 }
 async function loadLines(force=false){
   clearTimeout(_pollTimer);

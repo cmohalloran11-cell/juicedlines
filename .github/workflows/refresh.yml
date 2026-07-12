@@ -1,8 +1,10 @@
 name: refresh board
 
-# Rebuilds static/board.json on a schedule and force-pushes the static site to the
-# `deploy` branch. Host (Vercel/Cloudflare Pages) serves `deploy` — no server, no
-# credit card. Force-push keeps the branch at a single commit (no history bloat).
+# Rebuilds static/board.json every ~5 min and force-pushes it to the `data` branch,
+# which is served straight from GitHub raw (updates instantly, no host redeploy → beats
+# Vercel's ~100/day deploy cap). The page itself (index.html) is published to the
+# `deploy` branch only when the code changes, so the host redeploys rarely. Force-push
+# keeps both branches at a single commit (no history bloat). Needs a PUBLIC repo.
 
 on:
   schedule:
@@ -31,13 +33,29 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Build board.json
         run: python build_static.py
-      - name: Publish static site → deploy branch
+
+      # Every run: publish the fresh board to the `data` branch (served via GitHub raw).
+      - name: Publish board.json → data branch
+        env:
+          REMOTE: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
-          cd static
-          git init -q
-          git checkout -q -b deploy
+          rm -rf _data && mkdir _data && cp static/board.json _data/board.json
+          cd _data && git init -q && git checkout -q -b data
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -q -m "board $(date -u +%FT%TZ)"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" deploy
+          git add -A && git commit -q -m "board $(date -u +%FT%TZ)"
+          git push -f "$REMOTE" data
+
+      # Only on code changes: publish the page (+ a fallback board.json) to `deploy`,
+      # so the host redeploys rarely instead of every 5 minutes.
+      - name: Publish site → deploy branch
+        if: github.event_name != 'schedule'
+        env:
+          REMOTE: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+        run: |
+          rm -rf _site && mkdir _site && cp static/index.html _site/index.html && cp static/board.json _site/board.json
+          cd _site && git init -q && git checkout -q -b deploy
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "site $(date -u +%FT%TZ)"
+          git push -f "$REMOTE" deploy

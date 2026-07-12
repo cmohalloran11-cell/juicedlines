@@ -4,35 +4,43 @@ Two ways to put it online. Pick based on whether you want it **free** or **fully
 
 ---
 
-## Option A — Free public site, no credit card (recommended to start)
+## Option A — Free public site, ~5-min updates, no credit card
 
-Serves a **prebuilt snapshot** as plain static files. A GitHub Action runs the model
-every ~20 min and force-pushes `index.html` + `board.json` to the **`deploy`** branch;
-a static host serves that. No server, no card.
+Serves a **prebuilt snapshot** as static files. A GitHub Action (`refresh.yml`) runs the
+model every ~5 min and force-pushes `board.json` to the **`data`** branch, which the page
+reads **straight from GitHub raw** (updates instantly, no host redeploy). The page itself
+(`index.html`) is published to the **`deploy`** branch only when the code changes, so the
+host redeploys rarely. No server, no card.
 
-**What you get:** the full board, edges, and parlay, with model projections. Each
-prop's drawer shows the projection card. (The live *recent-games / hit-rate* analytics
-and continuous updates are Option B only.)
+Why this shape: it dodges two free-tier ceilings — GitHub Actions minutes (unlimited on a
+**public** repo) and the host's deploy cap (Vercel ~100/day; we avoid it by not
+redeploying on every refresh).
+
+**What you get:** the full board, edges, and parlay with model projections; each prop's
+drawer shows the projection card. (Live *recent-games / hit-rate* analytics and true
+continuous updates are Option B.)
 
 ### Steps
-1. The GitHub Action (`.github/workflows/refresh.yml`) is already in the repo. It runs
-   on push, every 20 min, and via **Actions → refresh board → Run workflow**. Let it run
-   once — it creates the `deploy` branch.
-   - If the push step is denied, enable **Settings → Actions → General → Workflow
-     permissions → Read and write**.
-2. Host the `deploy` branch (both are free, no card, work with a private repo):
-   - **Vercel:** Import the repo → Project **Settings → Git → Production Branch =
-     `deploy`** → **Framework Preset: Other**, no build command, output = root. Redeploy.
-   - **Cloudflare Pages:** Create a project from the repo → **Production branch =
-     `deploy`** → no build command → deploy.
-3. Open the URL. It auto-updates every ~20 min as the Action republishes `deploy`.
+1. **Make the repo public** (Settings → General → Danger Zone → Change visibility). This
+   is required: it gives unlimited Actions minutes and lets GitHub raw serve `board.json`.
+   No secrets are in the repo — `config.json`/`history.db`/caches are gitignored, and
+   `config.example.json` is only a placeholder.
+2. Enable write for the Action: **Settings → Actions → General → Workflow permissions →
+   Read and write**. Then let the workflow run once (**Actions → refresh board → Run
+   workflow**) — it creates the `data` and `deploy` branches.
+3. Host the **`deploy`** branch:
+   - **Vercel:** Project **Settings → Git → Production Branch = `deploy`** → Framework
+     Preset **Other**, no build command → Redeploy.
+   - **Cloudflare Pages:** new project → Production branch **`deploy`** → no build.
+4. Open the URL. The board self-updates every ~5 min from the `data` branch via raw — the
+   host never has to redeploy for a data change.
 
-The frontend auto-detects there's no backend and loads `./board.json`, so the **same
-`index.html` works locally against the live server and in production as a static site**.
+`BOARD_URL` in `index.html` points at this repo's raw `data/board.json` (update it if you
+fork/rename). Locally the page just loads `./board.json`, so the same file works in dev
+(live server) and in production (static).
 
-> Freshness is ~5 min — the workflow runs `*/5`, which needs a **public** repo (Actions
-> minutes are unlimited for public repos; a private repo's free 2,000 min/mo can't sustain
-> it). Fine for pre-game props; live in-game moves still lag a little. Want true continuous
+> Freshness is ~5 min (GitHub Actions' scheduling floor; can drift to ~10 under load).
+> Fine for pre-game props; live in-game moves still lag a little. Want true continuous
 > (~90 s) updates → Option B.
 
 ---
