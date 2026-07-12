@@ -30,8 +30,10 @@ and continuous updates are Option B only.)
 The frontend auto-detects there's no backend and loads `./board.json`, so the **same
 `index.html` works locally against the live server and in production as a static site**.
 
-> Freshness is ~20 min (GitHub Actions' floor). Fine for pre-game props; live in-game
-> line moves will lag. Want faster/continuous → Option B.
+> Freshness is ~5 min — the workflow runs `*/5`, which needs a **public** repo (Actions
+> minutes are unlimited for public repos; a private repo's free 2,000 min/mo can't sustain
+> it). Fine for pre-game props; live in-game moves still lag a little. Want true continuous
+> (~90 s) updates → Option B.
 
 ---
 
