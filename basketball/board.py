@@ -27,6 +27,13 @@ _LEAGUES = ("WNBA", "NBA Summer League")
 # the projection is blended toward the market line proportionally.
 _FULL_TRUST_AT = 0.6
 
+# Opening-slate guard: with only 1–2 games a single outlier game (a 35-pt SL debut)
+# dominates the projection, so ease model trust in over the first few games — lean a bit
+# more on the market until ~3 games accumulate. Multiplier = min(1, base + step·n_games):
+# 0.8 / 0.9 / 1.0 at 1 / 2 / 3 games. No effect once a player has ≥3 games (WNBA is always
+# past this), so it only tempers the thin Summer-League opening samples.
+_GAME_RAMP_BASE, _GAME_RAMP_STEP = 0.7, 0.1
+
 
 def attach_basketball(lines: list[dict]) -> int:
     """Attach projections to live WNBA/Summer-League lines. Returns count projected."""
@@ -70,6 +77,7 @@ def attach_basketball(lines: list[dict]) -> int:
         anchor = float(np.median(std)) if std else float(np.median([float(l["line"]) for l in glines]))
 
         trust = min(1.0, proj["sample_weight"] / _FULL_TRUST_AT)
+        trust *= min(1.0, _GAME_RAMP_BASE + _GAME_RAMP_STEP * proj["n_games"])
         blended = trust * model_mean + (1.0 - trust) * anchor
         if trust < 0.2:                 # ~no reliable model info → defer fully to the
             blended = anchor            # market (edge≈0, symmetric) rather than a noisy drag
