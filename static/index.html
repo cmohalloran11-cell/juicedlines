@@ -470,9 +470,9 @@ input[type=text]{min-width:190px}
       <label>Prop Type (click to exclude)</label>
       <div class="tchips" id="edge-types">
         <button class="tchip on" data-type="standard" onclick="toggleEdgeType('standard')">Normal</button>
-        <button class="tchip on" data-type="goblin" onclick="toggleEdgeType('goblin')">Goblin</button>
-        <button class="tchip on" data-type="demon" onclick="toggleEdgeType('demon')">Demon</button>
-        <button class="tchip on" data-type="boosted" onclick="toggleEdgeType('boosted')">Boost</button>
+        <button class="tchip" data-type="goblin" onclick="toggleEdgeType('goblin')">Goblin</button>
+        <button class="tchip" data-type="demon" onclick="toggleEdgeType('demon')">Demon</button>
+        <button class="tchip" data-type="boosted" onclick="toggleEdgeType('boosted')">Boost</button>
       </div>
     </div>
   </div>
@@ -896,17 +896,45 @@ function recentTable(a){
   return `<div class="dr-section"><h4><span class="ic">📋</span> Last ${a.recent.length} Games${hasProp?` · ✓ = cleared ${a.hit_rate.line}`:''}</h4>
     <table class="rtable"><thead><tr><th>Date</th><th>Opp</th>${cols.map(c=>`<th>${c}</th>`).join('')}${propHead}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+// Prop label → compact abbreviation. Ordered: multi-word / combos BEFORE the single
+// words they contain (e.g. "Blocked Shots"→BLK must precede "Shots"→SH; "Shots On
+// Target"→SOT must precede "Shots"→SH), so substring matching never mislabels.
+const _PROP_ABBR=[
+  // baseball combos
+  ['hits runs rbis','H+R+RBI'],['hits+runs+rbis','H+R+RBI'],
+  // basketball / WNBA combos
+  ['pts+rebs+asts','PRA'],['points rebounds assists','PRA'],
+  ['pts+rebs','PR'],['points rebounds','PR'],
+  ['pts+asts','PA'],['points assists','PA'],
+  ['rebs+asts','RA'],['rebounds assists','RA'],
+  ['blks+stls','BLK+STL'],['blocks + steals','BLK+STL'],['blocks steals','BLK+STL'],
+  // soccer combos
+  ['goal + assist','G+A'],['goals + assists','G+A'],['goals assists','G+A'],['goal assist','G+A'],
+  // soccer singles — SOT / blocked shots BEFORE plain shots
+  ['shots on target','SOT'],['shot on target','SOT'],['shots assisted','SH AST'],
+  ['blocked shots','BLK'],['shots','SH'],['shot','SH'],
+  ['goals allowed','GA'],['goalie saves','SV'],['saves','SV'],
+  ['fouls drawn','FD'],['fouls','FLS'],['offsides','OFF'],['tackles','TKL'],
+  ['clearances','CLR'],['crosses','CRS'],['interceptions','INT'],
+  ['attempted dribbles','DRB'],['dribbles','DRB'],
+  ['passes attempted','PASS'],['passes','PASS'],['cards','CRD'],
+  // basketball / WNBA singles
+  ['3-pt made','3PM'],['three point','3PM'],['3 point','3PM'],['3pt','3PM'],['threes','3PM'],['3-pointers','3PM'],
+  ['double double','DD'],['blocks','BLK'],['steals','STL'],['rebounds','REB'],
+  ['turnovers','TO'],['free throws','FTM'],['points','PTS'],
+  // tennis
+  ['double fault','DF'],['aces','ACE'],['break point','BP'],['total games','GMS'],['games won','GMS'],
+  // baseball singles
+  ['strikeout','K'],['total bases','TB'],['home run','HR'],['pitches','PC'],['earned','ER'],
+  ['stolen bases','SB'],['hits allowed','HA'],['walks','BB'],['doubles','2B'],['triples','3B'],
+  ['singles','1B'],['rbis','RBI'],['rbi','RBI'],['outs','OUT'],['hits','H'],['runs','R'],
+  // generic (checked last)
+  ['fantasy','FS'],['assists','AST'],['goals','G'],['goal','G'],['bases','TB'],
+];
 function propShort(stat){
-  const s=(stat||'').toLowerCase();
-  if(s.includes('fantasy')) return 'FS';
-  if(s.includes('strikeout')) return 'K';
-  if(s.includes('total bases')||s==='bases') return 'TB';
-  if(s.includes('home run')) return 'HR';
-  if(s.includes('hits runs rbis')||s.includes('hits+runs+rbis')) return 'H+R+RBI';
-  if(s.includes('pitches')) return 'PC';
-  if(s.includes('outs')) return 'OUT';
-  if(s.includes('earned')) return 'ER';
-  return (stat||'VAL').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,4);
+  const s=(stat||'').toLowerCase().trim();
+  for(const [k,v] of _PROP_ABBR){ if(s.includes(k)) return v; }
+  return (stat||'VAL').split(/[\s+]+/).map(w=>w[0]||'').join('').toUpperCase().slice(0,4);
 }
 
 function lineShopHTML(line){
@@ -1026,7 +1054,10 @@ function sparklineSVG(vals,line){
 
 // ════════════ edges ════════════
 let edgeMode='ev';
-const edgeTypes=new Set(['standard','goblin','demon','boosted']);
+// Default to STANDARD lines only. Goblin/demon are alternate lines (a low/high line at
+// an unlisted payout multiplier), so proj−line vs them is misleading and their low lines
+// (e.g. a "Shots" goblin at 1.5) read like a different stat. Users can toggle them on.
+const edgeTypes=new Set(['standard']);
 function setEdgeMode(m){
   edgeMode=m;
   document.querySelectorAll('#edge-mode button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
