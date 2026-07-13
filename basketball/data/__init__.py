@@ -5,6 +5,7 @@ from __future__ import annotations
 from .espn import EspnBasketball
 
 _gamelog_singleton = None
+_background_singleton = None
 
 
 def gamelog_source() -> "EspnBasketball":
@@ -15,6 +16,13 @@ def gamelog_source() -> "EspnBasketball":
 
 
 def background_source():
-    """Summer League background (draft slot + translated pre-NBA rates)."""
-    from .background import TorvikRealGMBackground
-    return TorvikRealGMBackground()
+    """Summer League background (draft slot + translated pre-NBA rates).
+
+    Singleton so the (multi-MB) Torvik college index is fetched once and reused
+    across every Summer-League player in a build, not re-pulled per player.
+    """
+    global _background_singleton
+    if _background_singleton is None:
+        from .background import TorvikRealGMBackground
+        _background_singleton = TorvikRealGMBackground()
+    return _background_singleton

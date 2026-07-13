@@ -34,12 +34,17 @@ _SL_PER40 = {
 }
 
 # pre-NBA per-40 → Summer-League per-40 translation factor, by source league.
-# Scoring/creation deflate most; turnovers inflate (tougher competition). Refine via backtest.
+# Calibrated for SUMMER LEAGUE specifically, NOT the NBA: SL is a markedly weaker, faster,
+# sloppier league (worse team defense, exhibition intensity), so college/pro production
+# translates MUCH more directly than the ~0.75 NCAA→NBA scoring factor would suggest.
+# Factors deflate creation the most and inflate turnovers slightly. Validated against the
+# opening slate (mean edge ≈ −0.5, i.e. a mild residual under-lean that matches SL props
+# being softly padded for hyped rookies) — refine further via backtest as outcomes accrue.
 _TRANSLATION = {
-    "NCAA":          {"pts": 0.75, "reb": 0.85, "ast": 0.80, "stl": 0.75, "blk": 0.80, "3pm": 0.70, "to": 1.05},
-    "G-League":      {"pts": 0.90, "reb": 0.92, "ast": 0.88, "stl": 0.85, "blk": 0.88, "3pm": 0.85, "to": 1.00},
-    "International": {"pts": 0.72, "reb": 0.82, "ast": 0.75, "stl": 0.72, "blk": 0.78, "3pm": 0.68, "to": 1.08},
-    "":              {"pts": 0.72, "reb": 0.82, "ast": 0.76, "stl": 0.74, "blk": 0.80, "3pm": 0.68, "to": 1.06},
+    "NCAA":          {"pts": 0.88, "reb": 0.93, "ast": 0.90, "stl": 0.84, "blk": 0.87, "3pm": 0.83, "to": 1.03},
+    "G-League":      {"pts": 0.95, "reb": 0.95, "ast": 0.92, "stl": 0.88, "blk": 0.90, "3pm": 0.90, "to": 1.00},
+    "International": {"pts": 0.85, "reb": 0.90, "ast": 0.86, "stl": 0.80, "blk": 0.84, "3pm": 0.80, "to": 1.05},
+    "":              {"pts": 0.85, "reb": 0.90, "ast": 0.86, "stl": 0.80, "blk": 0.84, "3pm": 0.80, "to": 1.05},
 }
 
 
