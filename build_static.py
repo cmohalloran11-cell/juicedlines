@@ -46,14 +46,11 @@ def main() -> None:
     ud, uerr = pullers.fetch_underdog()
     if uerr:
         errors["underdog"] = uerr
-    kal, kerr = pullers.fetch_kalshi()
-    if kerr:
-        errors["kalshi"] = kerr
     pp, perr = pullers.fetch_prizepicks()
     if perr:
         errors["prizepicks"] = perr
 
-    lines = ud + kal + pp
+    lines = ud + pp
     try:
         analytics.enrich_lines(lines)
     except Exception as exc:

@@ -34,7 +34,7 @@ from typing import Any, Callable, Optional
 # the empirical hit-rate model, and the player→id index).
 _BD = Path(__file__).parent.parent / "betting_dashboard"
 # Local dev uses the sibling betting_dashboard; a standalone deploy uses the vendored
-# mlb_model.py alongside this file (see also underdog.py/kalshi.py).
+# mlb_model.py alongside this file (see also underdog.py).
 if _BD.exists() and str(_BD) not in sys.path:
     sys.path.insert(0, str(_BD))
 
@@ -558,7 +558,7 @@ def analyze_mlb(line: dict) -> dict:
 
     name = line.get("player")
     if not name:
-        # Kalshi team market — no per-player analytics
+        # team/market line with no player — no per-player analytics
         return {"available": False, "reason": "Team/market line — no player splits."}
 
     # Resolve the player, disambiguating same-name players by team + prop type

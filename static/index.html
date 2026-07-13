@@ -20,9 +20,9 @@
   --green:     #9be814;   /* positive / over / live */
   --green2:    #6db800;
   --red:       #ff4d5f;   /* negative / under */
-  --yellow:    #ffd21a;   /* boosted */
+  --yellow:    #ffd21a;   /* prizepicks accent */
   --orange:    #ff9a2e;   /* prices / underdog */
-  --teal:      #2ee6c0;   /* world cup / kalshi accent */
+  --teal:      #2ee6c0;   /* world cup accent */
   --text:      #eafce0;
   --muted:     #8b9b72;
   --muted2:    #5d6b46;
@@ -131,7 +131,6 @@ input[type=text]{min-width:190px}
 .lstat .src-tag{font-size:10px;padding:1px 6px;border-radius:4px;font-weight:700;flex-shrink:0}
 .src-tag.underdog{background:rgba(255,154,46,.14);color:var(--orange)}
 .src-tag.prizepicks{background:rgba(255,210,26,.16);color:var(--yellow)}
-.src-tag.kalshi{background:rgba(46,230,192,.14);color:var(--teal)}
 .lstat-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lline{font-size:16px;font-weight:800;font-family:var(--mono);text-align:right}
 .lproj{text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;white-space:nowrap}
@@ -145,7 +144,6 @@ input[type=text]{min-width:190px}
 .limplied{text-align:right;font-weight:700;font-size:13px}
 .ltype{text-align:center}
 .tag-dot{font-size:9px;padding:1px 5px;border-radius:4px;font-weight:700}
-.tag-dot.boosted{background:rgba(255,210,26,.16);color:var(--yellow)}
 .tag-dot.demon{background:rgba(255,77,95,.16);color:var(--red)}
 .tag-dot.goblin{background:rgba(155,232,20,.14);color:var(--green)}
 .tag-dot.prediction{background:rgba(46,230,192,.14);color:var(--teal)}
@@ -180,7 +178,6 @@ input[type=text]{min-width:190px}
 .tchip.on[data-type="standard"]{color:var(--teal);border-color:rgba(46,230,192,.45)}
 .tchip.on[data-type="goblin"]{color:var(--green);border-color:rgba(155,232,20,.45)}
 .tchip.on[data-type="demon"]{color:var(--red);border-color:rgba(255,77,95,.45)}
-.tchip.on[data-type="boosted"]{color:var(--yellow);border-color:rgba(255,210,26,.45)}
 .tag-dot.standard{background:rgba(46,230,192,.12);color:var(--teal)}
 .edge-bar-bg{height:6px;background:var(--card2);border-radius:5px;overflow:hidden;flex:1}
 .edge-bar-fill{height:100%;border-radius:5px;transition:width .3s}
@@ -356,7 +353,7 @@ input[type=text]{min-width:190px}
 </style>
   <div style="max-width:900px;margin:0 auto">
     <h3 style="margin:18px 0 4px">Parlay Builder</h3>
-    <div class="muted-note">One entry = <b>one book, standard picks only</b> — goblins/demons/boosts have their own payouts and can't be freely mixed. Each leg uses the model's P(over); the parlay chance multiplies the legs assuming they're <b>independent</b> (correlated legs deviate). MLB probabilities are calibrated; <b>World Cup legs run overconfident</b> — treat those with caution.</div>
+    <div class="muted-note">One entry = <b>one book, standard picks only</b> — goblins/demons have their own payouts and can't be freely mixed. Each leg uses the model's P(over); the parlay chance multiplies the legs assuming they're <b>independent</b> (correlated legs deviate). MLB probabilities are calibrated; <b>World Cup legs run overconfident</b> — treat those with caution.</div>
 
     <div class="parlay-head-row">
       <h4 style="margin-bottom:0">⭐ Suggested Parlays</h4>
@@ -410,7 +407,6 @@ input[type=text]{min-width:190px}
         <option value="all">All Books</option>
         <option value="underdog">Underdog</option>
         <option value="prizepicks">PrizePicks</option>
-        <option value="kalshi">Kalshi</option>
       </select>
     </div>
     <div class="filter-group">
@@ -472,7 +468,6 @@ input[type=text]{min-width:190px}
         <button class="tchip on" data-type="standard" onclick="toggleEdgeType('standard')">Normal</button>
         <button class="tchip" data-type="goblin" onclick="toggleEdgeType('goblin')">Goblin</button>
         <button class="tchip" data-type="demon" onclick="toggleEdgeType('demon')">Demon</button>
-        <button class="tchip" data-type="boosted" onclick="toggleEdgeType('boosted')">Boost</button>
       </div>
     </div>
   </div>
@@ -502,7 +497,6 @@ const API_BASE = (location.protocol === 'http:' || location.protocol === 'https:
 const SRC_FAVI = {
   underdog:   'https://www.google.com/s2/favicons?domain=underdogfantasy.com&sz=64',
   prizepicks: 'https://www.google.com/s2/favicons?domain=prizepicks.com&sz=64',
-  kalshi:     'https://www.google.com/s2/favicons?domain=kalshi.com&sz=64',
 };
 
 // ════════════ boot ════════════
@@ -679,7 +673,7 @@ function rowsHTML(g){
   const ls=[...g.lines].sort((a,b)=>(a.source||'').localeCompare(b.source)||(a.stat_type||'').localeCompare(b.stat_type));
   const head=`<div class="lrow-head"><span>Stat</span><span>Line</span><span>Proj</span><span>O / U</span><span></span></div>`;
   return head + ls.map(l=>{
-    // O/U: american prices (Underdog) or implied % (Kalshi) or — (PrizePicks)
+    // O/U: american prices (Underdog) or — (PrizePicks)
     const ou=(l.over_price||l.under_price)
       ? `<span class="o">${l.over_price||'—'}</span><span style="color:var(--muted2)">/</span><span class="u">${l.under_price||'—'}</span>`
       : (l.over_implied!=null?fmtImplied(l.over_implied):'<span style="color:var(--muted2)">—</span>');
@@ -725,7 +719,6 @@ function renderStats(filtered){
     chip(wc.toLocaleString(),'World Cup','teal'),
     chip(filtered.filter(l=>l.source==='underdog').length.toLocaleString(),'Underdog','orange'),
     chip(filtered.filter(l=>l.source==='prizepicks').length.toLocaleString(),'PrizePicks','gold'),
-    chip(filtered.filter(l=>l.source==='kalshi').length.toLocaleString(),'Kalshi','teal'),
   ].join('');
 }
 function chip(n,l,cls){return `<div class="stat-chip ${cls}"><div class="num">${n}</div><div class="lbl">${l}</div></div>`;}
@@ -1024,11 +1017,10 @@ function soccerDrawer(line,a,hist){
 function renderDrawerCharts(line,a,hist){
   const c=document.getElementById('dr-move');
   if(c && hist.length>1){
-    const isK=line.source==='kalshi';
-    const vals=hist.map(h=>isK?(h.over_implied!=null?Math.round(h.over_implied*100):null):h.line_value);
+    const vals=hist.map(h=>h.line_value);
     drawerCharts.push(new Chart(c.getContext('2d'),{
       type:'line',
-      data:{labels:hist.map(h=>fmtTime(h.ts)),datasets:[{label:isK?'Yes %':'Line',data:vals,borderColor:'#b6f01a',backgroundColor:'rgba(182,240,26,.12)',tension:.3,fill:true,pointRadius:2,borderWidth:2}]},
+      data:{labels:hist.map(h=>fmtTime(h.ts)),datasets:[{label:'Line',data:vals,borderColor:'#b6f01a',backgroundColor:'rgba(182,240,26,.12)',tension:.3,fill:true,pointRadius:2,borderWidth:2}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5b6883',maxRotation:0,maxTicksLimit:6,font:{size:9}},grid:{color:'rgba(36,48,73,.4)'}},y:{ticks:{color:'#5b6883',font:{size:10}},grid:{color:'rgba(36,48,73,.4)'}}}}
     }));
   }
@@ -1068,7 +1060,7 @@ function toggleEdgeType(t){
   document.querySelector(`#edge-types button[data-type="${t}"]`)?.classList.toggle('on');
   runEdges();
 }
-function oddsLabel(t){return ({standard:'Normal',goblin:'Goblin',demon:'Demon',boosted:'Boost',prediction:'Market'})[t||'standard']||t;}
+function oddsLabel(t){return ({standard:'Normal',goblin:'Goblin',demon:'Demon'})[t||'standard']||t;}
 
 function americanToDecimal(a){
   if(a==null||a==='') return null;
@@ -1103,14 +1095,14 @@ function runEdges(){
   if(sport!=='all') pool=pool.filter(l=>l.sport===sport);
   if(source!=='all') pool=pool.filter(l=>l.source===source);
   if(statType) pool=pool.filter(l=>(l.stat_type||'').toLowerCase()===statType.toLowerCase());
-  // odds-type include/exclude (goblin / demon / normal / boost)
+  // odds-type include/exclude (goblin / demon / normal)
   pool=pool.filter(l=>edgeTypes.has(l.odds_type||'standard'));
   // require a real sample for MLB model props (avoid tiny-sample noise)
   pool=pool.filter(l=>l.sport!=='MLB' || (l.model_n||0)>=10);
 
   let items=[];
   if(edgeMode==='ev'){
-    hint.textContent="Positive expected value: model prob × payout. Underdog/Kalshi use posted prices; PrizePicks standard picks use the 2-pick pick'em break-even (57.7%). Demon/goblin need a multiplier the feed omits.";
+    hint.textContent="Positive expected value: model prob × payout. Underdog uses posted prices; PrizePicks standard picks use the 2-pick pick'em break-even (57.7%). Demon/goblin need a multiplier the feed omits.";
     for(const l of pool){
       const ev=lineEV(l);
       if(!ev) continue;
@@ -1134,7 +1126,7 @@ function runEdges(){
   }
 
   if(!items.length){
-    document.getElementById('edge-list').innerHTML='<div class="no-data">No edges match these filters'+(edgeMode==='ev'?" (EV needs prices — Underdog/Kalshi or PrizePicks standard picks; demon/goblin have none. Try Proj Diff.)":'.')+'</div>';
+    document.getElementById('edge-list').innerHTML='<div class="no-data">No edges match these filters'+(edgeMode==='ev'?" (EV needs prices — Underdog or PrizePicks standard picks; demon/goblin have none. Try Proj Diff.)":'.')+'</div>';
     return;
   }
   items=items.slice(0,150);
@@ -1229,7 +1221,7 @@ function abVerdict(s){
              : `Enhanced is ${d.toFixed(1)} pts behind — the extra layer isn't earning its keep yet.`;
 }
 // ════════════ parlay builder ════════════
-// A real entry is ONE book + STANDARD picks only (goblins/demons/boosts have their
+// A real entry is ONE book + STANDARD picks only (goblins/demons have their
 // own payouts and can't be freely mixed). Payouts are the standard all-must-hit
 // multipliers per book (approx; they vary over time).
 const PAYOUTS_BY_BOOK = {
@@ -1239,7 +1231,7 @@ const PAYOUTS_BY_BOOK = {
 let parlayBook = 'prizepicks';
 const bookLabel = b => b==='prizepicks' ? 'PrizePicks' : 'Underdog';
 const parlayPayouts = () => PAYOUTS_BY_BOOK[parlayBook] || PAYOUTS_BY_BOOK.prizepicks;
-const isStd = l => l.odds_type==='standard' || !l.odds_type;   // no goblin/demon/boost
+const isStd = l => l.odds_type==='standard' || !l.odds_type;   // no goblin/demon
 let suggestSport = 'MLB';
 let parlaySlip = [];      // [{id, side}]  — all from the same book
 let parlayStake = 10;
@@ -1392,9 +1384,8 @@ function updateStake(v){
 }
 
 function buildStatFilter(){
-  // Kalshi markets carry odd/combo stat labels that clutter the dropdown — build
-  // the stat-type options from the DFS books (Underdog/PrizePicks) only.
-  const stats=[...new Set(allLines.filter(l=>l.source!=='kalshi').map(l=>l.stat_type).filter(Boolean))].sort();
+  // stat-type options from the DFS books (Underdog/PrizePicks).
+  const stats=[...new Set(allLines.map(l=>l.stat_type).filter(Boolean))].sort();
   for(const id of ['f-stat','e-stat']){
     const sel=document.getElementById(id), cur=sel.value;
     sel.innerHTML='<option value="">All Stats</option>'+stats.map(s=>`<option value="${esc(s)}" ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
@@ -1412,7 +1403,7 @@ function setStatus(state,msg,errors){
     const titles=Object.entries(errors).map(([k,v])=>`${k}: ${v}`).join('\n');
     const isMock='mock_fallback' in errors;
     const real=Object.keys(errors).filter(k=>k!=='mock_fallback');
-    const nice={prizepicks:'PrizePicks',underdog:'Underdog',kalshi:'Kalshi'};
+    const nice={prizepicks:'PrizePicks',underdog:'Underdog'};
     const names=real.map(k=>nice[k]||k).join(', ');
     // Name the offline source(s) directly; the full reason is in the hover tooltip.
     const label=isMock?'⚡ demo data':`⚠ ${names} degraded`;
@@ -1421,7 +1412,7 @@ function setStatus(state,msg,errors){
 }
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function cssId(s){return String(s).replace(/[^a-z0-9]/gi,'_');}
-function srcShort(s){return ({underdog:'UD',prizepicks:'PP',kalshi:'KAL'})[s]||s;}
+function srcShort(s){return ({underdog:'UD',prizepicks:'PP'})[s]||s;}
 function sportCls(s){return s==='MLB'?'MLB':s==='World Cup'?'WC':s==='Tennis'?'TN':s==='WNBA'?'WNBA':s==='NBA Summer League'?'SL':'other';}
 const ISO3={PRT:'Portugal',DEU:'Germany',GBR:'England',NLD:'Netherlands',HRV:'Croatia',URY:'Uruguay',CHE:'Switzerland',DNK:'Denmark',ESP:'Spain',FRA:'France',ARG:'Argentina',BRA:'Brazil',ENG:'England',ITA:'Italy',BEL:'Belgium',USA:'USA',MEX:'Mexico',COL:'Colombia',JPN:'Japan',KOR:'South Korea',MAR:'Morocco',SEN:'Senegal',POL:'Poland',AUS:'Australia',CAN:'Canada',GHA:'Ghana',ECU:'Ecuador',SRB:'Serbia',EGY:'Egypt',NGA:'Nigeria',CMR:'Cameroon',PRY:'Paraguay',PER:'Peru',CHL:'Chile',AUT:'Austria',TUR:'Turkey',NOR:'Norway',SWE:'Sweden'};
 function prettyCountry(c){if(!c)return '';const u=String(c).toUpperCase();return ISO3[u]||c;}

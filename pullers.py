@@ -1,18 +1,18 @@
 """
-pullers.py — Adapters for Kalshi, PrizePicks, and Underdog that normalize
+pullers.py — Adapters for PrizePicks and Underdog that normalize
 output into the unified Line schema served by the API.
 
 Unified Line schema:
 {
-  "id":            str,          # unique key: "ud_{over_under_id}", "pp_{id}", "kalshi_{ticker}"
-  "source":        str,          # "underdog" | "prizepicks" | "kalshi"
+  "id":            str,          # unique key: "ud_{over_under_id}", "pp_{id}"
+  "source":        str,          # "underdog" | "prizepicks"
   "sport":         str,          # "MLB" | "World Cup" | "other"
   "player":        str | None,
   "team":          str | None,
   "position":      str | None,
   "stat_type":     str | None,   # "Strikeouts", "Goals", etc.
   "line":          float | None, # the O/U number
-  "odds_type":     str | None,   # "standard"|"demon"|"goblin"|"prediction"|"boosted"
+  "odds_type":     str | None,   # "standard"|"demon"|"goblin"
   "matchup":       str | None,
   "start_time":    str | None,   # ISO8601
   "status":        str | None,
@@ -46,15 +46,9 @@ def _load_config() -> dict:
     except Exception:
         return {}
 # Local dev pulls the clients from the sibling betting_dashboard; a standalone deploy
-# has vendored copies (underdog.py/kalshi.py/mlb_model.py) alongside this file instead.
+# has vendored copies (underdog.py/mlb_model.py) alongside this file instead.
 if _BD.exists() and str(_BD) not in sys.path:
     sys.path.insert(0, str(_BD))
-
-try:
-    from kalshi import Kalshi, KalshiMarket
-    _KALSHI_OK = True
-except ImportError:
-    _KALSHI_OK = False
 
 # PrizePicks now reads straight from the partner API (see fetch_prizepicks) — no
 # library, no cookie. The old `prizepicks` client is intentionally not imported.
@@ -67,15 +61,6 @@ except ImportError:
 
 
 # ─────────────────────────────────── sport detection helpers ─────────────────
-
-_MLB_RE = re.compile(
-    r"\bMLB\b|baseball|home\s+run|strikeout|earned\s+run|batting|pitcher|hitter|runs?\s+scored",
-    re.I,
-)
-_WC_RE = re.compile(
-    r"\bsoccer\b|FIFA|World\s+Cup|WCUP|Copa|EURO|\bgoal\b|\bshots?\s+on\s+target\b",
-    re.I,
-)
 
 _UD_SPORT_MAP: dict[str, str] = {
     "MLB": "MLB",
@@ -104,15 +89,6 @@ def _tennis_opp(p) -> str | None:
     title = ((getattr(p, "raw", {}) or {}).get("over_under") or {}).get("title", "") or getattr(p, "player_name", "") or ""
     m = re.search(r"\(vs\.?\s+(.+?)\)\s*$", title)
     return m.group(1).strip() if m else None
-
-
-def _sport_from_text(*texts: str | None) -> str:
-    combined = " ".join(t for t in texts if t)
-    if _MLB_RE.search(combined):
-        return "MLB"
-    if _WC_RE.search(combined):
-        return "World Cup"
-    return "other"
 
 
 def _sport_from_pp_league(league: str | None) -> str:
@@ -173,6 +149,12 @@ def _ud_dedup(props: list["UnderdogProp"]) -> list[dict[str, Any]]:
     groups: dict[str, dict[str, Any]] = {}
 
     for p in props:
+        # Boosted picks (payout multiplier != 1.0) are Underdog's alt-line / promo
+        # variants — excluded entirely (the app tracks standard lines only). This also
+        # fixes an old grouping artifact where a boosted choice seen first would shadow
+        # the real standard line for that prop.
+        if p.is_boosted:
+            continue
         # Clean player name: strip trailing " O/U"
         raw_name = p.player_name or ""
         player = re.sub(r'\s+O/U\s*$', '', raw_name).strip()
@@ -198,7 +180,7 @@ def _ud_dedup(props: list["UnderdogProp"]) -> list[dict[str, Any]]:
                 "position": p.position,
                 "stat_type": stat,
                 "line": p.line,
-                "odds_type": "boosted" if p.is_boosted else "standard",
+                "odds_type": "standard",   # boosted picks are filtered out above
                 "matchup": _tennis_opp(p) if sport == "Tennis" else None,
                 "start_time": None,
                 "status": p.status,
@@ -244,57 +226,6 @@ def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | N
                     if _UD_SPORT_MAP.get(p.sport or "", "other") in wanted]
 
         lines = _ud_dedup(filtered)
-        return lines, None
-    except Exception as exc:
-        return [], str(exc)
-
-
-# ───────────────────────────────────────────────── Kalshi adapter ─────────────
-
-def _kalshi_line(m: "KalshiMarket") -> dict[str, Any]:
-    yes_prob = m.implied_prob
-    no_prob  = round(1 - yes_prob, 4) if yes_prob is not None else None
-    sport    = _sport_from_text(m.ticker, m.title, m.subtitle)
-    return {
-        "id": f"kalshi_{m.ticker}",
-        "source": "kalshi",
-        "sport": sport,
-        "player": None,
-        "team": None,
-        "position": None,
-        "stat_type": m.subtitle or m.title,
-        "line": None,
-        "odds_type": "prediction",
-        "matchup": m.title,
-        "start_time": m.close_time,
-        "status": m.status,
-        "over_implied": yes_prob,
-        "under_implied": no_prob,
-        "over_price": None,
-        "under_price": None,
-        "meta": {
-            "ticker": m.ticker,
-            "event_ticker": m.event_ticker,
-            "yes_bid": m.yes_bid,
-            "yes_ask": m.yes_ask,
-            "volume": m.volume,
-            "volume_24h": m.volume_24h,
-            "open_interest": m.open_interest,
-        },
-    }
-
-
-def fetch_kalshi(sport_filter: str | None = None) -> tuple[list[dict], str | None]:
-    if not _KALSHI_OK:
-        return [], "kalshi module not available"
-    try:
-        k = Kalshi()
-        markets = k.get_markets(status="open", limit=2000)
-        lines = [_kalshi_line(m) for m in markets]
-        if sport_filter and sport_filter != "all":
-            lines = [l for l in lines if l["sport"].lower() == sport_filter.lower()]
-        else:
-            lines = [l for l in lines if l["sport"] in ("MLB", "World Cup")]
         return lines, None
     except Exception as exc:
         return [], str(exc)
@@ -479,6 +410,4 @@ def mock_lines() -> list[dict]:
         {**_base, "id":"pp_mock_3","source":"prizepicks","sport":"MLB","player":"Corbin Carroll","team":"ARI","stat_type":"Stolen Bases","line":0.5,"odds_type":"demon","meta":{}},
         {**_base, "id":"ud_mock_1","source":"underdog","sport":"MLB","player":"Paul Skenes","team":"PIT","stat_type":"Strikeouts","line":7.5,"odds_type":"standard","over_price":"-139","under_price":"+105","over_implied":0.582,"under_implied":0.488,"meta":{}},
         {**_base, "id":"ud_mock_2","source":"underdog","sport":"World Cup","player":"Kylian Mbappé","team":"FRA","stat_type":"Shots On Target","line":1.5,"odds_type":"standard","over_price":"-110","under_price":"-110","over_implied":0.524,"under_implied":0.524,"meta":{}},
-        {**_base, "id":"kalshi_mock_1","source":"kalshi","sport":"MLB","player":None,"team":None,"stat_type":"NYY to win today","line":None,"odds_type":"prediction","over_implied":0.58,"under_implied":0.42,"meta":{"ticker":"KXMLB-25JUN-NYY","yes_bid":57,"yes_ask":59}},
-        {**_base, "id":"kalshi_mock_2","source":"kalshi","sport":"World Cup","player":None,"team":None,"stat_type":"France to win","line":None,"odds_type":"prediction","over_implied":0.49,"under_implied":0.51,"meta":{"ticker":"KXWC-FRA-ARG","yes_bid":48,"yes_ask":50}},
     ]

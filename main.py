@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 
 import db
 import analytics
-from pullers import fetch_kalshi, fetch_prizepicks, fetch_underdog, mock_lines
+from pullers import fetch_prizepicks, fetch_underdog, mock_lines
 
 FALLBACK_TO_MOCK = os.getenv("FALLBACK_TO_MOCK", "1").lower() not in ("0", "false", "no")
 
@@ -81,17 +81,12 @@ def refresh_lines(sport: str = "all") -> dict[str, Any]:
         errors["underdog"] = uerr
         log.warning("Underdog error: %s", uerr)
 
-    kalshi_lines, kerr = fetch_kalshi(sport_filter=sf)
-    if kerr:
-        errors["kalshi"] = kerr
-        log.warning("Kalshi error: %s", kerr)
-
     pp_lines, perr = fetch_prizepicks(sport_filter=sf)
     if perr:
         errors["prizepicks"] = perr
         log.warning("PrizePicks error: %s", perr)
 
-    lines = ud_lines + kalshi_lines + pp_lines
+    lines = ud_lines + pp_lines
     # If real sources came up completely empty, fall back to mock data so the
     # UI shows its full layout. Set FALLBACK_TO_MOCK=0 to disable.
     if not lines and FALLBACK_TO_MOCK:
@@ -125,7 +120,7 @@ async def _snapshot_loop() -> None:
     while True:
         try:
             log.info("Refreshing lines …")
-            # refresh_lines() does blocking HTTP (Underdog/PP/Kalshi/statsapi/ESPN);
+            # refresh_lines() does blocking HTTP (Underdog/PP/statsapi/ESPN);
             # always run it in a thread so it never freezes the event loop.
             data = await loop.run_in_executor(None, refresh_lines)
             if data["lines"]:
@@ -179,7 +174,7 @@ def root():
 @app.get("/api/lines")
 def api_lines(
     sport: str = Query("all", description="MLB | World Cup | all"),
-    source: str = Query("all", description="kalshi | prizepicks | all"),
+    source: str = Query("all", description="underdog | prizepicks | all"),
     stat_type: str = Query("", description="filter by stat type substring"),
     player: str = Query("", description="filter by player name substring"),
 ):
