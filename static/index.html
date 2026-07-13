@@ -518,7 +518,7 @@ async function fetchBoard(){
     }catch(e){}
     STATIC_MODE=true;
   }
-  const bust=Math.floor(Date.now()/300000);          // 5-min bucket (raw caches ~5 min)
+  const bust=Math.floor(Date.now()/60000);           // 1-min bucket → new data propagates within ~1-2 min (a refresh isn't stuck on a 5-min cached URL)
   const local=/^(localhost|127|0\.0\.0\.0|\[?::1)/.test(location.hostname)||location.protocol==='file:';
   if(!local){
     try{ const r=await fetch(BOARD_URL+'?t='+bust,{cache:'no-store'}); if(r.ok) return await r.json(); }catch(e){}
@@ -556,7 +556,7 @@ async function loadLines(force=false){
     delay=5000;
   }finally{
     document.getElementById('rf-ic').textContent='↺';
-    if(STATIC_MODE) delay=300000;   // static board.json updates every ~20 min — poll gently
+    if(STATIC_MODE) delay=150000;   // data branch refreshes ~every 5 min — re-poll every 2.5 min so an open page stays fresh
     _pollTimer=setTimeout(()=>loadLines(), delay);   // never stop fetching
   }
 }
