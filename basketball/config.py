@@ -50,8 +50,11 @@ CONFIG = {
             # lean on them: a player's real SL production drives the projection. Small
             # samples stay noisy (kept low confidence), but the projection is real, not a
             # line mirror. (Without a draft/college prior feed, heavy shrinkage just erased
-            # the only usable data.)
-            "shrink_poss": 70,
+            # the only usable data.) At 70 the slate skewed systematically UNDER — projections
+            # sat below both the market and the players' own SL averages (over-regression to a
+            # modest prior). 30 centers it on actual production (slate mean edge −0.65 → −0.3,
+            # under/over 59/30 → ~50/37) while keeping healthy regression on 2-game samples.
+            "shrink_poss": 30,
             # minutes: use the player's actual SL minutes (like WNBA); the draft-slot
             # baseline only applies to players with zero games so far.
             "minutes_shrink_games": 0,
