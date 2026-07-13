@@ -112,8 +112,12 @@ def _sport_from_pp_league(league: str | None) -> str:
         return "other"
     if l in _PP_LEAGUE_MLB or "mlb" in l or "baseball" in l:
         return "MLB"
-    if any(k in l for k in ("fifa", "world cup", "soccer", "copa", "euro")):
-        return "World Cup"
+    # ONLY the actual World Cup — not club soccer. PrizePicks' "SOCCER" league is club
+    # ball (friendlies / Leagues Cup / MLS), whose players aren't in the tournament
+    # (e.g. Santiago Rodriguez), so it must not land on the World Cup board. Exclude the
+    # 1st-half sub-league ("WORLD CUP 1H") too — the full-game model over-projects a half.
+    if "world cup" in l:
+        return "other" if any(t in l for t in _period) else "World Cup"
     return "other"
 
 

@@ -1210,6 +1210,19 @@ def _espn_gamelog(athlete_id: str) -> list[dict]:
 _ESPN_MIN_GAMES = 5
 _ESPN_WINDOW = 20  # most recent N games used for the projection
 
+# ESPN only exposes a CLUB gamelog for World Cup players (e.g. "2025-26 Serie A"), never a
+# World-Cup one, so `form` is club-league form. The World Cup is a lower-event, tougher
+# environment (better defenders, cagier knockout games, minutes spread across a deep squad),
+# so club rates systematically over-project WC output. Deflate the club-form component per
+# stat toward WC reality before blending with the market. This is a blanket bias correction
+# — it can't capture an individual's WC role (a fringe sub whose club form is high but who
+# barely features), which needs an actual WC box-score feed.
+_WC_FORM_DEFLATE = {
+    "shots": 0.72, "shots on target": 0.68, "goals": 0.60, "assists": 0.65,
+    "goals assists": 0.62, "goal + assist": 0.62, "goal assist": 0.62,
+    "fouls": 0.85, "fouls drawn": 0.85, "offsides": 0.80, "cards": 0.90,
+}
+
 
 def _attach_soccer_espn(lines: list[dict]) -> set:
     """
@@ -1278,6 +1291,7 @@ def _attach_soccer_espn(lines: list[dict]) -> set:
             continue
         vals = [fn(g) for g in games[-_ESPN_WINDOW:]]
         form = sum(vals) / len(vals)                 # raw club-form rate
+        form *= _WC_FORM_DEFLATE.get((l.get("stat_type") or "").strip().lower(), 0.75)  # club → WC
         n = len(vals)
         key = (mlb._norm_name(l["player"]), (l.get("stat_type") or "").strip().lower())
         anchor = market_anchor(key)
