@@ -166,6 +166,8 @@ input[type=text]{min-width:190px}
 .edge-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
 .edge-player{font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap}
 .edge-stat{color:var(--muted);font-size:12px;font-weight:500}
+.edge-team{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--muted2);background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;padding:1px 6px;vertical-align:middle}
+.edge-team img{width:13px;height:13px;border-radius:2px;object-fit:contain}
 .edge-side{font-size:10px;font-weight:800;padding:1px 7px;border-radius:5px;letter-spacing:.03em}
 .edge-side.over{background:rgba(155,232,20,.14);color:var(--green)}
 .edge-side.under{background:rgba(255,210,26,.16);color:var(--yellow)}
@@ -302,7 +304,7 @@ input[type=text]{min-width:190px}
   <div class="tab active" data-tab="board" onclick="switchTab('board')">Live Board</div>
   <div class="tab" data-tab="edges" onclick="switchTab('edges')">Edges</div>
   <div class="tab" data-tab="parlay" onclick="switchTab('parlay')">Parlay</div>
-  <div class="tab" data-tab="scorecard" onclick="switchTab('scorecard')">Scorecard</div>
+  <div class="tab" id="tab-btn-scorecard" data-tab="scorecard" onclick="switchTab('scorecard')" style="display:none">Scorecard</div>
 </div>
 
 <!-- ════════════ SCORECARD ════════════ -->
@@ -362,10 +364,12 @@ input[type=text]{min-width:190px}
           <button data-bk="prizepicks" class="active" onclick="setParlayBook('prizepicks')">PrizePicks</button>
           <button data-bk="underdog" onclick="setParlayBook('underdog')">Underdog</button>
         </div>
-        <div class="seg">
-          <button data-sp="MLB" class="active" onclick="setSuggestSport('MLB')">MLB</button>
-          <button data-sp="World Cup" onclick="setSuggestSport('World Cup')">World Cup</button>
-          <button data-sp="all" onclick="setSuggestSport('all')">All</button>
+        <div class="tchips" id="suggest-sports">
+          <button class="tchip on" data-sp="MLB" onclick="toggleSuggestSport('MLB')">MLB</button>
+          <button class="tchip on" data-sp="World Cup" onclick="toggleSuggestSport('World Cup')">World Cup</button>
+          <button class="tchip on" data-sp="Tennis" onclick="toggleSuggestSport('Tennis')">Tennis</button>
+          <button class="tchip on" data-sp="WNBA" onclick="toggleSuggestSport('WNBA')">WNBA</button>
+          <button class="tchip on" data-sp="NBA Summer League" onclick="toggleSuggestSport('NBA Summer League')">NBA SL</button>
         </div>
       </div>
     </div>
@@ -447,8 +451,14 @@ input[type=text]{min-width:190px}
       </div>
     </div>
     <div class="filter-group">
-      <label>Sport</label>
-      <select id="e-sport" onchange="runEdges()"><option value="all">All</option><option value="MLB">MLB</option><option value="World Cup">World Cup</option><option value="Tennis">Tennis</option><option value="WNBA">WNBA</option><option value="NBA Summer League">NBA Summer League</option></select>
+      <label>Sport (click to toggle)</label>
+      <div class="tchips" id="edge-sports">
+        <button class="tchip on" data-sport="MLB" onclick="toggleEdgeSport('MLB')">MLB</button>
+        <button class="tchip on" data-sport="World Cup" onclick="toggleEdgeSport('World Cup')">World Cup</button>
+        <button class="tchip on" data-sport="Tennis" onclick="toggleEdgeSport('Tennis')">Tennis</button>
+        <button class="tchip on" data-sport="WNBA" onclick="toggleEdgeSport('WNBA')">WNBA</button>
+        <button class="tchip on" data-sport="NBA Summer League" onclick="toggleEdgeSport('NBA Summer League')">NBA SL</button>
+      </div>
     </div>
     <div class="filter-group">
       <label>Book</label>
@@ -533,6 +543,10 @@ async function loadLines(force=false){
   try{
     const data = await fetchBoard();
     allLines = data.lines || [];
+    // Scorecard is a backend-only tool (it grades a live ledger) AND private — show its
+    // tab only when the live server is present (your local/private run), never on the
+    // public static snapshot. STATIC_MODE is set true by fetchBoard when /api/lines is absent.
+    document.getElementById('tab-btn-scorecard').style.display = STATIC_MODE ? 'none' : '';
     document.getElementById('last-updated').textContent = data.updated_at ? 'Updated '+fmtTime(data.updated_at) : '';
     const errs = data.errors||{};
     const realErrs = Object.keys(errs).filter(k=>k!=='mock_fallback');
@@ -1060,6 +1074,15 @@ function toggleEdgeType(t){
   document.querySelector(`#edge-types button[data-type="${t}"]`)?.classList.toggle('on');
   runEdges();
 }
+// which sports the Edges tab shows (all on by default). Toggling also rebuilds the stat
+// dropdown so you can't pick a stat from a sport you've turned off.
+const edgeSports=new Set(['MLB','World Cup','Tennis','WNBA','NBA Summer League']);
+function toggleEdgeSport(s){
+  if(edgeSports.has(s)) edgeSports.delete(s); else edgeSports.add(s);
+  document.querySelector(`#edge-sports button[data-sport="${s}"]`)?.classList.toggle('on');
+  buildEdgeStatFilter();
+  runEdges();
+}
 function oddsLabel(t){return ({standard:'Normal',goblin:'Goblin',demon:'Demon'})[t||'standard']||t;}
 
 function americanToDecimal(a){
@@ -1089,10 +1112,10 @@ function lineEV(l){
 }
 
 function runEdges(){
-  const sport=val('e-sport'), statType=val('e-stat'), side=val('e-side'), source=val('e-source');
+  const statType=val('e-stat'), side=val('e-side'), source=val('e-source');
   const hint=document.getElementById('edge-hint');
   let pool=allLines.filter(l=>l.model_proj!=null && l.line!=null);
-  if(sport!=='all') pool=pool.filter(l=>l.sport===sport);
+  pool=pool.filter(l=>edgeSports.has(l.sport));           // sport checkboxes
   if(source!=='all') pool=pool.filter(l=>l.source===source);
   if(statType) pool=pool.filter(l=>(l.stat_type||'').toLowerCase()===statType.toLowerCase());
   // odds-type include/exclude (goblin / demon / normal)
@@ -1134,6 +1157,15 @@ function runEdges(){
   document.getElementById('edge-list').innerHTML=items.map(i=>edgeCardHTML(i,maxM)).join('');
 }
 
+function edgeTeamTag(l){
+  // Tennis has no team — show the opponent instead. Otherwise show the club/country with
+  // its logo (MLB/WNBA/SL) or flag (World Cup) when we have one.
+  if(l.sport==='Tennis') return l.matchup?`<span class="edge-team">vs ${esc(l.matchup)}</span>`:'';
+  if(!l.team) return '';
+  const img=l.team_logo?`<img src="${esc(l.team_logo)}" onerror="this.style.display='none'">`:'';
+  const flag=(!l.team_logo && l.flag && l.flag.length<=4)?esc(l.flag)+' ':'';
+  return `<span class="edge-team">${img}${flag}${esc(l.team)}</span>`;
+}
 function edgeCardHTML(i,maxM){
   const l=i.l, pos=i.side==='Over';
   const pct=Math.min(100, i.metric/maxM*100);
@@ -1153,7 +1185,7 @@ function edgeCardHTML(i,maxM){
   }
   const ot=l.odds_type||'standard';
   const typeTag=`<span class="tag-dot ${ot}">${esc(oddsLabel(ot))}</span>`;
-  const head=`${esc(l.player||l.matchup||'')} ${sideTag} ${typeTag} <span class="edge-stat">${esc(l.stat_type||'')} · ${esc(l.sport)}</span>`;
+  const head=`${esc(l.player||l.matchup||'')} ${sideTag} ${typeTag} ${edgeTeamTag(l)} <span class="edge-stat">${esc(l.stat_type||'')} · ${esc(l.sport)}</span>`;
   return `<div class="edge-bar-wrap" onclick="openDrawer('${esc(l.id)}')">
     <div class="edge-bar-row"><div><span class="edge-player">${head}</span></div>
       <div class="edge-metric">${metricHTML}</div></div>
@@ -1177,6 +1209,15 @@ function switchTab(name){
 async function loadScorecard(){
   const el=document.getElementById('scorecard-body');
   el.innerHTML='<div class="loading-row"><span class="spinner"></span> Loading…</div>';
+  if(STATIC_MODE){
+    // The scorecard grades each line + our projection AFTER games settle, which needs the
+    // persistent ledger from the live server — the hosted static snapshot can't keep it.
+    el.innerHTML=`<div class="hit-card" style="padding:26px;text-align:center">
+      <div style="font-size:34px">📊</div>
+      <div style="font-weight:700;margin:8px 0">Scorecard runs on the live backend</div>
+      <div style="color:var(--muted);font-size:13px;max-width:470px;margin:0 auto;line-height:1.6">Grading logs every line + projection over time and settles them once games finish — that needs the persistent server (<code>python main.py</code>, or the full app deploy). The hosted static site doesn't keep that ledger, so there's nothing to grade here.</div></div>`;
+    return;
+  }
   let s;
   try{ s=await fetch(API_BASE+'/api/scorecard?sport=MLB').then(r=>r.json()); }
   catch(e){ el.innerHTML='<div class="loading-row">Could not load scorecard.</div>'; return; }
@@ -1232,7 +1273,7 @@ let parlayBook = 'prizepicks';
 const bookLabel = b => b==='prizepicks' ? 'PrizePicks' : 'Underdog';
 const parlayPayouts = () => PAYOUTS_BY_BOOK[parlayBook] || PAYOUTS_BY_BOOK.prizepicks;
 const isStd = l => l.odds_type==='standard' || !l.odds_type;   // no goblin/demon
-let suggestSport = 'MLB';
+const suggestSports = new Set(['MLB','World Cup','Tennis','WNBA','NBA Summer League']);
 let parlaySlip = [];      // [{id, side}]  — all from the same book
 let parlayStake = 10;
 
@@ -1245,10 +1286,10 @@ function legLean(l){
 // near-locks (>82%, usually a 0-event small sample like "Under 0.5 HR" on a
 // slap hitter — not a real edge). The custom builder lets you add anything.
 const SUGGEST_LO = 0.58, SUGGEST_HI = 0.88;
-function eligibleLegs(sport){
+function eligibleLegs(){
   let pool = allLines.filter(l=>l.model_prob!=null && l.line!=null && l.player && l.stat_type
-    && isStd(l) && l.source===parlayBook && (l.model_n==null || l.model_n>=10));
-  if(sport!=='all') pool = pool.filter(l=>l.sport===sport);
+    && isStd(l) && l.source===parlayBook && (l.model_n==null || l.model_n>=10)
+    && suggestSports.has(l.sport));
   const byPlayer = {};   // one leg per player (avoid stacking the same guy)
   for(const l of pool){
     const lean = legLean(l); if(!lean) continue;
@@ -1258,9 +1299,9 @@ function eligibleLegs(sport){
   }
   return Object.values(byPlayer).sort((a,b)=>b.prob-a.prob);
 }
-function setSuggestSport(s){
-  suggestSport=s;
-  document.querySelectorAll('#tab-parlay .seg button').forEach(b=>b.classList.toggle('active',b.dataset.sp===s));
+function toggleSuggestSport(s){
+  if(suggestSports.has(s)) suggestSports.delete(s); else suggestSports.add(s);
+  document.querySelector(`#suggest-sports button[data-sp="${s}"]`)?.classList.toggle('on');
   renderSuggestedParlays();
 }
 function setParlayBook(b){
@@ -1301,7 +1342,7 @@ function pickDiverseLegs(legs, n){
 }
 function renderSuggestedParlays(){
   const el=document.getElementById('parlay-suggested'); if(!el) return;
-  const legs=eligibleLegs(suggestSport);
+  const legs=eligibleLegs();
   if(legs.length<2){ el.innerHTML='<div class="muted-note">Not enough lines with projections for this sport yet.</div>'; return; }
   let html='';
   for(let n=2;n<=6;n++){
@@ -1384,12 +1425,21 @@ function updateStake(v){
 }
 
 function buildStatFilter(){
-  // stat-type options from the DFS books (Underdog/PrizePicks).
+  // Live Board stat filter: every stat type across the DFS books.
   const stats=[...new Set(allLines.map(l=>l.stat_type).filter(Boolean))].sort();
-  for(const id of ['f-stat','e-stat']){
-    const sel=document.getElementById(id), cur=sel.value;
-    sel.innerHTML='<option value="">All Stats</option>'+stats.map(s=>`<option value="${esc(s)}" ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
-  }
+  const sel=document.getElementById('f-stat'), cur=sel.value;
+  sel.innerHTML='<option value="">All Stats</option>'+stats.map(s=>`<option value="${esc(s)}" ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
+  buildEdgeStatFilter();
+}
+// Edges stat filter: only stat types from the sports currently checked, so you can't
+// select an MLB stat (etc.) while MLB is toggled off.
+function buildEdgeStatFilter(){
+  const sel=document.getElementById('e-stat'); if(!sel) return;
+  const stats=[...new Set(allLines.filter(l=>edgeSports.has(l.sport)).map(l=>l.stat_type).filter(Boolean))].sort();
+  let cur=sel.value;
+  if(cur && !stats.some(s=>s.toLowerCase()===cur.toLowerCase())) cur='';   // stat's sport was turned off → reset
+  sel.innerHTML='<option value="">All Stats</option>'+stats.map(s=>`<option value="${esc(s)}" ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
+  sel.value=cur;
 }
 function clearFilters(){ ['f-sport','f-source','f-stat'].forEach(i=>document.getElementById(i).value=i==='f-sport'||i==='f-source'?'all':''); document.getElementById('f-player').value=''; applyFilters(); }
 
