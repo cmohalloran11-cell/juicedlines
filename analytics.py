@@ -1297,6 +1297,17 @@ def _attach_soccer_projections(lines: list[dict]) -> None:
     _attach_soccer_market(lines, skip=espn_done)
 
 
+# Partial-game props (tagged "(1H)"/"(2H)"/"(1Q)"/"(Half)" by the puller) describe a
+# period, not the full game — we only model full games, so they must NOT get a
+# projection, or the consensus fallback would price them and they'd resurface as phantom
+# edges. Basketball already skips them via _resolve_market; this guards soccer.
+_PARTIAL_STAT_RE = re.compile(r"\((?:1h|2h|[1-4][hqp]|ot|half|partial)\)", re.I)
+
+
+def _is_partial_stat(stat_type: str | None) -> bool:
+    return bool(_PARTIAL_STAT_RE.search(stat_type or ""))
+
+
 def _attach_soccer_market(lines: list[dict], skip: set | None = None) -> None:
     """Poisson-from-price / consensus fallback for lines ESPN didn't cover."""
     skip = skip or set()
@@ -1326,7 +1337,7 @@ def _attach_soccer_market(lines: list[dict], skip: set | None = None) -> None:
 
     for l in lines:
         if (l.get("sport") != "World Cup" or l.get("line") is None or not l.get("player")
-                or l["id"] in skip):
+                or l["id"] in skip or _is_partial_stat(l.get("stat_type"))):
             continue
         key = (l["player"].strip().lower(), (l.get("stat_type") or "").strip().lower())
         pk = proj.get(key)

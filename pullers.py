@@ -358,6 +358,27 @@ def _pp_get(s: requests.Session, url: str, params: dict | None = None,
     return r
 
 
+# PrizePicks posts partial-game props (1st half / quarter) with the SAME full-game
+# stat_type (e.g. "Shots") but event_type "*_with_duration" and a period in the
+# description ("Spain 1H", "LAC 2nd Half"). Left untouched they collide with the
+# full-game line — a "Shots" line at ~half value — and wrongly inherit the full-game
+# projection, creating phantom edges (a 4.5-shots player showing a "94% over" on a 2
+# line). Tag the period into the stat_type so the line is DISTINCT from the full-game
+# prop AND the projection engines' period guards ("1h"/"2h"/"1q"/"half") skip it.
+_PP_PERIOD_RE = re.compile(r"\b(1st half|2nd half|first half|second half|[1-4][HQP]|OT)\b", re.I)
+_PP_PERIOD_NORM = {"1STHALF": "1H", "2NDHALF": "2H", "FIRSTHALF": "1H", "SECONDHALF": "2H"}
+
+
+def _pp_period_tag(description: str | None) -> str:
+    """Compact period label from a PrizePicks description, e.g. 'Spain 1H' → '1H'.
+    Falls back to 'Half' (a guard-recognized token) when the period can't be parsed."""
+    m = _PP_PERIOD_RE.search(description or "")
+    if not m:
+        return "Half"
+    t = m.group(1).upper().replace(" ", "")
+    return _PP_PERIOD_NORM.get(t, t)
+
+
 def _pp_line(proj: dict, idx: dict) -> dict[str, Any]:
     """Map one JSON:API projection (+ the payload's `included` index) to a Line."""
     attr = proj.get("attributes", {}) or {}
@@ -372,6 +393,12 @@ def _pp_line(proj: dict, idx: dict) -> dict[str, Any]:
     lg = resolve("league")
     league_name = (lg.get("attributes", {}) or {}).get("name") or pa.get("league")
     sport = _sport_from_pp_league(league_name)
+
+    # tag partial-game props so they don't masquerade as (or collide with) full-game lines
+    stat = attr.get("stat_type")
+    if "with_duration" in (attr.get("event_type") or "") and stat:
+        stat = f"{stat} ({_pp_period_tag(attr.get('description'))})"
+
     return {
         "id": f"pp_{proj.get('id')}",
         "source": "prizepicks",
@@ -379,7 +406,7 @@ def _pp_line(proj: dict, idx: dict) -> dict[str, Any]:
         "player": pa.get("display_name") or pa.get("name"),
         "team": pa.get("team"),
         "position": pa.get("position"),
-        "stat_type": attr.get("stat_type"),
+        "stat_type": stat,
         "line": attr.get("line_score"),
         "odds_type": attr.get("odds_type") or "standard",
         "matchup": attr.get("description"),   # for tennis this is the opponent name
