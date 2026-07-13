@@ -921,6 +921,16 @@ def _stat_corrections() -> dict:
     return _cached("stat_corrections", 3600, produce)
 
 
+def _is_allstar_mlb(l: dict) -> bool:
+    """MLB All-Star props use league 'teams' (AL / NL), never a real club. The game is an
+    exhibition — hitters get ~2-3 PA and pitchers ~1-2 innings — so the full-game model
+    projects a normal start/lineup and posts absurd edges against the (low) All-Star lines
+    (e.g. Pitches Thrown proj 104 vs a 14.5 line). We can't model who plays or for how long,
+    so these get NO projection (defer to the market line the book already set for it)."""
+    return (l.get("sport") == "MLB"
+            and (l.get("team") or "").strip().upper() in {"AL", "NL"})
+
+
 def attach_projections(lines: list[dict]) -> None:
     """
     Attach `model_proj` + `model_edge` (+ `proj_kind`) to every line so the board
@@ -928,6 +938,8 @@ def attach_projections(lines: list[dict]) -> None:
       • MLB  → empirical recent-game average for the prop's stat ("model").
       • World Cup → cross-book consensus of the posted lines ("consensus"),
         since there is no free soccer game-log feed.
+    MLB All-Star props (AL/NL teams) are skipped — an exhibition with unknown playing
+    time can't be projected from full-game logs (see _is_allstar_mlb).
     """
     if _MLB_OK:
         resolved: dict[str, tuple] = {}
@@ -935,6 +947,8 @@ def attach_projections(lines: list[dict]) -> None:
         hitter_names: list[str] = []
         for l in lines:
             if l.get("sport") != "MLB" or not l.get("player") or l.get("line") is None:
+                continue
+            if _is_allstar_mlb(l):          # exhibition — no full-game projection
                 continue
             stat = l.get("stat_type") or ""
             pp = _prop_is_pitcher(stat)
