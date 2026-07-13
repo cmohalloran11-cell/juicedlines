@@ -9,8 +9,8 @@ Two ways to put it online. Pick based on whether you want it **free** or **fully
 Serves a **prebuilt snapshot** as static files. A GitHub Action (`refresh.yml`) runs the
 model every ~5 min and force-pushes `board.json` to the **`data`** branch, which the page
 reads **straight from GitHub raw** (updates instantly, no host redeploy). The page itself
-(`index.html`) is published to the **`deploy`** branch only when the code changes, so the
-host redeploys rarely. No server, no card.
+(`static/index.html`) is served by Vercel **straight from `main`** and only redeploys
+when the code actually changes. No server, no card.
 
 Why this shape: it dodges two free-tier ceilings — GitHub Actions minutes (unlimited on a
 **public** repo) and the host's deploy cap (Vercel ~100/day; we avoid it by not
@@ -27,7 +27,7 @@ continuous updates are Option B.)
    `config.example.json` is only a placeholder.
 2. Enable write for the Action: **Settings → Actions → General → Workflow permissions →
    Read and write**. Then let the workflow run once (**Actions → refresh board → Run
-   workflow**) — it creates the `data` and `deploy` branches.
+   workflow**) — it creates the `data` branch.
 3. Host it on **Vercel** — Production Branch = `main`, **Root Directory = `static`**:
    - **Settings → Build and Deployment → Root Directory → `static`** → Framework Preset
      **Other**, Build Command empty → Redeploy. Vercel serves `main/static/index.html` as
@@ -37,9 +37,6 @@ continuous updates are Option B.)
      root, so leaving Root Directory blank serves the root and **404s** (`NOT_FOUND`).
    - **Cloudflare Pages:** Production branch **`main`**, build output directory **`static`**,
      no build command.
-   - (The Action also publishes a `deploy` branch with `index.html` at its root — that's an
-     alternative you'd host with a blank Root Directory. Unused when you serve `main` +
-     Root Directory `static` as above; pick one, don't mix.)
 4. Open the URL. The board self-updates every ~5 min from the `data` branch via raw — the
    host never has to redeploy for a data change.
 
