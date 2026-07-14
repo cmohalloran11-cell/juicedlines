@@ -16,6 +16,8 @@ tennis/data/cache/
 
 # static build artifact (the GitHub Action rebuilds it and pushes it to the deploy branch)
 static/board.json
+static/board.free.json
+static/board.premium.json
 
 # python
 __pycache__/

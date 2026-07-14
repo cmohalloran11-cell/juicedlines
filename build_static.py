@@ -19,9 +19,13 @@ from pathlib import Path
 import pullers
 import analytics
 
+# Full board (with projections/edges). Keeps the name `board.json` so nothing breaks today;
+# it is the PREMIUM payload and Phase 3 routes it through the auth gate instead of the public
+# data branch. `board.free.json` is the free tier — live lines only, safe to serve publicly.
 OUT = Path(__file__).parent / "static" / "board.json"
+OUT_FREE = Path(__file__).parent / "static" / "board.free.json"
 
-# Fields the frontend actually uses (keeps board.json small vs dumping every field).
+# Fields the frontend actually uses (keeps the file small vs dumping every field).
 _KEEP = (
     "id", "source", "sport", "player", "team", "position", "stat_type", "line",
     "odds_type", "matchup", "start_time", "status",
@@ -30,6 +34,16 @@ _KEEP = (
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
     "bball_confidence", "tennis_confidence",
 )
+
+# The paywall: everything a projection produces is PREMIUM. Stripping these leaves the free
+# tier with the live lines only (player/team/stat/line) — a taste, no edges. The free file
+# is safe to serve publicly; the premium file must only ever reach authenticated payers
+# (Phase 3 routes it through the auth gate instead of the public data branch).
+_PREMIUM_FIELDS = frozenset({
+    "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
+    "bball_confidence", "tennis_confidence", "model_floor", "model_ceiling",
+    "model_proj_b", "model_prob_b",
+})
 
 
 def _num(o):
@@ -61,19 +75,25 @@ def main() -> None:
         errors["projections"] = str(exc)
 
     slim = [{k: l[k] for k in _KEEP if l.get(k) is not None} for l in lines]
-    payload = {
-        "lines": slim,
-        "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "errors": errors,
-        "static": True,
-    }
+    updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    def _payload(rows, tier):
+        return {"lines": rows, "updated_at": updated, "errors": errors,
+                "static": True, "tier": tier}
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(payload, separators=(",", ":"), default=_num), encoding="utf-8")
+    # premium: the full board (with projections/edges) — auth-gated in production
+    OUT.write_text(json.dumps(_payload(slim, "premium"), separators=(",", ":"), default=_num),
+                   encoding="utf-8")
+    # free: strip every projection-derived field → live lines only, safe to serve publicly
+    free = [{k: v for k, v in row.items() if k not in _PREMIUM_FIELDS} for row in slim]
+    OUT_FREE.write_text(json.dumps(_payload(free, "free"), separators=(",", ":"), default=_num),
+                        encoding="utf-8")
 
     from collections import Counter
     by = Counter(l["sport"] for l in slim)
-    mb = OUT.stat().st_size / 1e6
-    print(f"wrote {OUT.name}: {len(slim)} lines, {mb:.1f} MB, {time.time()-t0:.0f}s")
+    print(f"wrote {OUT.name}: {len(slim)} lines, {OUT.stat().st_size/1e6:.1f} MB "
+          f"| {OUT_FREE.name}: {OUT_FREE.stat().st_size/1e6:.1f} MB (lines only) | {time.time()-t0:.0f}s")
     print(f"  by sport: {dict(by)}  errors: {list(errors)}")
 
 

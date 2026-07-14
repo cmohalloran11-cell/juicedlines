@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Juiced — Bet Smart. Stay Juiced. Cash Out.</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23080b05'/%3E%3Cpath d='M58 8 L24 54 H46 L40 92 L78 40 H54 Z' fill='%23b6f01a'/%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:        #060803;
+  --bg2:       #0a0e06;
+  --surface:   #0e1308;
+  --card:      #151b0d;
+  --card2:     #1d2613;
+  --border:    #2b3520;
+  --border2:   #3c4a27;
+  --accent:    #b6f01a;   /* electric lime — brand */
+  --accent2:   #dcff5c;   /* bright lime highlight */
+  --green:     #9be814;   /* positive / over / live */
+  --green2:    #6db800;
+  --red:       #ff4d5f;   /* negative / under */
+  --yellow:    #ffd21a;   /* prizepicks accent */
+  --orange:    #ff9a2e;   /* prices / underdog */
+  --teal:      #2ee6c0;   /* world cup accent */
+  --text:      #eafce0;
+  --muted:     #8b9b72;
+  --muted2:    #5d6b46;
+  --font:      'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+  --mono:      'SF Mono','Roboto Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:radial-gradient(1100px 560px at 70% -12%,#1a2e05 0%,var(--bg) 55%);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:6px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ───────── top bar ───────── */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;padding:12px 22px;background:rgba(8,11,5,.85);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+.logo{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:900;letter-spacing:.5px;font-style:italic;color:#fff}
+.logo-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--green2));display:flex;align-items:center;justify-content:center;font-size:17px;color:#0a0e06;box-shadow:0 0 16px rgba(182,240,26,.55);font-style:normal}
+.logo span{background:linear-gradient(90deg,var(--accent2),var(--accent));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 0 22px rgba(182,240,26,.45)}
+.logo .tag{font-size:9px;font-style:normal;font-weight:700;letter-spacing:.12em;color:var(--muted);align-self:center}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted2);flex-shrink:0;transition:.3s}
+.status-dot.live{background:var(--green);box-shadow:0 0 0 3px rgba(155,232,20,.22)}
+.status-dot.error{background:var(--red);box-shadow:0 0 0 3px rgba(255,77,95,.18)}
+#status-text{font-size:12px;color:var(--muted);white-space:nowrap}
+.err-badge{display:inline-block;background:rgba(255,77,95,.12);color:var(--red);border:1px solid rgba(255,77,95,.35);border-radius:5px;font-size:11px;padding:2px 8px;cursor:default;white-space:nowrap}
+.spacer{flex:1}
+#last-updated{font-size:11px;color:var(--muted2);white-space:nowrap}
+.refresh-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border2);background:var(--card);color:var(--text);cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
+.refresh-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--card2)}
+
+/* ───────── tabs ───────── */
+.tabs{display:flex;gap:4px;padding:12px 22px 0;background:transparent}
+.tab{padding:9px 18px;cursor:pointer;border-radius:9px 9px 0 0;color:var(--muted);font-size:13px;font-weight:600;transition:.15s;position:relative}
+.tab:hover{color:var(--text)}
+.tab.active{color:#fff;background:var(--surface)}
+.tab.active::after{content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px}
+
+.content{padding:18px 22px 60px;max-width:1480px;margin:0 auto}
+
+/* ───────── filters ───────── */
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+.filter-group{display:flex;flex-direction:column;gap:4px;min-width:0}
+.filter-group label{font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+select,input[type=text],input[type=number]{background:var(--card);border:1px solid var(--border2);color:var(--text);padding:8px 11px;border-radius:8px;font-size:13px;outline:none;transition:.15s;max-width:100%}
+select{max-width:220px}
+#f-stat,#e-stat{max-width:200px}
+select:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(182,240,26,.18)}
+input[type=text]{min-width:190px}
+.search-wrap{flex:1;min-width:190px}
+.search-wrap input{width:100%}
+.clear-btn{align-self:flex-end;font-size:12px;color:var(--muted);cursor:pointer;padding:8px 6px;font-weight:600}
+.clear-btn:hover{color:var(--accent)}
+.seg{display:flex;background:var(--card);border:1px solid var(--border2);border-radius:8px;overflow:hidden}
+.seg button{background:none;border:none;color:var(--muted);padding:8px 12px;cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
+.seg button.on{background:var(--accent);color:#fff}
+
+/* ───────── stat chips ───────── */
+.stats-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.stat-chip{flex:1;min-width:96px;background:linear-gradient(160deg,var(--card),var(--surface));border:1px solid var(--border);border-radius:12px;padding:11px 15px;position:relative;overflow:hidden}
+.stat-chip .num{font-size:23px;font-weight:800;letter-spacing:-.5px}
+.stat-chip .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;font-weight:600}
+.stat-chip.accent .num{color:var(--accent)}
+.stat-chip.green .num{color:var(--green)}
+.stat-chip.orange .num{color:var(--orange)}
+.stat-chip.teal .num{color:var(--teal)}
+.stat-chip.gold .num{color:var(--yellow)}
+
+/* ───────── grouped board ───────── */
+.board{display:flex;flex-direction:column;gap:8px}
+.pgroup{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden;transition:.15s}
+.pgroup.open{border-color:var(--border2);box-shadow:0 8px 30px rgba(0,0,0,.28)}
+.ghead{display:flex;align-items:center;gap:13px;padding:11px 15px;cursor:pointer;user-select:none;transition:.12s}
+.ghead:hover{background:var(--card)}
+.avatar{width:42px;height:42px;border-radius:10px;background:var(--card2);object-fit:cover;flex-shrink:0;border:1px solid var(--border2)}
+.avatar-fb{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--card2),var(--card));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:var(--muted);flex-shrink:0;border:1px solid var(--border2)}
+.avatar-flag{font-size:26px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:var(--card2);border-radius:10px;flex-shrink:0;border:1px solid var(--border2)}
+.gmain{flex:1;min-width:0}
+.gname{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.team-logo{width:18px;height:18px;object-fit:contain;vertical-align:middle}
+.gsub{font-size:12px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pos-badge{display:inline-block;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:700;background:var(--card2);color:var(--muted);border:1px solid var(--border2)}
+.pos-badge.P{background:rgba(46,230,192,.14);color:var(--teal);border-color:rgba(46,230,192,.3)}
+.gright{display:flex;align-items:center;gap:14px;flex-shrink:0}
+.src-dots{display:flex;gap:4px}
+.src-ic{width:18px;height:18px;border-radius:5px;object-fit:cover;background:var(--card2);border:1px solid var(--border2)}
+.gcount{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
+.gcount b{color:var(--text);font-size:15px}
+.chev{color:var(--muted2);transition:transform .2s;font-size:13px}
+.pgroup.open .chev{transform:rotate(90deg);color:var(--accent)}
+.sport-pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:10px;font-weight:700;letter-spacing:.02em}
+.sport-pill.MLB{background:rgba(155,232,20,.14);color:var(--green)}
+.sport-pill.WC{background:rgba(46,230,192,.14);color:var(--teal)}
+.sport-pill.TN{background:rgba(255,210,26,.14);color:var(--yellow)}
+.sport-pill.WNBA{background:rgba(255,154,46,.16);color:var(--orange)}
+.sport-pill.SL{background:rgba(255,120,80,.16);color:#ff7d55}
+.sport-pill.other{background:var(--card2);color:var(--muted)}
+
+/* group rows */
+.grows{display:none;border-top:1px solid var(--border);background:var(--bg2)}
+.pgroup.open .grows{display:block}
+.lrow-head{display:grid;grid-template-columns:1fr 52px 96px 88px 26px;gap:10px;padding:6px 15px 6px 70px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2);font-weight:700;border-top:1px solid rgba(36,48,73,.5)}
+.lrow-head span{text-align:right}.lrow-head span:first-child{text-align:left}
+.lrow{display:grid;grid-template-columns:1fr 52px 96px 88px 26px;gap:10px;align-items:center;padding:9px 15px 9px 70px;border-top:1px solid rgba(36,48,73,.5);cursor:pointer;transition:.1s;font-size:13px}
+.lrow:first-child{border-top:none}
+.lrow:hover{background:var(--card)}
+.lstat{font-weight:600;display:flex;align-items:center;gap:7px;min-width:0}
+.lstat .src-tag{font-size:10px;padding:1px 6px;border-radius:4px;font-weight:700;flex-shrink:0}
+.src-tag.underdog{background:rgba(255,154,46,.14);color:var(--orange)}
+.src-tag.prizepicks{background:rgba(255,210,26,.16);color:var(--yellow)}
+.lstat-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lline{font-size:16px;font-weight:800;font-family:var(--mono);text-align:right}
+.lproj{text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;white-space:nowrap}
+.lproj .proj-num{color:var(--text)}
+.lproj .proj-edge{font-size:11px;font-weight:800;margin-left:3px}
+.lproj.pos .proj-edge{color:var(--green)}
+.lproj.neg .proj-edge{color:var(--red)}
+.lproj .dash{color:var(--muted2)}
+.lprices{text-align:right;font-family:var(--mono);font-size:12px;font-weight:600}
+.lprices .o{color:var(--orange)}.lprices .u{color:var(--muted)}
+.limplied{text-align:right;font-weight:700;font-size:13px}
+.ltype{text-align:center}
+.tag-dot{font-size:9px;padding:1px 5px;border-radius:4px;font-weight:700}
+.tag-dot.demon{background:rgba(255,77,95,.16);color:var(--red)}
+.tag-dot.goblin{background:rgba(155,232,20,.14);color:var(--green)}
+.tag-dot.prediction{background:rgba(46,230,192,.14);color:var(--teal)}
+.micro-icon{text-align:center;color:var(--muted2);font-size:14px}
+.micro-icon:hover{color:var(--accent)}
+
+.no-data{text-align:center;padding:54px;color:var(--muted)}
+.more-note{text-align:center;padding:14px;color:var(--muted2);font-size:12px}
+.loading-row{text-align:center;padding:46px;color:var(--muted)}
+
+/* ───────── edges ───────── */
+.edge-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.edge-header h3{font-size:16px;font-weight:700}
+.edge-hint{font-size:12px;color:var(--muted)}
+.proj-input-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+.proj-submit{padding:9px 20px;background:linear-gradient(135deg,var(--accent),var(--green2));color:#0a0e06;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:800;box-shadow:0 4px 16px rgba(182,240,26,.35)}
+.proj-submit:hover{filter:brightness(1.08)}
+.edge-bar-wrap{margin-bottom:9px;padding:12px 15px;background:var(--surface);border:1px solid var(--border);border-radius:11px;cursor:pointer;transition:.12s}
+.edge-bar-wrap:hover{border-color:var(--border2);background:var(--card)}
+.edge-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.edge-player{font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap}
+.edge-stat{color:var(--muted);font-size:12px;font-weight:500}
+.edge-team{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--muted2);background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;padding:1px 6px;vertical-align:middle}
+.edge-team img{width:13px;height:13px;border-radius:2px;object-fit:contain}
+.edge-side{font-size:10px;font-weight:800;padding:1px 7px;border-radius:5px;letter-spacing:.03em}
+.edge-side.over{background:rgba(155,232,20,.14);color:var(--green)}
+.edge-side.under{background:rgba(255,210,26,.16);color:var(--yellow)}
+.edge-metric{margin-left:auto;text-align:right;flex-shrink:0}
+.edge-metric-lbl{font-size:9px;color:var(--muted2);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:1px}
+.edge-sub{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.tchips{display:flex;gap:6px;flex-wrap:wrap}
+.tchip{font-size:11px;font-weight:700;padding:7px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--card);color:var(--muted);cursor:pointer;transition:.12s}
+.tchip:not(.on){opacity:.4;text-decoration:line-through}
+.tchip.on[data-type="standard"]{color:var(--teal);border-color:rgba(46,230,192,.45)}
+.tchip.on[data-type="goblin"]{color:var(--green);border-color:rgba(155,232,20,.45)}
+.tchip.on[data-type="demon"]{color:var(--red);border-color:rgba(255,77,95,.45)}
+.tag-dot.standard{background:rgba(46,230,192,.12);color:var(--teal)}
+.edge-bar-bg{height:6px;background:var(--card2);border-radius:5px;overflow:hidden;flex:1}
+.edge-bar-fill{height:100%;border-radius:5px;transition:width .3s}
+.edge-pos{background:linear-gradient(90deg,var(--green),var(--green2))}
+.edge-neg{background:linear-gradient(90deg,var(--red),#c92e3e)}
+.edge-pct{font-size:16px;font-weight:800;text-align:right;font-family:var(--mono);line-height:1}
+.edge-pct.pos{color:var(--green)}.edge-pct.neg{color:var(--red)}
+
+/* ───────── research drawer ───────── */
+.drawer-scrim{position:fixed;inset:0;background:rgba(3,6,14,.55);backdrop-filter:blur(2px);z-index:88;opacity:0;pointer-events:none;transition:.25s}
+.drawer-scrim.open{opacity:1;pointer-events:auto}
+.drawer{position:fixed;right:0;top:0;bottom:0;width:min(480px,100vw);background:var(--surface);border-left:1px solid var(--border2);z-index:90;transform:translateX(100%);transition:transform .28s cubic-bezier(.3,.8,.3,1);overflow-y:auto;box-shadow:-20px 0 60px rgba(0,0,0,.4)}
+.drawer.open{transform:translateX(0)}
+.drawer-close{position:absolute;top:16px;right:16px;background:var(--card);border:1px solid var(--border2);color:var(--muted);width:30px;height:30px;border-radius:8px;font-size:15px;cursor:pointer;z-index:3}
+.drawer-close:hover{color:var(--text);border-color:var(--accent)}
+.dr-hero{padding:22px 22px 18px;background:linear-gradient(160deg,var(--card2),var(--surface));border-bottom:1px solid var(--border)}
+.dr-hero-top{display:flex;align-items:center;gap:15px}
+.dr-avatar{width:64px;height:64px;border-radius:14px;object-fit:cover;border:2px solid var(--border2);background:var(--card)}
+.dr-avatar-flag{font-size:42px;width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--card);border-radius:14px;border:2px solid var(--border2)}
+.dr-name{font-size:20px;font-weight:800;letter-spacing:-.3px;line-height:1.15}
+.dr-meta{font-size:12px;color:var(--muted);margin-top:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dr-matchup{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:16px;padding:12px;background:rgba(7,11,22,.5);border-radius:11px;border:1px solid var(--border)}
+.dr-team{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:var(--muted);font-weight:600}
+.dr-team img{width:38px;height:38px;object-fit:contain}
+.dr-vs{font-size:12px;color:var(--muted2);font-weight:700}
+.dr-body{padding:18px 22px 40px}
+.dr-section{margin-bottom:22px}
+.dr-section h4{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:11px;font-weight:700;display:flex;align-items:center;gap:7px}
+.dr-section h4 .ic{font-size:13px}
+
+/* prop + hit-rate hero card */
+.hit-card{background:var(--card);border:1px solid var(--border2);border-radius:13px;padding:16px}
+.hit-top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
+.hit-prop{font-size:13px;color:var(--muted);font-weight:600}
+.hit-prop b{color:var(--text);font-size:15px}
+.hit-line-badge{font-family:var(--mono);font-size:13px;font-weight:800;padding:3px 10px;border-radius:7px;background:var(--card2);color:var(--text)}
+.hit-mid{display:flex;align-items:center;gap:18px;margin-bottom:14px}
+.hit-big{text-align:center;flex-shrink:0}
+.hit-big .pct{font-size:34px;font-weight:800;letter-spacing:-1px;line-height:1;font-family:var(--mono)}
+.hit-big .pct.hi{color:var(--green)}.hit-big .pct.lo{color:var(--red)}.hit-big .pct.mid{color:var(--yellow)}
+.hit-big .cap{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:4px;font-weight:600}
+.hit-spark{flex:1;min-width:0}
+.spark-legend{display:flex;justify-content:space-between;font-size:10px;color:var(--muted2);margin-top:5px}
+.hit-proj{display:flex;gap:9px;padding-top:13px;border-top:1px solid var(--border)}
+.proj-cell{flex:1;text-align:center;padding:8px;background:var(--bg2);border-radius:9px}
+.proj-cell .v{font-size:18px;font-weight:800;font-family:var(--mono)}
+.proj-cell .l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:3px;font-weight:600}
+.proj-cell.edge .v.pos{color:var(--green)}.proj-cell.edge .v.neg{color:var(--red)}
+
+/* split + grid */
+.split-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(58px,1fr));gap:7px}
+.split-cell{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 4px;text-align:center}
+.split-cell .v{font-size:16px;font-weight:800;font-family:var(--mono)}
+.split-cell .l{font-size:9px;color:var(--muted);text-transform:uppercase;margin-top:3px;font-weight:600;letter-spacing:.03em}
+.vs-tabs{display:flex;gap:6px;margin-bottom:10px}
+.vs-tab{font-size:11px;padding:4px 11px;border-radius:7px;background:var(--card);border:1px solid var(--border2);color:var(--muted);cursor:pointer;font-weight:600}
+.vs-tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.vs-empty{font-size:12px;color:var(--muted2);padding:8px 0}
+.bvp-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bvp-head .avatar{flex-shrink:0}
+.dr-facing{text-align:center;font-size:12px;color:var(--muted);margin-top:8px}
+.dr-facing b{color:var(--accent2)}
+
+/* recent table */
+.rtable{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono)}
+.rtable th{text-align:center;padding:6px 4px;font-size:9px;color:var(--muted2);text-transform:uppercase;letter-spacing:.04em;font-weight:700;border-bottom:1px solid var(--border2);font-family:var(--font)}
+.rtable th:first-child,.rtable td:first-child{text-align:left}
+.rtable td{padding:7px 4px;text-align:center;border-bottom:1px solid rgba(36,48,73,.4)}
+.rtable .dt{color:var(--muted)}
+.rtable .opp{color:var(--muted);font-size:11px}
+.rtable .hl{color:var(--accent);font-weight:800}
+.rtable tr:hover td{background:var(--card)}
+.rtable th.prop-cell,.rtable td.prop-cell{border-left:1px solid var(--border2);font-weight:800;white-space:nowrap}
+.rtable td.prop-cell.cleared{color:var(--green)}
+.rtable td.prop-cell.missed{color:var(--muted2)}
+
+.dr-chart-wrap{position:relative;height:170px;background:var(--card);border:1px solid var(--border);border-radius:11px;padding:10px}
+.dr-note{font-size:12px;color:var(--muted2);background:var(--card);border:1px dashed var(--border2);border-radius:9px;padding:11px;line-height:1.5}
+.dr-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:60px;color:var(--muted)}
+
+/* line-shopping mini table */
+.shop-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:8px 10px;border-radius:9px;background:var(--card);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
+.shop-row .ssrc{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:700}
+.shop-row .sline{font-family:var(--mono);font-weight:800;font-size:14px}
+.shop-row .sprice{font-family:var(--mono);color:var(--muted);font-size:11px}
+.best-line{box-shadow:0 0 0 1px var(--green);border-color:var(--green)}
+
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:680px){
+  .topbar{padding:10px 14px;gap:10px}
+  .logo .tag{display:none}                 /* decorative tagline — drop on mobile */
+  .tabs{flex-wrap:wrap;padding:10px 12px 0}
+  .tab{padding:8px 12px;font-size:12px}
+  #last-updated{display:none}
+  #status-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .content{padding:14px 12px 50px}
+  .lrow{grid-template-columns:1fr 66px 90px 30px;padding-left:15px}
+  .lrow .limplied{display:none}
+  .ghead{padding:10px 12px;gap:10px}
+  .gright{gap:9px}
+  .drawer{width:100vw}
+  .filters{padding:10px}
+  input[type=text]{min-width:140px}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="logo" href="./index.html" title="Home" style="text-decoration:none"><span class="logo-mark">⚡</span><span>JUICED</span><span class="tag">BET SMART · STAY JUICED · CASH OUT</span></a>
+  <div class="status-dot" id="dot"></div>
+  <div id="status-text">Loading…</div>
+  <div id="err-badge-wrap"></div>
+  <div class="spacer"></div>
+  <div id="last-updated"></div>
+  <button class="refresh-btn" onclick="loadLines(true)"><span id="rf-ic">↺</span> Refresh</button>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="board" onclick="switchTab('board')">Live Board</div>
+  <div class="tab" data-tab="edges" onclick="switchTab('edges')">Edges</div>
+  <div class="tab" data-tab="parlay" onclick="switchTab('parlay')">Parlay</div>
+  <div class="tab" id="tab-btn-scorecard" data-tab="scorecard" onclick="switchTab('scorecard')" style="display:none">Scorecard</div>
+</div>
+
+<!-- ════════════ SCORECARD ════════════ -->
+<div id="tab-scorecard" class="content" style="display:none">
+  <div style="max-width:760px;margin:0 auto">
+    <h3 style="margin:18px 0 4px">Model vs Market — Scorecard</h3>
+    <div style="color:var(--muted);font-size:13px;margin-bottom:16px;line-height:1.6">
+      Every prop's line + model projection is logged over time and graded after games settle.
+      This is the honest test of whether the projections actually beat the market — it accumulates
+      as games are played.
+    </div>
+    <div id="scorecard-body"><div class="loading-row"><span class="spinner"></span> Loading…</div></div>
+  </div>
+</div>
+
+<!-- ════════════ PARLAY ════════════ -->
+<div id="tab-parlay" class="content" style="display:none">
+<style>
+#tab-parlay h4{margin:18px 0 8px;font-size:15px}
+#tab-parlay .muted-note{color:var(--muted);font-size:12.5px;line-height:1.6;margin-bottom:10px}
+#tab-parlay .seg{display:inline-flex;border:1px solid rgba(182,240,26,.25);border-radius:8px;overflow:hidden}
+#tab-parlay .seg button{background:transparent;color:var(--muted);border:0;padding:5px 13px;font-size:12px;cursor:pointer}
+#tab-parlay .seg button.active{background:var(--accent);color:#0a120a;font-weight:700}
+.parlay-head-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.parlay-suggested{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:12px}
+.parlay-card{padding:13px}
+.parlay-card-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.parlay-card-top .addbtn{margin-left:auto;background:rgba(182,240,26,.12);color:var(--accent);border:1px solid rgba(182,240,26,.3);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer}
+.parlay-leg-row{display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 0;border-top:1px solid rgba(255,255,255,.06)}
+.parlay-leg-row span:first-child{flex:1}
+.pl-prob{color:var(--accent);font-weight:600}
+.parlay-leg-row .x{background:none;border:0;color:var(--red);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
+.parlay-card-foot,.parlay-sum-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.parlay-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+@media(max-width:720px){.parlay-grid{grid-template-columns:1fr}}
+#parlay-search{width:100%;padding:9px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);font-size:13px}
+.parlay-results{margin-top:8px;max-height:340px;overflow:auto}
+.parlay-result{display:flex;align-items:center;gap:6px;padding:6px 0;font-size:12px;border-top:1px solid rgba(255,255,255,.06)}
+.parlay-result .pr-name{flex:1}
+.parlay-result button{border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);padding:3px 8px;font-size:11px;cursor:pointer;white-space:nowrap}
+.parlay-result .ob:hover,.parlay-result .ob.on{border-color:var(--green);color:var(--green)}
+.parlay-result .ub:hover,.parlay-result .ub.on{border-color:var(--red);color:var(--red)}
+.parlay-slip{min-height:54px}
+.parlay-summary{margin-top:12px;padding:13px;border:1px solid rgba(182,240,26,.2);border-radius:10px;background:rgba(182,240,26,.04)}
+.parlay-stake-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:11px 0 4px;font-size:13px;flex-wrap:wrap}
+.parlay-stake-row input{width:88px;padding:5px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text)}
+.clearbtn{margin-top:10px;background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);border-radius:6px;padding:4px 11px;font-size:12px;cursor:pointer}
+</style>
+  <div style="max-width:900px;margin:0 auto">
+    <h3 style="margin:18px 0 4px">Parlay Builder</h3>
+    <div class="muted-note">One entry = <b>one book, standard picks only</b> — goblins/demons have their own payouts and can't be freely mixed. Each leg uses the model's P(over); the parlay chance multiplies the legs assuming they're <b>independent</b> (correlated legs deviate). MLB probabilities are calibrated; <b>World Cup legs run overconfident</b> — treat those with caution.</div>
+
+    <div class="parlay-head-row">
+      <h4 style="margin-bottom:0">⭐ Suggested Parlays</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="seg bookseg">
+          <button data-bk="prizepicks" class="active" onclick="setParlayBook('prizepicks')">PrizePicks</button>
+          <button data-bk="underdog" onclick="setParlayBook('underdog')">Underdog</button>
+        </div>
+        <div class="tchips" id="suggest-sports">
+          <button class="tchip on" data-sp="MLB" onclick="toggleSuggestSport('MLB')">MLB</button>
+          <button class="tchip on" data-sp="World Cup" onclick="toggleSuggestSport('World Cup')">World Cup</button>
+          <button class="tchip on" data-sp="Tennis" onclick="toggleSuggestSport('Tennis')">Tennis</button>
+          <button class="tchip on" data-sp="WNBA" onclick="toggleSuggestSport('WNBA')">WNBA</button>
+          <button class="tchip on" data-sp="NBA Summer League" onclick="toggleSuggestSport('NBA Summer League')">NBA SL</button>
+        </div>
+      </div>
+    </div>
+    <div style="color:var(--muted);font-size:12px;margin:4px 0 12px">The model's most-confident legs (one per player) stacked into 2–6 leg slips.</div>
+    <div id="parlay-suggested" class="parlay-suggested"></div>
+
+    <h4 style="margin-top:28px">🛠️ Build Your Own</h4>
+    <div class="parlay-grid">
+      <div>
+        <input id="parlay-search" placeholder="Search a player or stat to add legs…" oninput="searchParlayLines(this.value)">
+        <div id="parlay-search-results" class="parlay-results"></div>
+      </div>
+      <div>
+        <div id="parlay-slip" class="parlay-slip"></div>
+        <div id="parlay-summary" class="parlay-summary"><div class="muted-note" style="margin:0">Add at least 2 legs to see your chance, payout, and ROI.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ WC MODEL ════════════ -->
+<!-- ════════════ BOARD ════════════ -->
+<div id="tab-board" class="content">
+  <div class="filters">
+    <div class="filter-group">
+      <label>Sport</label>
+      <select id="f-sport" onchange="applyFilters()">
+        <option value="all">All Sports</option>
+        <option value="MLB">⚾ MLB</option>
+        <option value="World Cup">⚽ World Cup</option>
+        <option value="Tennis">🎾 Tennis</option>
+        <option value="WNBA">🏀 WNBA</option>
+        <option value="NBA Summer League">🏀 NBA Summer League</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Source</label>
+      <select id="f-source" onchange="applyFilters()">
+        <option value="all">All Books</option>
+        <option value="underdog">Underdog</option>
+        <option value="prizepicks">PrizePicks</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Stat Type</label>
+      <select id="f-stat" onchange="applyFilters()"><option value="">All Stats</option></select>
+    </div>
+    <div class="filter-group search-wrap">
+      <label>Search Player / Market</label>
+      <input type="text" id="f-player" placeholder="Type a name…" oninput="debouncedFilter()">
+    </div>
+    <div class="filter-group">
+      <label>Sort</label>
+      <div class="seg" id="sort-seg">
+        <button class="on" data-sort="props" onclick="setSort('props')">Most Props</button>
+        <button data-sort="name" onclick="setSort('name')">A–Z</button>
+      </div>
+    </div>
+    <span class="clear-btn" onclick="clearFilters()">✕ Clear</span>
+  </div>
+
+  <div class="stats-bar" id="stats-bar"></div>
+  <div class="board" id="board"><div class="loading-row"><span class="spinner"></span> Fetching lines…</div></div>
+  <div class="more-note" id="more-note"></div>
+</div>
+
+<!-- ════════════ EDGES ════════════ -->
+<div id="tab-edges" class="content" style="display:none">
+  <div class="edge-header">
+    <h3>Edges — model vs market</h3>
+    <div class="edge-hint" id="edge-hint">Top model edges across the slate.</div>
+  </div>
+  <div class="proj-input-row">
+    <div class="filter-group">
+      <label>Rank by</label>
+      <div class="seg" id="edge-mode">
+        <button class="on" data-mode="ev" onclick="setEdgeMode('ev')">Best EV</button>
+        <button data-mode="diff" onclick="setEdgeMode('diff')">Biggest Proj Diff</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label>Sport (click to toggle)</label>
+      <div class="tchips" id="edge-sports">
+        <button class="tchip on" data-sport="MLB" onclick="toggleEdgeSport('MLB')">MLB</button>
+        <button class="tchip on" data-sport="World Cup" onclick="toggleEdgeSport('World Cup')">World Cup</button>
+        <button class="tchip on" data-sport="Tennis" onclick="toggleEdgeSport('Tennis')">Tennis</button>
+        <button class="tchip on" data-sport="WNBA" onclick="toggleEdgeSport('WNBA')">WNBA</button>
+        <button class="tchip on" data-sport="NBA Summer League" onclick="toggleEdgeSport('NBA Summer League')">NBA SL</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label>Book</label>
+      <select id="e-source" onchange="runEdges()"><option value="all">All Books</option><option value="prizepicks">PrizePicks</option><option value="underdog">Underdog</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Stat Type</label>
+      <select id="e-stat" onchange="runEdges()"><option value="">All Stats</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Side</label>
+      <select id="e-side" onchange="runEdges()"><option value="both">Over &amp; Under</option><option value="over">Over only</option><option value="under">Under only</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Prop Type (click to exclude)</label>
+      <div class="tchips" id="edge-types">
+        <button class="tchip on" data-type="standard" onclick="toggleEdgeType('standard')">Normal</button>
+        <button class="tchip" data-type="goblin" onclick="toggleEdgeType('goblin')">Goblin</button>
+        <button class="tchip" data-type="demon" onclick="toggleEdgeType('demon')">Demon</button>
+      </div>
+    </div>
+  </div>
+  <div id="edge-list"></div>
+</div>
+
+<!-- ════════════ DRAWER ════════════ -->
+<div class="drawer-scrim" id="scrim" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  <div id="drawer-content"></div>
+</div>
+
+<script>
+// ════════════ state ════════════
+let allLines = [];
+let groups = [];
+let expanded = new Set();
+let sortMode = 'props';
+let drawerCharts = [];
+const RENDER_CAP = 150;
+// If this file is opened directly (file://) instead of being served by the
+// backend, relative /api calls have no server to hit → "Connecting to backend…".
+// Fall back to the local JUICED server so it works either way.
+const API_BASE = (location.protocol === 'http:' || location.protocol === 'https:') ? '' : 'http://localhost:8001';
+
+const SRC_FAVI = {
+  underdog:   'https://www.google.com/s2/favicons?domain=underdogfantasy.com&sz=64',
+  prizepicks: 'https://www.google.com/s2/favicons?domain=prizepicks.com&sz=64',
+};
+
+// ════════════ boot ════════════
+// Self-perpetuating poll: ALWAYS reschedules in finally, so a render error or a
+// backend blip can never stop the board from fetching. Re-renders only when the
+// data actually changed (updated_at) so it stays live without flickering.
+let _pollTimer=null, _lastUpdated=null, _rendered=false;
+const POLL_MS=25000;
+let STATIC_MODE=false;   // true when there's no live backend → serve the prebuilt board.json
+// In production the board comes from GitHub raw (the Action force-pushes it to the `data`
+// branch every ~5 min; raw updates instantly with no host redeploy, dodging Vercel's
+// ~100/day deploy cap). Local/dev falls back to the co-located ./board.json.
+const BOARD_URL='https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/board.json';
+async function fetchBoard(){
+  if(!STATIC_MODE){
+    try{
+      const r = await fetch(API_BASE+'/api/lines',{cache:'no-store'});
+      if(r.ok) return await r.json();
+    }catch(e){}
+    STATIC_MODE=true;
+  }
+  const bust=Math.floor(Date.now()/60000);           // 1-min bucket → new data propagates within ~1-2 min (a refresh isn't stuck on a 5-min cached URL)
+  const local=/^(localhost|127|0\.0\.0\.0|\[?::1)/.test(location.hostname)||location.protocol==='file:';
+  if(!local){
+    try{ const r=await fetch(BOARD_URL+'?t='+bust,{cache:'no-store'}); if(r.ok) return await r.json(); }catch(e){}
+  }
+  return await (await fetch('./board.json?t='+bust,{cache:'no-store'})).json();   // fallback
+}
+async function loadLines(force=false){
+  clearTimeout(_pollTimer);
+  if(force) document.getElementById('rf-ic').innerHTML='<span class="spinner"></span>';
+  if(!_rendered) setStatus('loading');
+  let delay=POLL_MS;
+  try{
+    const data = await fetchBoard();
+    allLines = data.lines || [];
+    // Scorecard is a backend-only tool (it grades a live ledger) AND private — show its
+    // tab only when the live server is present (your local/private run), never on the
+    // public static snapshot. STATIC_MODE is set true by fetchBoard when /api/lines is absent.
+    document.getElementById('tab-btn-scorecard').style.display = STATIC_MODE ? 'none' : '';
+    document.getElementById('last-updated').textContent = data.updated_at ? 'Updated '+fmtTime(data.updated_at) : '';
+    const errs = data.errors||{};
+    const realErrs = Object.keys(errs).filter(k=>k!=='mock_fallback');
+    const hasMock = 'mock_fallback' in errs;
+    if(allLines.length===0 && !realErrs.length){
+      setStatus('loading','Warming up — fetching lines…');
+      document.getElementById('board').innerHTML='<div class="loading-row"><span class="spinner"></span> Warming up — fetching the slate…</div>';
+      delay=3000;
+    }else{
+      setStatus((realErrs.length&&!hasMock)?'error':'live', `${allLines.length.toLocaleString()} lines`, errs);
+      if(force || !_rendered || data.updated_at!==_lastUpdated){
+        try{ buildStatFilter(); applyFilters(); _rendered=true; }
+        catch(err){ console.error('board render failed:', err); }
+      }
+      _lastUpdated=data.updated_at;
+    }
+  }catch(e){
+    // Backend blip (e.g. a restart) — keep the last-good board, retry soon.
+    setStatus('error', _rendered?'Reconnecting…':'Connecting…');
+    if(!_rendered) document.getElementById('board').innerHTML='<div class="loading-row"><span class="spinner"></span> Connecting to backend…</div>';
+    delay=5000;
+  }finally{
+    document.getElementById('rf-ic').textContent='↺';
+    if(STATIC_MODE) delay=150000;   // data branch refreshes ~every 5 min — re-poll every 2.5 min so an open page stays fresh
+    _pollTimer=setTimeout(()=>loadLines(), delay);   // never stop fetching
+  }
+}
+
+// ════════════ filter + group ════════════
+let _deb;
+function debouncedFilter(){ clearTimeout(_deb); _deb=setTimeout(applyFilters,180); }
+
+function applyFilters(){
+  const sport=val('f-sport'), source=val('f-source'), stat=val('f-stat'), q=val('f-player').toLowerCase().trim();
+  const filtered = allLines.filter(l=>{
+    if(sport!=='all' && l.sport!==sport) return false;
+    if(source!=='all' && l.source!==source) return false;
+    if(stat && !(l.stat_type||'').toLowerCase().includes(stat.toLowerCase())) return false;
+    if(q && !((l.player||l.matchup||'')+' '+(l.team||'')).toLowerCase().includes(q)) return false;
+    return true;
+  });
+  groups = groupLines(filtered);
+  renderStats(filtered);
+  renderBoard();
+}
+
+function groupLines(lines){
+  const map = new Map();
+  for(const l of lines){
+    // Group by MLB player id when known so same-name players (two Max Muncys)
+    // stay separate and the same player across books stays merged.
+    const key = l.mlb_id ? ('mlb|'+l.mlb_id)
+              : l.player ? (l.sport+'|'+l.player.toLowerCase())
+              : ('mkt|'+(l.matchup||l.stat_type||l.id));
+    let g = map.get(key);
+    if(!g){
+      g = { key, player:l.player, displayName:l.player||l.matchup||l.stat_type||'—',
+            sport:l.sport, team:l.team, teamLogo:l.team_logo, headshot:l.headshot,
+            pos:l.position, flag:l.flag, sources:new Set(), lines:[] };
+      map.set(key,g);
+    }
+    g.sources.add(l.source);
+    g.lines.push(l);
+    if(!g.headshot && l.headshot) g.headshot=l.headshot;
+    if(!g.teamLogo && l.team_logo) g.teamLogo=l.team_logo;
+    if(!g.team && l.team) g.team=l.team;
+    if(!g.pos && l.position) g.pos=l.position;
+    if(!g.flag && l.flag) g.flag=l.flag;
+  }
+  let arr=[...map.values()];
+  const sportRank={'MLB':0,'World Cup':1,'WNBA':2,'NBA Summer League':3,'Tennis':4,'other':5};
+  arr.sort((a,b)=>{
+    if(sortMode==='name') return a.displayName.localeCompare(b.displayName);
+    const sr=(sportRank[a.sport]??3)-(sportRank[b.sport]??3);
+    if(sr) return sr;
+    return b.lines.length-a.lines.length || a.displayName.localeCompare(b.displayName);
+  });
+  return arr;
+}
+
+function setSort(m){
+  sortMode=m;
+  document.querySelectorAll('#sort-seg button').forEach(b=>b.classList.toggle('on',b.dataset.sort===m));
+  applyFilters();
+}
+
+// ════════════ render board ════════════
+function renderBoard(){
+  const board=document.getElementById('board');
+  if(!groups.length){ board.innerHTML='<div class="no-data">No lines match your filters.</div>'; document.getElementById('more-note').textContent=''; return; }
+  const shown=groups.slice(0,RENDER_CAP);
+  board.innerHTML=shown.map(groupHTML).join('');
+  document.getElementById('more-note').textContent =
+    groups.length>RENDER_CAP ? `Showing ${RENDER_CAP} of ${groups.length.toLocaleString()} players — refine filters to narrow.` : '';
+}
+
+function avatarError(img){
+  const flag=img.dataset.flag, name=img.dataset.name||'';
+  img.outerHTML = flag ? `<div class="avatar-flag">${flag}</div>` : fbAvatar(name);
+}
+
+function groupHTML(g){
+  const isOpen=expanded.has(g.key);
+  let av;
+  // Eager src — reliable everywhere. Falls back to flag/initials on error.
+  if(g.headshot) av=`<img class="avatar" src="${g.headshot}" data-name="${esc(g.displayName)}" data-flag="${g.flag||''}" onerror="avatarError(this)">`;
+  else if(g.flag) av=`<div class="avatar-flag">${g.flag}</div>`;
+  else av=fbAvatar(g.displayName);
+
+  const posBadge=g.pos?`<span class="pos-badge ${g.pos==='P'?'P':''}">${esc(g.pos)}</span>`:'';
+  const sportPill=`<span class="sport-pill ${sportCls(g.sport)}">${esc(g.sport)}</span>`;
+  const srcDots=[...g.sources].map(s=>`<img class="src-ic" title="${s}" src="${SRC_FAVI[s]||''}" onerror="this.style.display='none'">`).join('');
+  // Team: MLB shows the team logo + abbr; World Cup shows the country flag + name.
+  let teamPart='';
+  if(g.sport==='World Cup' && (g.flag||g.team)) teamPart=`${g.flag||''} ${esc(prettyCountry(g.team))}`.trim();
+  else if(g.teamLogo) teamPart=`<img class="team-logo" src="${g.teamLogo}" onerror="this.remove()">${esc(g.team||'')}`;
+  else if(g.team) teamPart=esc(g.team);
+  const sub=[teamPart,posBadge,sportPill].filter(Boolean).join(' ');
+
+  return `<div class="pgroup ${isOpen?'open':''}" id="g-${cssId(g.key)}">
+    <div class="ghead" onclick="toggleGroup('${esc(g.key)}')">
+      ${av}
+      <div class="gmain">
+        <div class="gname">${esc(g.displayName)}</div>
+        <div class="gsub">${sub}</div>
+      </div>
+      <div class="gright">
+        <div class="src-dots">${srcDots}</div>
+        <div class="gcount"><b>${g.lines.length}</b> ${g.lines.length===1?'prop':'props'}</div>
+        <div class="chev">▶</div>
+      </div>
+    </div>
+    <div class="grows">${isOpen?rowsHTML(g):''}</div>
+  </div>`;
+}
+
+function rowsHTML(g){
+  const ls=[...g.lines].sort((a,b)=>(a.source||'').localeCompare(b.source)||(a.stat_type||'').localeCompare(b.stat_type));
+  const head=`<div class="lrow-head"><span>Stat</span><span>Line</span><span>Proj</span><span>O / U</span><span></span></div>`;
+  return head + ls.map(l=>{
+    // O/U: american prices (Underdog) or — (PrizePicks)
+    const ou=(l.over_price||l.under_price)
+      ? `<span class="o">${l.over_price||'—'}</span><span style="color:var(--muted2)">/</span><span class="u">${l.under_price||'—'}</span>`
+      : (l.over_implied!=null?fmtImplied(l.over_implied):'<span style="color:var(--muted2)">—</span>');
+    // Model projection (MLB empirical / soccer consensus) + edge vs line
+    const proj=projCell(l);
+    const type=l.odds_type&&l.odds_type!=='standard'?`<span class="tag-dot ${l.odds_type}">${esc(l.odds_type)}</span>`:'';
+    return `<div class="lrow" onclick="openDrawer('${esc(l.id)}')">
+      <div class="lstat"><span class="src-tag ${l.source}">${srcShort(l.source)}</span><span class="lstat-name">${esc(l.stat_type||l.matchup||'')}</span> ${type}</div>
+      <div class="lline">${l.line!=null?l.line:'—'}</div>
+      ${proj}
+      <div class="lprices">${ou}</div>
+      <div class="micro-icon" onclick="event.stopPropagation();openDrawer('${esc(l.id)}')">›</div>
+    </div>`;
+  }).join('');
+}
+
+function projCell(l){
+  if(l.model_proj==null) return `<div class="lproj"><span class="dash">—</span></div>`;
+  const e=l.model_edge||0;
+  const cls=e>0.05?'pos':e<-0.05?'neg':'';
+  const arrow=e>0.05?'▲':e<-0.05?'▼':'';
+  const edge=Math.abs(e)>=0.05?` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>`:'';
+  const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':'Model projection';
+  return `<div class="lproj ${cls}" title="${kindLbl} ${l.model_proj} vs line ${l.line}"><span class="proj-num">${l.model_proj}</span>${edge}</div>`;
+}
+
+function toggleGroup(key){
+  if(expanded.has(key)) expanded.delete(key); else expanded.add(key);
+  const g=groups.find(x=>x.key===key); if(!g) return;
+  const el=document.getElementById('g-'+cssId(key)); if(!el) return;
+  const open=expanded.has(key);
+  el.classList.toggle('open',open);
+  el.querySelector('.grows').innerHTML = open?rowsHTML(g):'';
+}
+
+function renderStats(filtered){
+  const mlb=filtered.filter(l=>l.sport==='MLB').length;
+  const wc=filtered.filter(l=>l.sport==='World Cup').length;
+  document.getElementById('stats-bar').innerHTML=[
+    chip(groups.length.toLocaleString(),'Players / Markets','accent'),
+    chip(filtered.length.toLocaleString(),'Total Lines',''),
+    chip(mlb.toLocaleString(),'MLB','green'),
+    chip(wc.toLocaleString(),'World Cup','teal'),
+    chip(filtered.filter(l=>l.source==='underdog').length.toLocaleString(),'Underdog','orange'),
+    chip(filtered.filter(l=>l.source==='prizepicks').length.toLocaleString(),'PrizePicks','gold'),
+  ].join('');
+}
+function chip(n,l,cls){return `<div class="stat-chip ${cls}"><div class="num">${n}</div><div class="lbl">${l}</div></div>`;}
+
+// ════════════ research drawer ════════════
+async function openDrawer(lineId){
+  const line=allLines.find(l=>l.id===lineId); if(!line) return;
+  destroyDrawerCharts();
+  document.getElementById('scrim').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+  // Instant hero from data we already have, so the drawer feels immediate while
+  // the deeper analytics (hit-rate, vs-pitcher) stream in.
+  document.getElementById('drawer-content').innerHTML = instantDrawer(line);
+
+  if(STATIC_MODE){   // no backend — show a projection drawer built from the line itself
+    document.getElementById('drawer-content').innerHTML = soccerDrawer(line, staticAnalytics(line), []);
+    return;
+  }
+
+  const [analytics, hist] = await Promise.all([
+    fetch(API_BASE+'/api/analytics?id='+encodeURIComponent(lineId)).then(r=>r.json()).then(d=>d.analytics).catch(()=>({available:false,reason:'failed to load'})),
+    fetch(API_BASE+'/api/lines/history?id='+encodeURIComponent(lineId)+'&limit=60').then(r=>r.json()).then(d=>d.history||[]).catch(()=>[]),
+  ]);
+
+  document.getElementById('drawer-content').innerHTML = drawerHTML(line, analytics, hist);
+  renderDrawerCharts(line, analytics, hist);
+  wireVsTabs();
+}
+
+function instantDrawer(line){
+  const a={player:line.player||line.matchup, player_type:line.position||'',
+           headshot:line.headshot, team:line.team&&{abbr:line.team,flag:line.flag},
+           opponent:null};
+  const projLine = line.model_proj!=null
+    ? `<div style="margin-top:10px;font-size:13px;color:var(--muted)">Proj <b style="color:var(--text)">${line.model_proj}</b> vs line <b style="color:var(--text)">${line.line}</b></div>` : '';
+  return heroHead(a,line)+`<div class="dr-body">
+    <div class="dr-section"><h4><span class="ic">🎯</span> ${esc(line.stat_type||'')}</h4>
+      <div class="hit-card"><div class="hit-top"><div class="hit-prop"><b>${esc(line.stat_type||'')}</b></div>${line.line!=null?`<div class="hit-line-badge">Line ${line.line}</div>`:''}</div>${projLine}</div></div>
+    <div class="dr-loading"><span class="spinner"></span> Loading analytics…</div>
+  </div>`;
+}
+
+function drawerHTML(line, a, hist){
+  const light = line.sport==='World Cup' || line.sport==='Tennis' || a.sport==='World Cup' || a.sport==='Tennis';
+  if(light) return soccerDrawer(line,a,hist);
+  if(!a.available) return mlbUnavailable(line,a,hist);
+  return mlbDrawer(line,a,hist);   // MLB + basketball (hit-rate + recent games)
+}
+
+function heroHead(a, line){
+  let av;
+  if(a.headshot) av=`<img class="dr-avatar" src="${a.headshot}" onerror="this.outerHTML=fbAvatar('${esc(a.player||line.player||'')}',true)">`;
+  else if(a.team&&a.team.flag) av=`<div class="dr-avatar-flag">${a.team.flag}</div>`;
+  else av=fbAvatar(a.player||line.player||line.matchup||'',true);
+  const tl=a.team&&a.team.logo?`<img src="${a.team.logo}" style="width:16px;height:16px;vertical-align:middle" onerror="this.remove()"> `:'';
+  const meta=[
+    a.player_type,
+    a.bats&&`Bats ${a.bats}`, a.throws&&`Throws ${a.throws}`,
+    a.team&&`${a.team.abbr||a.team.name||''}`,
+  ].filter(Boolean).join(' · ');
+  let matchup='';
+  if(a.team&&a.opponent){
+    // For hitters, name the probable pitcher they're facing.
+    const facing = a.vs_pitcher&&a.vs_pitcher.pitcher&&a.vs_pitcher.pitcher.name
+      ? `<div class="dr-facing">Facing P: <b>${esc(a.vs_pitcher.pitcher.name)}</b></div>` : '';
+    matchup=`<div class="dr-matchup">
+      <div class="dr-team"><img src="${a.team.logo}" onerror="this.style.visibility='hidden'">${esc(a.team.abbr||'')}</div>
+      <div class="dr-vs">${a.opponent.is_home===false?'@':'vs'}</div>
+      <div class="dr-team"><img src="${a.opponent.logo}" onerror="this.style.visibility='hidden'">${esc(a.opponent.abbr||a.opponent.name||'')}</div>
+    </div>${facing}`;
+  }
+  return `<div class="dr-hero">
+    <div class="dr-hero-top">${av}<div><div class="dr-name">${esc(a.player||line.player||'')}</div><div class="dr-meta">${tl}${esc(meta)}</div></div></div>
+    ${matchup}
+  </div>`;
+}
+
+function mlbDrawer(line,a,hist){
+  const h=a.hit_rate;
+  let hitCard='';
+  if(h){
+    const pctCls=h.over_pct>=60?'hi':h.over_pct>=40?'mid':'lo';
+    const edge=(h.projection!=null&&h.line!=null)?(h.projection-h.line):null;
+    const edgeCls=edge>0?'pos':'neg';
+    const l5 = h.last5_n?`<div class="proj-cell"><div class="v">${h.last5_over}/${h.last5_n}</div><div class="l">Last 5 over</div></div>`:'';
+    hitCard=`<div class="dr-section"><h4><span class="ic">🎯</span> Hit Rate vs Line</h4>
+      <div class="hit-card">
+        <div class="hit-top"><div class="hit-prop"><b>${esc(h.stat)}</b></div>${(h.method&&h.method.indexOf('engine')===0)?`<div class="hit-line-badge" style="background:var(--accent);color:#0a120a;font-weight:700" title="Stat-projector engine: Bayesian recency blend${h.method==='engine+xBA'?' + Statcast xBA prior (the part with measured skill)':''} → 10k-sim Monte-Carlo distribution">⚙ ${h.method==='engine+xBA'?'engine·xBA':'engine'}</div>`:''}<div class="hit-line-badge">Line ${h.line}</div></div>
+        <div class="hit-mid">
+          <div class="hit-big"><div class="pct ${pctCls}">${h.over_pct}%</div><div class="cap">${h.over}/${h.n} OVER</div></div>
+          <div class="hit-spark">${sparklineSVG(h.spark,h.line)}<div class="spark-legend"><span>last ${h.spark.length}</span><span>line ${h.line}</span></div></div>
+        </div>
+        <div class="hit-proj">
+          ${l5}
+          <div class="proj-cell"><div class="v">${h.projection??'—'}</div><div class="l">${(h.method&&h.method.indexOf('engine')===0)?'Projection':'Proj (avg)'}</div></div>
+          ${(h.floor!=null&&h.ceiling!=null)?`<div class="proj-cell"><div class="v">${h.floor}–${h.ceiling}</div><div class="l">Floor–Ceil</div></div>`:''}
+          <div class="proj-cell"><div class="v">${h.prob_over!=null?Math.round(h.prob_over*100)+'%':'—'}</div><div class="l">Model P(over)</div></div>
+          <div class="proj-cell edge"><div class="v ${edgeCls}">${edge!=null?(edge>0?'+':'')+edge.toFixed(1):'—'}</div><div class="l">Proj − Line</div></div>
+        </div>
+        ${(h.drivers&&h.drivers.filter(d=>d.indexOf('×')>=0&&d.indexOf('×1.00')<0).length)?`<div class="hit-factors" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:11px">${h.drivers.filter(d=>d.indexOf('×')>=0&&d.indexOf('×1.00')<0).slice(0,5).map(d=>`<span title="engine matchup / park adjustment applied to this projection" style="font-size:11px;padding:3px 8px;border-radius:6px;background:rgba(182,240,26,0.08);color:var(--muted);border:1px solid rgba(182,240,26,0.20)">${esc(d)}</span>`).join('')}</div>`:''}
+      </div></div>`;
+  }
+  // Hitters → batter-vs-pitcher (BvP); pitchers → vs opposing team lineup.
+  const vsCard = a.vs_pitcher ? vsPitcherCard(a) : (a.vs_team ? vsTeamCard(a) : '');
+  const recent=a.recent&&a.recent.length?recentTable(a):'';
+  const shop=lineShopHTML(line);
+  const moveCard=hist.length>1?`<div class="dr-section"><h4><span class="ic">📈</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
+  return heroHead(a,line)+`<div class="dr-body">${hitCard}${vsCard}${recent}${shop}${moveCard}</div>`;
+}
+
+function vsPitcherCard(a){
+  const p=a.vs_pitcher.pitcher, st=a.vs_pitcher.stat;
+  const head=`<div class="dr-section"><h4><span class="ic">⚔️</span> Batter vs Pitcher — ${esc(p.name||'Probable P')}</h4>`;
+  const pic=`<img class="avatar" src="${p.headshot}" data-name="${esc(p.name||'')}" onerror="avatarError(this)" style="width:34px;height:34px">`;
+  if(!st || !st.atBats || +st.atBats===0){
+    return head+`<div class="bvp-head">${pic}<div class="vs-empty">No prior matchups${st&&st.plateAppearances?` (${st.plateAppearances} PA)`:''} — first look or tiny sample.</div></div></div>`;
+  }
+  const keys=[['AB','atBats'],['AVG','avg'],['OPS','ops'],['H','hits'],['HR','homeRuns'],['RBI','rbi'],['BB','baseOnBalls'],['SO','strikeOuts']];
+  return head+`<div class="bvp-head">${pic}<div style="font-size:12px;color:var(--muted)">Career vs this pitcher</div></div>
+    ${gridFor(st,keys)}</div>`;
+}
+
+function vsTeamCard(a){
+  const opp=a.vs_team.opp, spans=a.vs_team.spans;
+  const isP=a.player_type==='Pitcher';
+  const keys=isP
+    ? [['AVG','avg'],['OPS','ops'],['SO','strikeOuts'],['BB','baseOnBalls'],['H','hits'],['HR','homeRuns'],['AB','atBats']]
+    : [['AVG','avg'],['OPS','ops'],['H','hits'],['HR','homeRuns'],['RBI','rbi'],['BB','baseOnBalls'],['AB','atBats']];
+  const tabs=Object.keys(spans);
+  const labels={career:'Career',last5y:'Last 5Y'};
+  const tabBtns=tabs.map((t,i)=>`<div class="vs-tab ${i===0?'on':''}" data-span="${t}">${labels[t]||t}</div>`).join('');
+  const panels=tabs.map((t,i)=>`<div class="vs-panel" data-span="${t}" style="display:${i===0?'block':'none'}">${gridFor(spans[t],keys)}</div>`).join('');
+  return `<div class="dr-section"><h4><span class="ic">⚔️</span> ${a.player_type==='Pitcher'?'Allowed':'Career'} vs ${esc(opp.abbr||opp.name||'Opp')} ${opp.logo?`<img src="${opp.logo}" style="width:15px;height:15px" onerror="this.remove()">`:''}</h4>
+    <div class="vs-tabs">${tabBtns}</div>${panels}</div>`;
+}
+function gridFor(stat,keys){
+  if(!stat) return '<div class="vs-empty">No data.</div>';
+  return `<div class="split-grid">${keys.map(([l,k])=>`<div class="split-cell"><div class="v">${stat[k]!=null?stat[k]:'—'}</div><div class="l">${l}</div></div>`).join('')}</div>`;
+}
+function wireVsTabs(){
+  document.querySelectorAll('.vs-tab').forEach(tab=>{
+    tab.onclick=()=>{
+      const sec=tab.closest('.dr-section');
+      sec.querySelectorAll('.vs-tab').forEach(t=>t.classList.toggle('on',t===tab));
+      sec.querySelectorAll('.vs-panel').forEach(p=>p.style.display=p.dataset.span===tab.dataset.span?'block':'none');
+    };
+  });
+}
+
+function recentTable(a){
+  const cols=a.view_cols;
+  const hasProp=a.recent.some(g=>g.prop_val!=null);
+  const propLbl=a.hit_rate?propShort(a.hit_rate.stat):'VAL';
+  const rows=a.recent.map(g=>{
+    const propCell = hasProp
+      ? (g.prop_val!=null
+          ? `<td class="prop-cell ${g.cleared?'cleared':'missed'}">${g.prop_val} ${g.cleared?'✓':'✗'}</td>`
+          : `<td class="prop-cell">—</td>`)
+      : '';
+    return `<tr>
+      <td class="dt">${fmtDate(g.date)}</td>
+      <td class="opp">${g.home?'vs':'@'} ${esc(g.opp||'')}</td>
+      ${cols.map(c=>`<td>${g.cells[c]??'—'}</td>`).join('')}
+      ${propCell}
+    </tr>`;
+  }).join('');
+  const propHead=hasProp?`<th class="prop-cell" title="${esc(a.hit_rate?a.hit_rate.stat:'')}">${esc(propLbl)}</th>`:'';
+  return `<div class="dr-section"><h4><span class="ic">📋</span> Last ${a.recent.length} Games${hasProp?` · ✓ = cleared ${a.hit_rate.line}`:''}</h4>
+    <table class="rtable"><thead><tr><th>Date</th><th>Opp</th>${cols.map(c=>`<th>${c}</th>`).join('')}${propHead}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+// Prop label → compact abbreviation. Ordered: multi-word / combos BEFORE the single
+// words they contain (e.g. "Blocked Shots"→BLK must precede "Shots"→SH; "Shots On
+// Target"→SOT must precede "Shots"→SH), so substring matching never mislabels.
+const _PROP_ABBR=[
+  // baseball combos
+  ['hits runs rbis','H+R+RBI'],['hits+runs+rbis','H+R+RBI'],
+  // basketball / WNBA combos
+  ['pts+rebs+asts','PRA'],['points rebounds assists','PRA'],
+  ['pts+rebs','PR'],['points rebounds','PR'],
+  ['pts+asts','PA'],['points assists','PA'],
+  ['rebs+asts','RA'],['rebounds assists','RA'],
+  ['blks+stls','BLK+STL'],['blocks + steals','BLK+STL'],['blocks steals','BLK+STL'],
+  // soccer combos
+  ['goal + assist','G+A'],['goals + assists','G+A'],['goals assists','G+A'],['goal assist','G+A'],
+  // soccer singles — SOT / blocked shots BEFORE plain shots
+  ['shots on target','SOT'],['shot on target','SOT'],['shots assisted','SH AST'],
+  ['blocked shots','BLK'],['shots','SH'],['shot','SH'],
+  ['goals allowed','GA'],['goalie saves','SV'],['saves','SV'],
+  ['fouls drawn','FD'],['fouls','FLS'],['offsides','OFF'],['tackles','TKL'],
+  ['clearances','CLR'],['crosses','CRS'],['interceptions','INT'],
+  ['attempted dribbles','DRB'],['dribbles','DRB'],
+  ['passes attempted','PASS'],['passes','PASS'],['cards','CRD'],
+  // basketball / WNBA singles
+  ['3-pt made','3PM'],['three point','3PM'],['3 point','3PM'],['3pt','3PM'],['threes','3PM'],['3-pointers','3PM'],
+  ['double double','DD'],['blocks','BLK'],['steals','STL'],['rebounds','REB'],
+  ['turnovers','TO'],['free throws','FTM'],['points','PTS'],
+  // tennis
+  ['double fault','DF'],['aces','ACE'],['break point','BP'],['total games','GMS'],['games won','GMS'],
+  // baseball singles
+  ['strikeout','K'],['total bases','TB'],['home run','HR'],['pitches','PC'],['earned','ER'],
+  ['stolen bases','SB'],['hits allowed','HA'],['walks','BB'],['doubles','2B'],['triples','3B'],
+  ['singles','1B'],['rbis','RBI'],['rbi','RBI'],['outs','OUT'],['hits','H'],['runs','R'],
+  // generic (checked last)
+  ['fantasy','FS'],['assists','AST'],['goals','G'],['goal','G'],['bases','TB'],
+];
+function propShort(stat){
+  const s=(stat||'').toLowerCase().trim();
+  for(const [k,v] of _PROP_ABBR){ if(s.includes(k)) return v; }
+  return (stat||'VAL').split(/[\s+]+/).map(w=>w[0]||'').join('').toUpperCase().slice(0,4);
+}
+
+function lineShopHTML(line){
+  if(!line.player) return '';
+  const peers=allLines.filter(l=>l.player===line.player && l.stat_type===line.stat_type);
+  if(peers.length<2) return '';
+  const best=Math.max(...peers.map(p=>p.line??-Infinity));
+  const rows=peers.sort((a,b)=>(b.line??0)-(a.line??0)).map(p=>{
+    const pr=(p.over_price||p.under_price)?`${p.over_price||'—'} / ${p.under_price||'—'}`:'—';
+    return `<div class="shop-row ${p.line===best?'best-line':''}" onclick="openDrawer('${esc(p.id)}')">
+      <span class="ssrc src-tag ${p.source}">${srcShort(p.source)}</span>
+      <span style="color:var(--muted)">${esc(p.stat_type||'')}</span>
+      <span class="sline">${p.line??'—'}</span><span class="sprice">${pr}</span></div>`;
+  }).join('');
+  return `<div class="dr-section"><h4><span class="ic">🛒</span> Line Shopping — same prop across books</h4>${rows}</div>`;
+}
+
+function mlbUnavailable(line,a,hist){
+  const move=hist.length>1?`<div class="dr-section"><h4><span class="ic">📈</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
+  return heroHead({player:line.player||line.matchup,player_type:line.position||'',team:null,opponent:null},line)+
+    `<div class="dr-body">
+      <div class="dr-section"><h4>Prop</h4><div class="hit-card"><div class="hit-top"><div class="hit-prop"><b>${esc(line.stat_type||'')}</b></div>${line.line!=null?`<div class="hit-line-badge">Line ${line.line}</div>`:''}</div>
+      <div style="font-size:12px;color:var(--muted)">${line.over_price?`Over ${line.over_price} / Under ${line.under_price||'—'}`:(line.over_implied!=null?`Implied ${Math.round(line.over_implied*100)}%`:'')}</div></div></div>
+      <div class="dr-section"><div class="dr-note">${esc(a.reason||'No player analytics available for this line.')}</div></div>
+      ${lineShopHTML(line)}${move}
+    </div>`;
+}
+
+// Static-mode drawer data: everything the light drawer needs, from the line itself.
+function staticAnalytics(line){
+  const hasTeam = line.team||line.team_logo||line.flag;
+  return {available:true, sport:line.sport, player:line.player, player_type:line.position||'',
+    headshot:line.headshot, team:hasTeam?{abbr:line.team, logo:line.team_logo, flag:line.flag}:null,
+    matchup:line.matchup, stat:line.stat_type, line:line.line,
+    over_price:line.over_price, under_price:line.under_price,
+    model_proj:line.model_proj, model_edge:line.model_edge, model_prob:line.model_prob,
+    model_n:line.model_n, proj_kind:line.proj_kind,
+    note:'Static snapshot — model projection shown. Live recent-games / hit-rate analytics are on the full server version.'};
+}
+function soccerDrawer(line,a,hist){
+  const prices=(line.over_price||line.under_price)?`Over ${line.over_price||'—'} / Under ${line.under_price||'—'}`:(line.over_implied!=null?`Yes ${Math.round(line.over_implied*100)}%`:'');
+  const move=(a.movement&&a.movement.length>1)||hist.length>1?`<div class="dr-section"><h4><span class="ic">📈</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
+  // Soccer projection card — Poisson mean calibrated to the de-vigged market price
+  let projCard='';
+  if(a.model_proj!=null){
+    const edge=a.model_edge||0;
+    const cls=edge>0.05?'pos':edge<-0.05?'neg':'';
+    const kind=a.proj_kind;
+    const probCell=a.model_prob!=null?`<div class="proj-cell"><div class="v">${Math.round(a.model_prob*100)}%</div><div class="l">P(over)</div></div>`:'';
+    const nCell=(kind==='espn'&&a.model_n)?`<div class="proj-cell"><div class="v">${a.model_n}</div><div class="l">Games</div></div>`:'';
+    const note=a.note||(kind==='espn'?'Blend of the player’s recent ESPN match form and the market line (club form is bias-adjusted toward the World Cup line), with a Poisson P(over).'
+              :kind==='poisson'?'Poisson expected count calibrated to the de-vigged market price.'
+              :'Cross-book consensus line (no player-stat feed or price for this prop).');
+    const title=kind==='espn'?'Form Projection (ESPN)':kind==='tennis'?'Serve/Return Model':'Model Projection';
+    projCard=`<div class="dr-section"><h4><span class="ic">📊</span> ${title}</h4>
+      <div class="hit-card"><div class="hit-proj" style="border:none;padding:0">
+        <div class="proj-cell"><div class="v">${a.model_proj}</div><div class="l">Proj</div></div>
+        <div class="proj-cell"><div class="v">${a.line??line.line}</div><div class="l">This Line</div></div>
+        <div class="proj-cell edge"><div class="v ${cls}">${edge>0?'+':''}${edge}</div><div class="l">Edge</div></div>
+        ${probCell}${nCell}
+      </div><div style="font-size:11px;color:var(--muted2);margin-top:10px">${note}</div></div></div>`;
+  }
+  // Tennis: serve/return + Elo splits from the model.
+  let tennisCard='';
+  if(a.serve_pct!=null){
+    tennisCard=`<div class="dr-section"><h4><span class="ic">🎾</span> Serve / Return${a.tour?' · '+esc(a.tour):''}</h4>
+      <div class="split-grid">
+        <div class="split-cell"><div class="v">${a.serve_pct}%</div><div class="l">Serve pts won</div></div>
+        <div class="split-cell"><div class="v">${a.return_pct}%</div><div class="l">Return pts won</div></div>
+        ${a.elo?`<div class="split-cell"><div class="v">${a.elo}</div><div class="l">Elo</div></div>`:''}
+      </div></div>`;
+  }
+  return heroHead({player:a.player||line.player,player_type:a.player_type,headshot:a.headshot||line.headshot,team:a.team,opponent:null},line)+
+    `<div class="dr-body">
+      <div class="dr-section"><h4><span class="ic">🎯</span> Prop</h4>
+        <div class="hit-card"><div class="hit-top"><div class="hit-prop"><b>${esc(a.stat||line.stat_type||'')}</b></div>${(a.line??line.line)!=null?`<div class="hit-line-badge">Line ${a.line??line.line}</div>`:''}</div>
+        <div style="font-size:13px;color:var(--muted)">${esc(prettyCountry(a.team&&a.team.name)||'')}${line.matchup?' · '+esc(line.matchup):''}</div>
+        <div style="font-size:13px;color:var(--orange);font-family:var(--mono);margin-top:8px">${prices}</div></div></div>
+      ${projCard}
+      ${tennisCard}
+      ${move}
+      ${lineShopHTML(line)}
+    </div>`;
+}
+
+// charts
+function renderDrawerCharts(line,a,hist){
+  const c=document.getElementById('dr-move');
+  if(c && hist.length>1){
+    const vals=hist.map(h=>h.line_value);
+    drawerCharts.push(new Chart(c.getContext('2d'),{
+      type:'line',
+      data:{labels:hist.map(h=>fmtTime(h.ts)),datasets:[{label:'Line',data:vals,borderColor:'#b6f01a',backgroundColor:'rgba(182,240,26,.12)',tension:.3,fill:true,pointRadius:2,borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5b6883',maxRotation:0,maxTicksLimit:6,font:{size:9}},grid:{color:'rgba(36,48,73,.4)'}},y:{ticks:{color:'#5b6883',font:{size:10}},grid:{color:'rgba(36,48,73,.4)'}}}}
+    }));
+  }
+}
+function destroyDrawerCharts(){ drawerCharts.forEach(c=>{try{c.destroy()}catch(_){}}); drawerCharts=[]; }
+function closeDrawer(){ document.getElementById('scrim').classList.remove('open'); document.getElementById('drawer').classList.remove('open'); destroyDrawerCharts(); }
+
+// sparkline with line reference (inline SVG)
+function sparklineSVG(vals,line){
+  if(!vals||!vals.length) return '';
+  const W=210,H=46,pad=3;
+  const max=Math.max(line,...vals), min=Math.min(line,...vals);
+  const rng=(max-min)||1;
+  const x=i=>pad+i*((W-2*pad)/Math.max(1,vals.length-1));
+  const y=v=>H-pad-((v-min)/rng)*(H-2*pad);
+  const pts=vals.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const lineY=y(line).toFixed(1);
+  const dots=vals.map((v,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2" fill="${v>line?'#9be814':'#ff4d5f'}"/>`).join('');
+  return `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <line x1="0" y1="${lineY}" x2="${W}" y2="${lineY}" stroke="#f5b945" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
+    <polyline points="${pts}" fill="none" stroke="#e6efd6" stroke-width="1.6"/>${dots}</svg>`;
+}
+
+// ════════════ edges ════════════
+let edgeMode='ev';
+// Default to STANDARD lines only. Goblin/demon are alternate lines (a low/high line at
+// an unlisted payout multiplier), so proj−line vs them is misleading and their low lines
+// (e.g. a "Shots" goblin at 1.5) read like a different stat. Users can toggle them on.
+const edgeTypes=new Set(['standard']);
+function setEdgeMode(m){
+  edgeMode=m;
+  document.querySelectorAll('#edge-mode button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
+  runEdges();
+}
+function toggleEdgeType(t){
+  if(edgeTypes.has(t)) edgeTypes.delete(t); else edgeTypes.add(t);
+  document.querySelector(`#edge-types button[data-type="${t}"]`)?.classList.toggle('on');
+  runEdges();
+}
+// which sports the Edges tab shows (all on by default). Toggling also rebuilds the stat
+// dropdown so you can't pick a stat from a sport you've turned off.
+const edgeSports=new Set(['MLB','World Cup','Tennis','WNBA','NBA Summer League']);
+function toggleEdgeSport(s){
+  if(edgeSports.has(s)) edgeSports.delete(s); else edgeSports.add(s);
+  document.querySelector(`#edge-sports button[data-sport="${s}"]`)?.classList.toggle('on');
+  buildEdgeStatFilter();
+  runEdges();
+}
+function oddsLabel(t){return ({standard:'Normal',goblin:'Goblin',demon:'Demon'})[t||'standard']||t;}
+
+function americanToDecimal(a){
+  if(a==null||a==='') return null;
+  const n=parseFloat(String(a).replace('+',''));
+  if(isNaN(n)) return null;
+  return n>0 ? 1+n/100 : 1+100/Math.abs(n);
+}
+// Best EV side for a line: needs model P(over) + book prices. EV = p*decimal − 1.
+// Restrict to a sane price band (≈ -250 to +200): on deep longshots the empirical
+// model's small probability errors blow EV up into noise, not real edge.
+const EV_DEC_MIN=1.4, EV_DEC_MAX=3.0;
+function lineEV(l){
+  if(l.model_prob==null) return null;
+  const ot=l.odds_type||'standard';
+  const overOnly=(ot==='demon'||ot==='goblin'); // demon/goblin are over-only picks
+  // PrizePicks has no per-pick moneyline; a standard pick'em leg carries a derived
+  // break-even price (pickem_price, both sides). Fall back to it when no book price.
+  const oP = l.over_price!=null ? l.over_price : l.pickem_price;
+  const uP = l.under_price!=null ? l.under_price : (overOnly ? null : l.pickem_price);
+  const dO=americanToDecimal(oP), dU=americanToDecimal(uP);
+  const ok=d=>d!=null && d>=EV_DEC_MIN && d<=EV_DEC_MAX;
+  let best=null;
+  if(ok(dO)){const ev=l.model_prob*dO-1; best={ev,side:'Over',prob:l.model_prob,price:oP};}
+  if(!overOnly && ok(dU)){const ev=(1-l.model_prob)*dU-1; if(best==null||ev>best.ev) best={ev,side:'Under',prob:1-l.model_prob,price:uP};}
+  return best;
+}
+
+function runEdges(){
+  const statType=val('e-stat'), side=val('e-side'), source=val('e-source');
+  const hint=document.getElementById('edge-hint');
+  let pool=allLines.filter(l=>l.model_proj!=null && l.line!=null);
+  pool=pool.filter(l=>edgeSports.has(l.sport));           // sport checkboxes
+  if(source!=='all') pool=pool.filter(l=>l.source===source);
+  if(statType) pool=pool.filter(l=>(l.stat_type||'').toLowerCase()===statType.toLowerCase());
+  // odds-type include/exclude (goblin / demon / normal)
+  pool=pool.filter(l=>edgeTypes.has(l.odds_type||'standard'));
+  // require a real sample for MLB model props (avoid tiny-sample noise)
+  pool=pool.filter(l=>l.sport!=='MLB' || (l.model_n||0)>=10);
+
+  let items=[];
+  if(edgeMode==='ev'){
+    hint.textContent="Positive expected value: model prob × payout. Underdog uses posted prices; PrizePicks standard picks use the 2-pick pick'em break-even (57.7%). Demon/goblin need a multiplier the feed omits.";
+    for(const l of pool){
+      const ev=lineEV(l);
+      if(!ev) continue;
+      if(side!=='both' && ev.side.toLowerCase()!==side) continue;
+      items.push({l, side:ev.side, ev:ev.ev, prob:ev.prob, price:ev.price,
+                  proj:l.model_proj, metric:ev.ev});
+    }
+    items.sort((a,b)=>b.metric-a.metric);
+  } else {
+    hint.textContent='Biggest gap between our projection and the posted line (filter by stat for apples-to-apples).';
+    for(const l of pool){
+      const edge=l.model_edge||0;
+      const s=edge>0?'Over':'Under';
+      const ot=l.odds_type||'standard';
+      // demon/goblin are over-only picks — drop any that would be an under bet
+      if((ot==='demon'||ot==='goblin') && s!=='Over') continue;
+      if(side!=='both' && s.toLowerCase()!==side) continue;
+      items.push({l, side:s, edge, proj:l.model_proj, metric:Math.abs(edge)});
+    }
+    items.sort((a,b)=>b.metric-a.metric);
+  }
+
+  if(!items.length){
+    document.getElementById('edge-list').innerHTML='<div class="no-data">No edges match these filters'+(edgeMode==='ev'?" (EV needs prices — Underdog or PrizePicks standard picks; demon/goblin have none. Try Proj Diff.)":'.')+'</div>';
+    return;
+  }
+  items=items.slice(0,150);
+  const maxM=Math.max(...items.map(i=>i.metric))||1;
+  document.getElementById('edge-list').innerHTML=items.map(i=>edgeCardHTML(i,maxM)).join('');
+}
+
+function edgeTeamTag(l){
+  // Tennis has no team — show the opponent instead. Otherwise show the club/country with
+  // its logo (MLB/WNBA/SL) or flag (World Cup) when we have one.
+  if(l.sport==='Tennis') return l.matchup?`<span class="edge-team">vs ${esc(l.matchup)}</span>`:'';
+  if(!l.team) return '';
+  const img=l.team_logo?`<img src="${esc(l.team_logo)}" onerror="this.style.display='none'">`:'';
+  const flag=(!l.team_logo && l.flag && l.flag.length<=4)?esc(l.flag)+' ':'';
+  return `<span class="edge-team">${img}${flag}${esc(l.team)}</span>`;
+}
+function edgeCardHTML(i,maxM){
+  const l=i.l, pos=i.side==='Over';
+  const pct=Math.min(100, i.metric/maxM*100);
+  const sideTag=`<span class="edge-side ${pos?'over':'under'}">${i.side}</span>`;
+  let metricHTML, sub;
+  if(edgeMode==='ev'){
+    const evp=(i.ev*100); const good=evp>0;
+    metricHTML=`<div class="edge-pct ${good?'pos':'neg'}">${good?'+':''}${evp.toFixed(1)}%</div><div class="edge-metric-lbl">EV</div>`;
+    // PrizePicks EV comes from the pick'em break-even, not a posted price — label it so.
+    const isPickem=(l.over_price==null && l.under_price==null && l.pickem_price!=null);
+    const priceLbl=isPickem?"pick'em":i.price;
+    sub=`Proj ${i.proj} · Line ${l.line} · ${Math.round(i.prob*100)}% model · ${priceLbl} ${esc(l.source)}`;
+  } else {
+    const epct=l.line?((i.edge/Math.abs(l.line||1))*100):0;
+    metricHTML=`<div class="edge-pct ${pos?'pos':'neg'}">${i.edge>0?'+':''}${i.edge}</div><div class="edge-metric-lbl">${l.proj_kind==='consensus'?'vs consensus':'proj−line'}</div>`;
+    sub=`Proj ${i.proj} · Line ${l.line}${l.model_prob!=null?` · ${Math.round((pos?l.model_prob:1-l.model_prob)*100)}% model`:''} · ${esc(l.source)}`;
+  }
+  const ot=l.odds_type||'standard';
+  const typeTag=`<span class="tag-dot ${ot}">${esc(oddsLabel(ot))}</span>`;
+  const head=`${esc(l.player||l.matchup||'')} ${sideTag} ${typeTag} ${edgeTeamTag(l)} <span class="edge-stat">${esc(l.stat_type||'')} · ${esc(l.sport)}</span>`;
+  return `<div class="edge-bar-wrap" onclick="openDrawer('${esc(l.id)}')">
+    <div class="edge-bar-row"><div><span class="edge-player">${head}</span></div>
+      <div class="edge-metric">${metricHTML}</div></div>
+    <div class="edge-sub">${sub}</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:7px"><div class="edge-bar-bg"><div class="edge-bar-fill ${pos?'edge-pos':'edge-neg'}" style="width:${pct}%"></div></div></div>
+  </div>`;
+}
+
+// ════════════ tabs / filters ════════════
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.getElementById('tab-board').style.display=name==='board'?'':'none';
+  document.getElementById('tab-edges').style.display=name==='edges'?'':'none';
+  document.getElementById('tab-parlay').style.display=name==='parlay'?'':'none';
+  document.getElementById('tab-scorecard').style.display=name==='scorecard'?'':'none';
+  if(name==='edges') runEdges();
+  if(name==='parlay') renderSuggestedParlays();
+  if(name==='scorecard') loadScorecard();
+}
+
+async function loadScorecard(){
+  const el=document.getElementById('scorecard-body');
+  el.innerHTML='<div class="loading-row"><span class="spinner"></span> Loading…</div>';
+  if(STATIC_MODE){
+    // The scorecard grades each line + our projection AFTER games settle, which needs the
+    // persistent ledger from the live server — the hosted static snapshot can't keep it.
+    el.innerHTML=`<div class="hit-card" style="padding:26px;text-align:center">
+      <div style="font-size:34px">📊</div>
+      <div style="font-weight:700;margin:8px 0">Scorecard runs on the live backend</div>
+      <div style="color:var(--muted);font-size:13px;max-width:470px;margin:0 auto;line-height:1.6">Grading logs every line + projection over time and settles them once games finish — that needs the persistent server (<code>python main.py</code>, or the full app deploy). The hosted static site doesn't keep that ledger, so there's nothing to grade here.</div></div>`;
+    return;
+  }
+  let s;
+  try{ s=await fetch(API_BASE+'/api/scorecard?sport=MLB').then(r=>r.json()); }
+  catch(e){ el.innerHTML='<div class="loading-row">Could not load scorecard.</div>'; return; }
+  if(!s.graded){
+    el.innerHTML=`<div class="hit-card" style="padding:26px;text-align:center">
+      <div style="font-size:34px">📊</div>
+      <div style="font-weight:700;margin:8px 0">Building up…</div>
+      <div style="color:var(--muted);font-size:13px;max-width:440px;margin:0 auto">No graded props yet.
+      The ledger logs lines + projections every few minutes and grades them after games finish —
+      check back once tonight's slate settles.</div></div>`;
+    return;
+  }
+  const pct=v=>v==null?'—':(v*100).toFixed(1)+'%';
+  const be=s.breakeven, cls=(v)=>v==null?'':(v>=be?'pos':'neg');
+  const clvCls=s.clv_positive_pct!=null&&s.clv_positive_pct>=0.5?'pos':'neg';
+  el.innerHTML=`
+    <div class="hit-proj" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+      <div class="proj-cell"><div class="v ${cls(s.hit_rate)}">${pct(s.hit_rate)}</div><div class="l">Hit rate vs close · ${s.decided}</div></div>
+      <div class="proj-cell"><div class="v ${cls(s.play_hit_rate)}">${pct(s.play_hit_rate)}</div><div class="l">Plays w/ lean · ${s.plays}</div></div>
+      <div class="proj-cell"><div class="v ${clvCls}">${pct(s.clv_positive_pct)}</div><div class="l">Positive CLV · ${s.clv_n}</div></div>
+    </div>
+    ${s.ab_n?`<div style="margin-top:14px;padding:12px;border:1px solid rgba(182,240,26,.22);border-radius:10px;background:rgba(182,240,26,.04)">
+      <div style="font-weight:700;margin-bottom:8px">🧪 A/B — plain engine vs engine + matchup + xBA <span style="color:var(--muted);font-weight:400">· ${s.ab_n} matched props</span></div>
+      <div class="hit-proj" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+        <div class="proj-cell"><div class="v ${cls(s.ab_plain)}">${pct(s.ab_plain)}</div><div class="l">A · plain board</div></div>
+        <div class="proj-cell"><div class="v ${cls(s.ab_enhanced)}">${pct(s.ab_enhanced)}</div><div class="l">B · enhanced</div></div>
+      </div>
+      <div style="color:var(--muted);font-size:12px;margin-top:8px">${abVerdict(s)}</div>
+    </div>`:''}
+    <div style="color:var(--muted);font-size:12.5px;margin-top:14px;line-height:1.7">
+      <b style="color:var(--text)">${s.graded}</b> props graded · avg line move toward model
+      <b style="color:var(--text)">${s.clv_avg_move>0?'+':''}${s.clv_avg_move}</b><br>
+      Break-even at standard −110 vig is <b>${(be*100).toFixed(1)}%</b> — green clears the vig, red doesn't.
+      Small samples are noisy; this needs a few hundred graded props before it means much.
+    </div>`;
+}
+function abVerdict(s){
+  if(!s.ab_n||s.ab_plain==null||s.ab_enhanced==null) return '';
+  const d=(s.ab_enhanced-s.ab_plain)*100;
+  if(Math.abs(d)<0.5) return "Dead heat so far — the matchup + xBA layer isn't moving results yet (needs more data + broader xBA coverage).";
+  return d>0 ? `Enhanced is +${d.toFixed(1)} pts ahead — early sign the extra layer helps. Keep watching.`
+             : `Enhanced is ${d.toFixed(1)} pts behind — the extra layer isn't earning its keep yet.`;
+}
+// ════════════ parlay builder ════════════
+// A real entry is ONE book + STANDARD picks only (goblins/demons have their
+// own payouts and can't be freely mixed). Payouts are the standard all-must-hit
+// multipliers per book (approx; they vary over time).
+const PAYOUTS_BY_BOOK = {
+  prizepicks: {2:3, 3:5, 4:10, 5:20, 6:25},
+  underdog:   {2:3, 3:6, 4:10, 5:20, 6:35},
+};
+let parlayBook = 'prizepicks';
+const bookLabel = b => b==='prizepicks' ? 'PrizePicks' : 'Underdog';
+const parlayPayouts = () => PAYOUTS_BY_BOOK[parlayBook] || PAYOUTS_BY_BOOK.prizepicks;
+const isStd = l => l.odds_type==='standard' || !l.odds_type;   // no goblin/demon
+const suggestSports = new Set(['MLB','World Cup','Tennis','WNBA','NBA Summer League']);
+let parlaySlip = [];      // [{id, side}]  — all from the same book
+let parlayStake = 10;
+
+function legLean(l){
+  const p = l.model_prob;
+  if(p==null) return null;
+  return p>=0.5 ? {side:'Over', prob:p} : {side:'Under', prob:1-p};   // model's side
+}
+// Confidence band for SUGGESTED legs: skip coin-flips (<58%) and degenerate
+// near-locks (>82%, usually a 0-event small sample like "Under 0.5 HR" on a
+// slap hitter — not a real edge). The custom builder lets you add anything.
+const SUGGEST_LO = 0.58, SUGGEST_HI = 0.88;
+function eligibleLegs(){
+  let pool = allLines.filter(l=>l.model_prob!=null && l.line!=null && l.player && l.stat_type
+    && isStd(l) && l.source===parlayBook && (l.model_n==null || l.model_n>=10)
+    && suggestSports.has(l.sport));
+  const byPlayer = {};   // one leg per player (avoid stacking the same guy)
+  for(const l of pool){
+    const lean = legLean(l); if(!lean) continue;
+    if(lean.prob < SUGGEST_LO || lean.prob > SUGGEST_HI) continue;
+    const k = (l.player||'').toLowerCase();
+    if(!byPlayer[k] || lean.prob>byPlayer[k].prob) byPlayer[k] = {l, ...lean};
+  }
+  return Object.values(byPlayer).sort((a,b)=>b.prob-a.prob);
+}
+function toggleSuggestSport(s){
+  if(suggestSports.has(s)) suggestSports.delete(s); else suggestSports.add(s);
+  document.querySelector(`#suggest-sports button[data-sp="${s}"]`)?.classList.toggle('on');
+  renderSuggestedParlays();
+}
+function setParlayBook(b){
+  parlayBook=b;
+  document.querySelectorAll('#tab-parlay .bookseg button').forEach(x=>x.classList.toggle('active',x.dataset.bk===b));
+  // a slip can only hold one book — drop any legs from the other one
+  parlaySlip = parlaySlip.filter(s=>{const l=allLines.find(x=>x.id===s.id); return l && l.source===b;});
+  renderSuggestedParlays(); renderSlip();
+  const sb=document.getElementById('parlay-search'); if(sb) searchParlayLines(sb.value);
+}
+// Build an n-leg parlay that's confident but VARIED — both in stat type and in
+// per-leg odds. `legs` is sorted desc by prob; hundreds pile up near the ceiling,
+// so taking the literal top-n pins every leg at the same %. Instead we spread the
+// picks evenly across the confident pool (top ~60%) and prefer distinct stat
+// types, giving a realistic range of leg odds and uncorrelated props.
+function pickDiverseLegs(legs, n){
+  if (legs.length <= n) return legs.slice().sort((a, b) => b.prob - a.prob);
+  // Spread targets evenly in PROBABILITY space (e.g. 88%,83%,78%…) rather than by
+  // rank — most legs plateau near the ceiling, so rank-spacing stays bunched. For
+  // each target prob, take the nearest unused leg of a not-yet-used stat type.
+  const hi = legs[0].prob;                                  // top confident leg (~ the cap)
+  const lo = Math.max(0.60, hi - Math.min(0.26, 0.05 * (n - 1)));  // wider spread for more legs
+  const out = [], usedIdx = new Set(), usedStat = {};
+  for (let i = 0; i < n; i++) {
+    const target = n === 1 ? hi : hi - (hi - lo) * i / (n - 1);
+    let best = -1, bestD = Infinity;
+    for (let j = 0; j < legs.length; j++) {
+      if (usedIdx.has(j) || usedStat[(legs[j].l.stat_type || '').toLowerCase()]) continue;
+      const d = Math.abs(legs[j].prob - target);
+      if (d < bestD) { bestD = d; best = j; }
+    }
+    if (best < 0) for (let j = 0; j < legs.length; j++) if (!usedIdx.has(j)) { best = j; break; }
+    if (best < 0) break;
+    out.push(legs[best]); usedIdx.add(best);
+    usedStat[(legs[best].l.stat_type || '').toLowerCase()] = 1;
+  }
+  return out.sort((a, b) => b.prob - a.prob);
+}
+function renderSuggestedParlays(){
+  const el=document.getElementById('parlay-suggested'); if(!el) return;
+  const legs=eligibleLegs();
+  if(legs.length<2){ el.innerHTML='<div class="muted-note">Not enough lines with projections for this sport yet.</div>'; return; }
+  let html='';
+  for(let n=2;n<=6;n++){
+    if(legs.length<n) break;
+    const M=parlayPayouts()[n]; if(!M) break;
+    const pick=pickDiverseLegs(legs,n);
+    const P=pick.reduce((a,x)=>a*x.prob,1), roi=(P*M-1)*100;
+    const legHtml=pick.map(x=>`<div class="parlay-leg-row"><span>${esc(x.l.player)} · ${esc(propShort(x.l.stat_type))} ${x.side} ${x.l.line}</span><span class="pl-prob">${Math.round(x.prob*100)}%</span></div>`).join('');
+    const payload=JSON.stringify(pick.map(x=>({id:x.l.id,side:x.side}))).replace(/'/g,'&#39;');
+    html+=`<div class="hit-card parlay-card">
+      <div class="parlay-card-top"><b>${n}-Leg</b><span class="muted" style="font-size:11px">${bookLabel(parlayBook)} ${M}x</span><button class="addbtn" onclick='loadParlayToBuilder(${payload})'>Use →</button></div>
+      ${legHtml}
+      <div class="parlay-card-foot">
+        <div class="proj-cell"><div class="v">${(P*100).toFixed(1)}%</div><div class="l">Hit chance</div></div>
+        <div class="proj-cell"><div class="v">${M}x</div><div class="l">Payout</div></div>
+        <div class="proj-cell"><div class="v ${roi>=0?'pos':'neg'}">${roi>0?'+':''}${roi.toFixed(0)}%</div><div class="l">ROI*</div></div>
+      </div></div>`;
+  }
+  el.innerHTML=html;
+}
+function searchParlayLines(q){
+  q=(q||'').toLowerCase().trim();
+  const el=document.getElementById('parlay-search-results'); if(!el) return;
+  if(q.length<2){ el.innerHTML=''; return; }
+  const m=allLines.filter(l=>l.model_prob!=null&&l.line!=null&&l.player&&isStd(l)&&l.source===parlayBook&&((l.player||'').toLowerCase().includes(q)||(l.stat_type||'').toLowerCase().includes(q))).slice(0,40);
+  el.innerHTML = m.length? m.map(l=>{
+    const o=Math.round(l.model_prob*100), ins=parlaySlip.find(s=>s.id===l.id);
+    return `<div class="parlay-result"><div class="pr-name">${esc(l.player)} · ${esc(propShort(l.stat_type))} ${l.line} <span class="muted" style="font-size:10.5px">${esc(l.sport)}</span></div>`+`
+      <button class="ob ${ins&&ins.side==='Over'?'on':''}" onclick="addLeg('${l.id}','Over')">O ${o}%</button>
+      <button class="ub ${ins&&ins.side==='Under'?'on':''}" onclick="addLeg('${l.id}','Under')">U ${100-o}%</button></div>`;
+  }).join('') : '<div class="muted-note">No matches.</div>';
+}
+function addLeg(id, side){
+  parlaySlip = parlaySlip.filter(s=>s.id!==id);
+  if(parlaySlip.length<6) parlaySlip.push({id, side});
+  renderSlip();
+  const sb=document.getElementById('parlay-search'); if(sb) searchParlayLines(sb.value);
+}
+function removeLeg(id){ parlaySlip=parlaySlip.filter(s=>s.id!==id); renderSlip(); }
+function clearSlip(){ parlaySlip=[]; renderSlip(); }
+function loadParlayToBuilder(legs){ parlaySlip=legs.slice(0,6); renderSlip(); document.getElementById('parlay-slip').scrollIntoView({behavior:'smooth',block:'center'}); }
+function renderSlip(){
+  const el=document.getElementById('parlay-slip'); if(!el) return;
+  if(!parlaySlip.length){ el.innerHTML='<div class="muted-note" style="margin:0">No legs yet — search at left, or tap “Use →” on a suggestion.</div>'; renderParlaySummary(); return; }
+  el.innerHTML = parlaySlip.map(s=>{
+    const l=allLines.find(x=>x.id===s.id); if(!l) return '';
+    const p=s.side==='Over'?l.model_prob:1-l.model_prob;
+    return `<div class="parlay-leg-row"><span>${esc(l.player)} · ${esc(propShort(l.stat_type))} <b>${s.side}</b> ${l.line}</span><span class="pl-prob">${Math.round(p*100)}%</span><button class="x" onclick="removeLeg('${s.id}')">×</button></div>`;
+  }).join('');
+  renderParlaySummary();
+}
+function renderParlaySummary(){
+  const el=document.getElementById('parlay-summary'); if(!el) return;
+  const n=parlaySlip.length;
+  if(n<2){ el.innerHTML='<div class="muted-note" style="margin:0">Add at least 2 legs to see your chance, payout, and ROI.</div>'; return; }
+  let P=1, soccer=false;
+  for(const s of parlaySlip){ const l=allLines.find(x=>x.id===s.id); if(!l)continue; P*= s.side==='Over'?l.model_prob:1-l.model_prob; if(l.sport==='World Cup')soccer=true; }
+  const M=parlayPayouts()[Math.min(6,n)], roi=(P*M-1)*100, be=100/M, rc=roi>=0?'pos':'neg';
+  el.innerHTML=`
+    <div class="parlay-sum-grid">
+      <div class="proj-cell"><div class="v">${(P*100).toFixed(1)}%</div><div class="l">Hit chance</div></div>
+      <div class="proj-cell"><div class="v">${M}x</div><div class="l">${bookLabel(parlayBook)} · ${n}-leg</div></div>
+      <div class="proj-cell"><div class="v ${rc}">${roi>0?'+':''}${roi.toFixed(0)}%</div><div class="l">ROI / edge</div></div>
+    </div>
+    <div class="parlay-stake-row">
+      <label>Stake $<input id="parlay-stake" type="number" min="0" step="1" value="${parlayStake}" oninput="updateStake(this.value)"></label>
+      <div>Return <b id="pl-return">$${(parlayStake*M).toFixed(2)}</b> · EV <b id="pl-ev" class="${rc}">${P*M-1>=0?'+':''}$${(parlayStake*(P*M-1)).toFixed(2)}</b></div>
+    </div>
+    <div class="muted-note" style="margin:0">Break-even hit rate is <b>${be.toFixed(1)}%</b> — you're <b class="${P*100>=be?'pos':'neg'}">${P*100>=be?'above':'below'}</b> it. ${soccer?'⚠ Includes World Cup legs (model overconfident there). ':''}Assumes calibrated, independent legs.</div>
+    <button class="clearbtn" onclick="clearSlip()">Clear slip</button>`;
+}
+function updateStake(v){
+  parlayStake=Math.max(0,parseFloat(v)||0);
+  const n=parlaySlip.length; if(n<2) return;
+  let P=1; for(const s of parlaySlip){ const l=allLines.find(x=>x.id===s.id); if(!l)continue; P*= s.side==='Over'?l.model_prob:1-l.model_prob; }
+  const M=parlayPayouts()[Math.min(6,n)];
+  const ret=document.getElementById('pl-return'), ev=document.getElementById('pl-ev');
+  if(ret) ret.textContent='$'+(parlayStake*M).toFixed(2);
+  if(ev) ev.textContent=(P*M-1>=0?'+':'')+'$'+(parlayStake*(P*M-1)).toFixed(2);
+}
+
+function buildStatFilter(){
+  // Live Board stat filter: every stat type across the DFS books.
+  const stats=[...new Set(allLines.map(l=>l.stat_type).filter(Boolean))].sort();
+  const sel=document.getElementById('f-stat'), cur=sel.value;
+  sel.innerHTML='<option value="">All Stats</option>'+stats.map(s=>`<option value="${esc(s)}" ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
+  buildEdgeStatFilter();
+}
+// Edges stat filter: only stat types from the sports currently checked, so you can't
+// select an MLB stat (etc.) while MLB is toggled off.
+function buildEdgeStatFilter(){
+  const sel=document.getElementById('e-stat'); if(!sel) return;
+  const stats=[...new Set(allLines.filter(l=>edgeSports.has(l.sport)).map(l=>l.stat_type).filter(Boolean))].sort();
+  let cur=sel.value;
+  if(cur && !stats.some(s=>s.toLowerCase()===cur.toLowerCase())) cur='';   // stat's sport was turned off → reset
+  sel.innerHTML='<option value="">All Stats</option>'+stats.map(s=>`<option value="${esc(s)}" ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
+  sel.value=cur;
+}
+function clearFilters(){ ['f-sport','f-source','f-stat'].forEach(i=>document.getElementById(i).value=i==='f-sport'||i==='f-source'?'all':''); document.getElementById('f-player').value=''; applyFilters(); }
+
+// ════════════ helpers ════════════
+function val(id){return document.getElementById(id).value;}
+function setStatus(state,msg,errors){
+  document.getElementById('dot').className='status-dot '+(state==='live'?'live':state==='error'?'error':'');
+  document.getElementById('status-text').textContent=msg||(state==='loading'?'Loading…':'');
+  const badge=document.getElementById('err-badge-wrap');
+  if(errors&&Object.keys(errors).length){
+    const titles=Object.entries(errors).map(([k,v])=>`${k}: ${v}`).join('\n');
+    const isMock='mock_fallback' in errors;
+    const real=Object.keys(errors).filter(k=>k!=='mock_fallback');
+    const nice={prizepicks:'PrizePicks',underdog:'Underdog'};
+    const names=real.map(k=>nice[k]||k).join(', ');
+    // Name the offline source(s) directly; the full reason is in the hover tooltip.
+    const label=isMock?'⚡ demo data':`⚠ ${names} degraded`;
+    badge.innerHTML=`<span class="err-badge" title="${esc(titles)}">${esc(label)}</span>`;
+  }else badge.innerHTML='';
+}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function cssId(s){return String(s).replace(/[^a-z0-9]/gi,'_');}
+function srcShort(s){return ({underdog:'UD',prizepicks:'PP'})[s]||s;}
+function sportCls(s){return s==='MLB'?'MLB':s==='World Cup'?'WC':s==='Tennis'?'TN':s==='WNBA'?'WNBA':s==='NBA Summer League'?'SL':'other';}
+const ISO3={PRT:'Portugal',DEU:'Germany',GBR:'England',NLD:'Netherlands',HRV:'Croatia',URY:'Uruguay',CHE:'Switzerland',DNK:'Denmark',ESP:'Spain',FRA:'France',ARG:'Argentina',BRA:'Brazil',ENG:'England',ITA:'Italy',BEL:'Belgium',USA:'USA',MEX:'Mexico',COL:'Colombia',JPN:'Japan',KOR:'South Korea',MAR:'Morocco',SEN:'Senegal',POL:'Poland',AUS:'Australia',CAN:'Canada',GHA:'Ghana',ECU:'Ecuador',SRB:'Serbia',EGY:'Egypt',NGA:'Nigeria',CMR:'Cameroon',PRY:'Paraguay',PER:'Peru',CHL:'Chile',AUT:'Austria',TUR:'Turkey',NOR:'Norway',SWE:'Sweden'};
+function prettyCountry(c){if(!c)return '';const u=String(c).toUpperCase();return ISO3[u]||c;}
+function fbAvatar(name,big){
+  const ini=(name||'?').split(/[\s.]+/).filter(Boolean).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
+  return `<div class="${big?'dr-avatar':'avatar-fb'}" ${big?'style="width:64px;height:64px;border-radius:14px;font-size:24px"':''}>${esc(ini)}</div>`;
+}
+function fmtTime(iso){if(!iso)return '';try{const d=new Date(iso),n=new Date();const same=d.toDateString()===n.toDateString();return same?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch{return iso;}}
+function fmtDate(s){if(!s)return '';try{const d=new Date(s);return d.toLocaleDateString([],{month:'numeric',day:'numeric'});}catch{return s;}}
+function fmtImplied(p){if(p==null)return '<span style="color:var(--muted2)">—</span>';const pct=Math.round(p*100);const c=pct>=60?'var(--green)':pct>=45?'var(--yellow)':'var(--red)';return `<span style="color:${c}">${pct}%</span>`;}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
+// Re-fetch immediately when the tab regains focus so it's fresh the moment you look.
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadLines();});
+loadLines();
+</script>
+</body>
+</html>
