@@ -18,6 +18,7 @@ history) because there is no equivalent free per-player game-log feed.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import sys
@@ -1322,10 +1323,59 @@ def _attach_soccer_espn(lines: list[dict]) -> set:
     return done
 
 
+# ── World Cup tackles ─────────────────────────────────────────────────────────
+# ESPN's per-game soccer log carries no tackles, so tackles used to fall to the market
+# (edge 0). Instead snapshot each WC player's CLUB-season tackles/game from ESPN's core
+# stats API into soccer_tackles.json (static — completed seasons) and project from that.
+# Tackles fall in the World Cup — knockout caution, and possession-dominant favourites
+# (e.g. Spain: Cucurella) simply defend less — so deflate the club rate, then market-anchor
+# like the other WC stats. This is why heavy club tacklers correctly project UNDER.
+_WC_TACKLES_DEFLATE = 0.78
+try:
+    _tk_raw = json.loads((Path(__file__).parent / "soccer_tackles.json").read_text(encoding="utf-8"))
+    _WC_TACKLES = {mlb._norm_name(v["name"]): float(v["tpg"]) for v in _tk_raw.values() if v.get("name")}
+except Exception:
+    _WC_TACKLES = {}
+
+
+def _attach_soccer_tackles(lines: list[dict]) -> set:
+    """Project WC 'Tackles' props from committed club tackle rates (deflated to WC +
+    market-anchored). Returns the ids projected so the market fallback skips them."""
+    done: set = set()
+    if not _WC_TACKLES:
+        return done
+    from collections import defaultdict
+    std: dict = defaultdict(list)
+    for l in lines:
+        if (l.get("sport") == "World Cup" and (l.get("stat_type") or "").strip().lower() == "tackles"
+                and l.get("player") and l.get("line") is not None
+                and (l.get("odds_type") or "standard") == "standard"):
+            std[mlb._norm_name(l["player"])].append(float(l["line"]))
+    for l in lines:
+        if (l.get("sport") != "World Cup" or (l.get("stat_type") or "").strip().lower() != "tackles"
+                or not l.get("player") or l.get("line") is None):
+            continue
+        key = mlb._norm_name(l["player"])
+        rate = _WC_TACKLES.get(key)
+        if rate is None:
+            continue
+        form = rate * _WC_TACKLES_DEFLATE                        # club → World Cup
+        anchor = (sorted(std[key])[len(std[key]) // 2] if std.get(key) else float(l["line"]))
+        proj = 0.5 * form + 0.5 * anchor                         # 50% club-form / 50% market
+        line = float(l["line"])
+        l["model_proj"] = round(proj, 1)
+        l["model_edge"] = round(proj - line, 1)
+        l["model_prob"] = round(_poisson_sf(max(1, math.ceil(line)), proj), 3)
+        l["proj_kind"] = "espn"
+        done.add(l["id"])
+    return done
+
+
 def _attach_soccer_projections(lines: list[dict]) -> None:
     """
     World Cup projections, best signal first:
       1. ESPN per-game stats → real recency projection (proj differs from line).
+      1b. Tackles → committed club-season rate, deflated + anchored (ESPN log has no tackles).
       2. Poisson mean from the de-vigged market price (where two-sided prices exist).
       3. Cross-book consensus line (last resort).
     """
@@ -1333,7 +1383,11 @@ def _attach_soccer_projections(lines: list[dict]) -> None:
         espn_done = _attach_soccer_espn(lines)
     except Exception:
         espn_done = set()
-    _attach_soccer_market(lines, skip=espn_done)
+    try:
+        tackles_done = _attach_soccer_tackles(lines)
+    except Exception:
+        tackles_done = set()
+    _attach_soccer_market(lines, skip=espn_done | tackles_done)
 
 
 # Partial-game props (tagged "(1H)"/"(2H)"/"(1Q)"/"(Half)" by the puller) describe a

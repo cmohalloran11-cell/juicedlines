@@ -1,0 +1,639 @@
+{
+"adrien rabiot": {
+"apps": 29,
+"league": "ita.1",
+"name": "Adrien Rabiot",
+"season": 2025,
+"tpg": 1.966
+},
+"alejandro grimaldo": {
+"apps": 29,
+"league": "ger.1",
+"name": "Alejandro Grimaldo",
+"season": 2025,
+"tpg": 1.69
+},
+"alex baena": {
+"apps": 27,
+"league": "esp.1",
+"name": "\u00c1lex Baena",
+"season": 2025,
+"tpg": 0.667
+},
+"alexis mac allister": {
+"apps": 37,
+"league": "eng.1",
+"name": "Alexis Mac Allister",
+"season": 2025,
+"tpg": 1.432
+},
+"anthony gordon": {
+"apps": 26,
+"league": "eng.1",
+"name": "Anthony Gordon",
+"season": 2025,
+"tpg": 0.731
+},
+"aurelien tchouameni": {
+"apps": 33,
+"league": "esp.1",
+"name": "Aur\u00e9lien Tchouam\u00e9ni",
+"season": 2025,
+"tpg": 2.061
+},
+"aymeric laporte": {
+"apps": 25,
+"league": "esp.1",
+"name": "Aymeric Laporte",
+"season": 2025,
+"tpg": 1.08
+},
+"borja iglesias": {
+"apps": 35,
+"league": "esp.1",
+"name": "Borja Iglesias",
+"season": 2025,
+"tpg": 0.229
+},
+"bradley barcola": {
+"apps": 29,
+"league": "fra.1",
+"name": "Bradley Barcola",
+"season": 2025,
+"tpg": 1.034
+},
+"brice samba": {
+"apps": 32,
+"league": "fra.1",
+"name": "Brice Samba",
+"season": 2025,
+"tpg": 0.062
+},
+"bukayo saka": {
+"apps": 32,
+"league": "eng.1",
+"name": "Bukayo Saka",
+"season": 2025,
+"tpg": 1.281
+},
+"cristian romero": {
+"apps": 24,
+"league": "eng.1",
+"name": "Cristian Romero",
+"season": 2025,
+"tpg": 2.417
+},
+"dan burn": {
+"apps": 29,
+"league": "eng.1",
+"name": "Dan Burn",
+"season": 2025,
+"tpg": 1.379
+},
+"dani olmo": {
+"apps": 33,
+"league": "esp.1",
+"name": "Dani Olmo",
+"season": 2025,
+"tpg": 1.0
+},
+"david raya": {
+"apps": 37,
+"league": "eng.1",
+"name": "David Raya",
+"season": 2025,
+"tpg": 0.027
+},
+"dayot upamecano": {
+"apps": 24,
+"league": "ger.1",
+"name": "Dayot Upamecano",
+"season": 2025,
+"tpg": 1.833
+},
+"dean henderson": {
+"apps": 37,
+"league": "eng.1",
+"name": "Dean Henderson",
+"season": 2025,
+"tpg": 0.027
+},
+"declan rice": {
+"apps": 36,
+"league": "eng.1",
+"name": "Declan Rice",
+"season": 2025,
+"tpg": 1.944
+},
+"desire doue": {
+"apps": 23,
+"league": "fra.1",
+"name": "D\u00e9sir\u00e9 Dou\u00e9",
+"season": 2025,
+"tpg": 1.391
+},
+"djed spence": {
+"apps": 30,
+"league": "eng.1",
+"name": "Djed Spence",
+"season": 2025,
+"tpg": 1.467
+},
+"eberechi eze": {
+"apps": 33,
+"league": "eng.1",
+"name": "Eberechi Eze",
+"season": 2025,
+"tpg": 0.576
+},
+"elliot anderson": {
+"apps": 38,
+"league": "eng.1",
+"name": "Elliot Anderson",
+"season": 2025,
+"tpg": 2.737
+},
+"emiliano martinez": {
+"apps": 25,
+"league": "bra.1",
+"name": "Emiliano Mart\u00ednez",
+"season": 2025,
+"tpg": 0.8
+},
+"enzo fernandez": {
+"apps": 36,
+"league": "eng.1",
+"name": "Enzo Fern\u00e1ndez",
+"season": 2025,
+"tpg": 1.472
+},
+"exequiel palacios": {
+"apps": 18,
+"league": "ger.1",
+"name": "Exequiel Palacios",
+"season": 2025,
+"tpg": 1.167
+},
+"ezri konsa": {
+"apps": 34,
+"league": "eng.1",
+"name": "Ezri Konsa",
+"season": 2025,
+"tpg": 0.647
+},
+"fabian ruiz": {
+"apps": 20,
+"league": "fra.1",
+"name": "Fabi\u00e1n Ruiz",
+"season": 2025,
+"tpg": 0.85
+},
+"facundo medina": {
+"apps": 17,
+"league": "fra.1",
+"name": "Facundo Medina",
+"season": 2025,
+"tpg": 1.118
+},
+"ferran torres": {
+"apps": 33,
+"league": "esp.1",
+"name": "Ferran Torres",
+"season": 2025,
+"tpg": 0.212
+},
+"geronimo rulli": {
+"apps": 29,
+"league": "fra.1",
+"name": "Ger\u00f3nimo Rulli",
+"season": 2025,
+"tpg": 0.069
+},
+"giovani lo celso": {
+"apps": 24,
+"league": "esp.1",
+"name": "Giovani Lo Celso",
+"season": 2025,
+"tpg": 0.792
+},
+"giuliano simeone": {
+"apps": 31,
+"league": "esp.1",
+"name": "Giuliano Simeone",
+"season": 2025,
+"tpg": 1.452
+},
+"gonzalo montiel": {
+"apps": 6,
+"league": "esp.1",
+"name": "Gonzalo Montiel",
+"season": 2024,
+"tpg": 0.0
+},
+"harry kane": {
+"apps": 31,
+"league": "ger.1",
+"name": "Harry Kane",
+"season": 2025,
+"tpg": 0.613
+},
+"joan garcia": {
+"apps": 30,
+"league": "esp.1",
+"name": "Joan Garc\u00eda",
+"season": 2025,
+"tpg": 0.2
+},
+"john stones": {
+"apps": 9,
+"league": "eng.1",
+"name": "John Stones",
+"season": 2025,
+"tpg": 0.111
+},
+"jordan pickford": {
+"apps": 38,
+"league": "eng.1",
+"name": "Jordan Pickford",
+"season": 2025,
+"tpg": 0.053
+},
+"jose manuel lopez": {
+"apps": 33,
+"league": "bra.1",
+"name": "Jos\u00e9 Manuel L\u00f3pez",
+"season": 2025,
+"tpg": 0.636
+},
+"juan musso": {
+"apps": 8,
+"league": "esp.1",
+"name": "Juan Musso",
+"season": 2025,
+"tpg": 0.0
+},
+"jude bellingham": {
+"apps": 28,
+"league": "esp.1",
+"name": "Jude Bellingham",
+"season": 2025,
+"tpg": 1.821
+},
+"jules kounde": {
+"apps": 30,
+"league": "esp.1",
+"name": "Jules Kound\u00e9",
+"season": 2025,
+"tpg": 1.567
+},
+"julian alvarez": {
+"apps": 29,
+"league": "esp.1",
+"name": "Juli\u00e1n Alvarez",
+"season": 2025,
+"tpg": 0.724
+},
+"kobbie mainoo": {
+"apps": 28,
+"league": "eng.1",
+"name": "Kobbie Mainoo",
+"season": 2025,
+"tpg": 1.286
+},
+"kylian mbappe": {
+"apps": 31,
+"league": "esp.1",
+"name": "Kylian Mbapp\u00e9",
+"season": 2025,
+"tpg": 0.129
+},
+"lamine yamal": {
+"apps": 28,
+"league": "esp.1",
+"name": "Lamine Yamal",
+"season": 2025,
+"tpg": 1.25
+},
+"lautaro martinez": {
+"apps": 30,
+"league": "ita.1",
+"name": "Lautaro Mart\u00ednez",
+"season": 2025,
+"tpg": 0.8
+},
+"leandro paredes": {
+"apps": 22,
+"league": "ita.1",
+"name": "Leandro Paredes",
+"season": 2024,
+"tpg": 0.0
+},
+"lionel messi": {
+"apps": 28,
+"league": "usa.1",
+"name": "Lionel Messi",
+"season": 2025,
+"tpg": 0.607
+},
+"lisandro martinez": {
+"apps": 18,
+"league": "eng.1",
+"name": "Lisandro Mart\u00ednez",
+"season": 2025,
+"tpg": 1.056
+},
+"lucas digne": {
+"apps": 31,
+"league": "eng.1",
+"name": "Lucas Digne",
+"season": 2025,
+"tpg": 1.161
+},
+"lucas hernandez": {
+"apps": 25,
+"league": "fra.1",
+"name": "Lucas Hern\u00e1ndez",
+"season": 2025,
+"tpg": 1.0
+},
+"maghnes akliouche": {
+"apps": 31,
+"league": "fra.1",
+"name": "Maghnes Akliouche",
+"season": 2025,
+"tpg": 1.258
+},
+"malo gusto": {
+"apps": 34,
+"league": "eng.1",
+"name": "Malo Gusto",
+"season": 2025,
+"tpg": 1.559
+},
+"manu kone": {
+"apps": 29,
+"league": "ita.1",
+"name": "Manu Kon\u00e9",
+"season": 2025,
+"tpg": 1.69
+},
+"marc cucurella": {
+"apps": 34,
+"league": "eng.1",
+"name": "Marc Cucurella",
+"season": 2025,
+"tpg": 1.618
+},
+"marc guehi": {
+"apps": 35,
+"league": "eng.1",
+"name": "Marc Gu\u00e9hi",
+"season": 2025,
+"tpg": 1.314
+},
+"marcos llorente": {
+"apps": 29,
+"league": "esp.1",
+"name": "Marcos Llorente",
+"season": 2025,
+"tpg": 2.034
+},
+"marcus rashford": {
+"apps": 32,
+"league": "esp.1",
+"name": "Marcus Rashford",
+"season": 2025,
+"tpg": 0.25
+},
+"marcus thuram": {
+"apps": 29,
+"league": "ita.1",
+"name": "Marcus Thuram",
+"season": 2025,
+"tpg": 0.828
+},
+"martin zubimendi": {
+"apps": 38,
+"league": "eng.1",
+"name": "Mart\u00edn Zubimendi",
+"season": 2025,
+"tpg": 1.789
+},
+"michael olise": {
+"apps": 32,
+"league": "ger.1",
+"name": "Michael Olise",
+"season": 2025,
+"tpg": 0.75
+},
+"mike maignan": {
+"apps": 37,
+"league": "ita.1",
+"name": "Mike Maignan",
+"season": 2025,
+"tpg": 0.0
+},
+"mikel merino": {
+"apps": 22,
+"league": "eng.1",
+"name": "Mikel Merino",
+"season": 2025,
+"tpg": 1.182
+},
+"mikel oyarzabal": {
+"apps": 34,
+"league": "esp.1",
+"name": "Mikel Oyarzabal",
+"season": 2025,
+"tpg": 0.853
+},
+"morgan rogers": {
+"apps": 37,
+"league": "eng.1",
+"name": "Morgan Rogers",
+"season": 2025,
+"tpg": 1.135
+},
+"nahuel molina": {
+"apps": 26,
+"league": "esp.1",
+"name": "Nahuel Molina",
+"season": 2025,
+"tpg": 1.538
+},
+"ngolo kante": {
+"apps": 14,
+"league": "tur.1",
+"name": "N'Golo Kant\u00e9",
+"season": 2025,
+"tpg": 0.0
+},
+"nico gonzalez": {
+"apps": 24,
+"league": "esp.1",
+"name": "Nico Gonz\u00e1lez",
+"season": 2025,
+"tpg": 1.0
+},
+"nico oreilly": {
+"apps": 34,
+"league": "eng.1",
+"name": "Nico O'Reilly",
+"season": 2025,
+"tpg": 2.0
+},
+"nico paz": {
+"apps": 35,
+"league": "ita.1",
+"name": "Nico Paz",
+"season": 2025,
+"tpg": 2.6
+},
+"nico williams": {
+"apps": 25,
+"league": "esp.1",
+"name": "Nico Williams",
+"season": 2025,
+"tpg": 0.6
+},
+"nicolas otamendi": {
+"apps": 30,
+"league": "por.1",
+"name": "Nicol\u00e1s Otamendi",
+"season": 2025,
+"tpg": 1.5
+},
+"nicolas tagliafico": {
+"apps": 20,
+"league": "fra.1",
+"name": "Nicol\u00e1s Tagliafico",
+"season": 2025,
+"tpg": 1.45
+},
+"noni madueke": {
+"apps": 26,
+"league": "eng.1",
+"name": "Noni Madueke",
+"season": 2025,
+"tpg": 0.808
+},
+"ollie watkins": {
+"apps": 37,
+"league": "eng.1",
+"name": "Ollie Watkins",
+"season": 2025,
+"tpg": 0.595
+},
+"ousmane dembele": {
+"apps": 22,
+"league": "fra.1",
+"name": "Ousmane Demb\u00e9l\u00e9",
+"season": 2025,
+"tpg": 0.273
+},
+"pau cubarsi": {
+"apps": 31,
+"league": "esp.1",
+"name": "Pau Cubars\u00ed",
+"season": 2025,
+"tpg": 1.355
+},
+"pedri": {
+"apps": 29,
+"league": "esp.1",
+"name": "Pedri",
+"season": 2025,
+"tpg": 1.724
+},
+"pedro porro": {
+"apps": 34,
+"league": "eng.1",
+"name": "Pedro Porro",
+"season": 2025,
+"tpg": 2.235
+},
+"rayan cherki": {
+"apps": 33,
+"league": "eng.1",
+"name": "Rayan Cherki",
+"season": 2025,
+"tpg": 0.788
+},
+"reece james": {
+"apps": 29,
+"league": "eng.1",
+"name": "Reece James",
+"season": 2025,
+"tpg": 1.655
+},
+"rodri": {
+"apps": 21,
+"league": "eng.1",
+"name": "Rodri",
+"season": 2025,
+"tpg": 1.952
+},
+"rodrigo de paul": {
+"apps": 11,
+"league": "usa.1",
+"name": "Rodrigo De Paul",
+"season": 2025,
+"tpg": 1.0
+},
+"theo hernandez": {
+"apps": 33,
+"league": "ita.1",
+"name": "Th\u00e9o Hern\u00e1ndez",
+"season": 2024,
+"tpg": 0.0
+},
+"thiago almada": {
+"apps": 27,
+"league": "esp.1",
+"name": "Thiago Almada",
+"season": 2025,
+"tpg": 1.074
+},
+"trevoh chalobah": {
+"apps": 34,
+"league": "eng.1",
+"name": "Trevoh Chalobah",
+"season": 2025,
+"tpg": 1.029
+},
+"unai simon": {
+"apps": 37,
+"league": "esp.1",
+"name": "Unai Sim\u00f3n",
+"season": 2025,
+"tpg": 0.027
+},
+"valentin barco": {
+"apps": 27,
+"league": "fra.1",
+"name": "Valent\u00edn Barco",
+"season": 2025,
+"tpg": 2.0
+},
+"victor munoz": {
+"apps": 34,
+"league": "esp.1",
+"name": "V\u00edctor Mu\u00f1oz",
+"season": 2025,
+"tpg": 0.647
+},
+"william saliba": {
+"apps": 31,
+"league": "eng.1",
+"name": "William Saliba",
+"season": 2025,
+"tpg": 1.129
+},
+"yeremy pino": {
+"apps": 34,
+"league": "eng.1",
+"name": "Y\u00e9remy Pino",
+"season": 2025,
+"tpg": 1.059
+}
+}
