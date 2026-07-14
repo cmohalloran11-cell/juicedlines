@@ -26,7 +26,7 @@ import time
 
 import requests
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -931,6 +931,16 @@ def _is_allstar_mlb(l: dict) -> bool:
             and (l.get("team") or "").strip().upper() in {"AL", "NL"})
 
 
+# Temporary per-day override: UTC dates on which ALL MLB projections are suppressed (the
+# board still shows the MLB lines, just no projections/edges). Auto-reverts the next day —
+# remove the date to re-enable. Used to sit out an off slate (e.g. All-Star day).
+_MLB_MUTE_DATES = frozenset({"2026-07-14"})
+
+
+def _mlb_muted_today() -> bool:
+    return datetime.now(timezone.utc).date().isoformat() in _MLB_MUTE_DATES
+
+
 def attach_projections(lines: list[dict]) -> None:
     """
     Attach `model_proj` + `model_edge` (+ `proj_kind`) to every line so the board
@@ -942,13 +952,14 @@ def attach_projections(lines: list[dict]) -> None:
     time can't be projected from full-game logs (see _is_allstar_mlb).
     """
     if _MLB_OK:
+        mlb_muted = _mlb_muted_today()      # per-day override — no MLB projections today
         resolved: dict[str, tuple] = {}
         ids_by_group: dict[str, set] = {"hitting": set(), "pitching": set()}
         hitter_names: list[str] = []
         for l in lines:
             if l.get("sport") != "MLB" or not l.get("player") or l.get("line") is None:
                 continue
-            if _is_allstar_mlb(l):          # exhibition — no full-game projection
+            if mlb_muted or _is_allstar_mlb(l):   # muted day / exhibition — no projection
                 continue
             stat = l.get("stat_type") or ""
             pp = _prop_is_pitcher(stat)
@@ -1218,8 +1229,8 @@ _ESPN_WINDOW = 20  # most recent N games used for the projection
 # — it can't capture an individual's WC role (a fringe sub whose club form is high but who
 # barely features), which needs an actual WC box-score feed.
 _WC_FORM_DEFLATE = {
-    "shots": 0.72, "shots on target": 0.68, "goals": 0.60, "assists": 0.65,
-    "goals assists": 0.62, "goal + assist": 0.62, "goal assist": 0.62,
+    "shots": 0.82, "shots on target": 0.78, "goals": 0.62, "assists": 0.66,
+    "goals assists": 0.63, "goal + assist": 0.63, "goal assist": 0.63,
     "fouls": 0.85, "fouls drawn": 0.85, "offsides": 0.80, "cards": 0.90,
 }
 
@@ -1373,6 +1384,12 @@ def _attach_soccer_market(lines: list[dict], skip: set | None = None) -> None:
             continue
         lam, kind = pk
         line = float(l["line"])
+        if kind == "consensus":
+            # No gamelog signal for this stat — ESPN's soccer log has no tackles / passes /
+            # clearances / dribbles / saves, so there's nothing to project. Defer to THIS
+            # line (edge 0) instead of a group median that invents edges out of line
+            # dispersion (e.g. Rodri tackles proj 3.5 vs a 2.5 line). No data ⇒ no edge.
+            lam = line
         l["model_proj"] = round(lam, 1)
         l["model_edge"] = round(lam - line, 1)
         l["model_prob"] = round(_poisson_sf(max(1, math.ceil(line)), lam), 3)

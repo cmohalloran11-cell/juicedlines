@@ -54,7 +54,9 @@ CONFIG = {
             # sat below both the market and the players' own SL averages (over-regression to a
             # modest prior). 30 centers it on actual production (slate mean edge −0.65 → −0.3,
             # under/over 59/30 → ~50/37) while keeping healthy regression on 2-game samples.
-            "shrink_poss": 30,
+            # 30→25 once the actual SL games proved predictive (well-calibrated night): lean a
+            # bit harder on real production now that most players have 2-3 games logged.
+            "shrink_poss": 25,
             # minutes: use the player's actual SL minutes (like WNBA); the draft-slot
             # baseline only applies to players with zero games so far.
             "minutes_shrink_games": 0,
