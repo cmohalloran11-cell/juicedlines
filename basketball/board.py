@@ -84,11 +84,12 @@ def attach_basketball(lines: list[dict]) -> int:
 
         for l in glines:
             line = float(l["line"])
-            # per-line guard: if the full-game projection is >1.5x THIS line, the line is a
-            # partial-game prop (1H≈2x, 1Q≈4x) sharing the stat label from a source not keyed
-            # by a period league → price it off the line itself (edge≈0). Legit goblins sit
-            # ≤~1.35x and demons <1x, so they still price off `blended`.
-            center = line if (line > 0 and blended > 1.5 * line) else blended
+            # Use the model's blended projection directly. (The old per-line guard snapped any
+            # projection >1.5x the line down to the line, assuming it was a partial-game prop —
+            # but those are now tagged "(1H)"/"(1Q)" and excluded upstream, so the guard only
+            # suppressed legit big edges, e.g. Cameron Boozer projecting ~6.7 rebounds against a
+            # low 3.5 line got flattened to 3.5.)
+            center = blended
             arr_line = arr + (center - model_mean)
             l["model_prob"] = round(float((arr_line > line).mean()), 4)
             l["model_proj"] = round(center, 1)

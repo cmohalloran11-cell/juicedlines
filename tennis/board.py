@@ -103,9 +103,11 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
 
             for l in glines:
                 line = float(l["line"])
-                # per-line guard: if the projection is >1.5x THIS line, the line is a
-                # partial-game prop (set/period) sharing the label → price it off the line.
-                center = line if (line > 0 and blended > 1.5 * line) else blended
+                # Use the blended projection directly — the old per-line guard snapped any
+                # projection >1.5x the line down to the line (assuming a partial-game prop),
+                # which just flattened legit big edges on low lines. Partial props are handled
+                # upstream now, so trust the model.
+                center = blended
                 arr_line = arr + (center - model_mean)
                 l["model_prob"] = round(float((arr_line > line).mean()), 4)
                 l["model_proj"] = round(center, 2)
