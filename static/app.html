@@ -6,6 +6,37 @@
 <title>Juiced — Bet Smart. Stay Juiced. Cash Out.</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23080b05'/%3E%3Cpath d='M58 8 L24 54 H46 L40 92 L78 40 H54 Z' fill='%23b6f01a'/%3E%3C/svg%3E">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+/* ── auth ── */
+.auth-btn{display:flex;align-items:center;gap:6px;padding:7px 15px;border-radius:8px;border:1px solid transparent;background:var(--accent);color:#0a120a;cursor:pointer;font-size:12.5px;font-weight:800;transition:.15s}
+.auth-btn:hover{background:var(--accent2)}
+.auth-btn.out{background:rgba(255,255,255,.05);border-color:var(--border2);color:var(--text)}
+.auth-btn.out:hover{border-color:var(--accent);color:var(--accent)}
+.auth-scrim{position:fixed;inset:0;background:rgba(3,5,2,.72);backdrop-filter:blur(4px);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}
+.auth-scrim.open{display:flex}
+.auth-modal{width:100%;max-width:390px;background:linear-gradient(165deg,var(--card),var(--surface));border:1px solid var(--border2);border-radius:18px;padding:26px;box-shadow:0 30px 90px rgba(0,0,0,.6)}
+.auth-modal .am-logo{display:flex;align-items:center;gap:9px;font-weight:900;font-style:italic;font-size:19px;color:#fff;margin-bottom:16px}
+.auth-modal h3{font-size:20px;margin-bottom:4px}
+.auth-modal .am-sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+.auth-modal label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:12px 0 5px}
+.auth-modal input{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:11px 13px;color:var(--text);font-size:14px;font-family:var(--font)}
+.auth-modal input:focus{outline:none;border-color:var(--accent)}
+.auth-modal .am-primary{width:100%;margin-top:18px;padding:12px;border:0;border-radius:9px;background:var(--accent);color:#0a120a;font-weight:800;font-size:14px;cursor:pointer}
+.auth-modal .am-primary:hover{background:var(--accent2)}
+.auth-modal .am-primary:disabled{opacity:.6;cursor:default}
+.auth-modal .am-google{width:100%;margin-top:10px;padding:11px;border:1px solid var(--border2);border-radius:9px;background:#fff;color:#1a1a1a;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px}
+.auth-modal .am-google:hover{background:#f1f1f1}
+.auth-modal .am-or{display:flex;align-items:center;gap:10px;color:var(--muted2);font-size:11px;margin:16px 0 4px}
+.auth-modal .am-or::before,.auth-modal .am-or::after{content:'';flex:1;height:1px;background:var(--border)}
+.auth-modal .am-toggle{text-align:center;font-size:12.5px;color:var(--muted);margin-top:16px}
+.auth-modal .am-toggle a{color:var(--accent);cursor:pointer;font-weight:700}
+.auth-modal .am-msg{font-size:12.5px;margin-top:12px;padding:9px 11px;border-radius:8px;display:none}
+.auth-modal .am-msg.err{display:block;background:rgba(255,77,95,.1);border:1px solid rgba(255,77,95,.25);color:#ff8a97}
+.auth-modal .am-msg.ok{display:block;background:rgba(155,232,20,.1);border:1px solid rgba(155,232,20,.25);color:var(--green)}
+.auth-modal .am-close{float:right;background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;margin:-6px -6px 0 0}
+.auth-modal .am-note{font-size:11px;color:var(--muted2);text-align:center;margin-top:14px;line-height:1.5}
+</style>
 <style>
 :root {
   --bg:        #060803;
@@ -298,6 +329,7 @@ input[type=text]{min-width:190px}
   <div class="spacer"></div>
   <div id="last-updated"></div>
   <button class="refresh-btn" onclick="loadLines(true)"><span id="rf-ic">↺</span> Refresh</button>
+  <button class="auth-btn" id="auth-btn" onclick="onAuthBtn()">Sign in</button>
 </div>
 
 <div class="tabs">
@@ -491,7 +523,92 @@ input[type=text]{min-width:190px}
   <div id="drawer-content"></div>
 </div>
 
+<!-- ════════════ AUTH ════════════ -->
+<div class="auth-scrim" id="auth-scrim" onclick="if(event.target===this)closeAuth()">
+  <div class="auth-modal" role="dialog" aria-modal="true">
+    <button class="am-close" onclick="closeAuth()">✕</button>
+    <div class="am-logo"><span class="logo-mark">⚡</span>JUICED</div>
+    <h3 id="am-title">Welcome back</h3>
+    <div class="am-sub" id="am-sub">Sign in to unlock projections &amp; edges.</div>
+    <button class="am-google" onclick="authGoogle()">
+      <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#4285F4" d="M45 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.7-2 5-4.3 6.6v5.5h7C42.6 36.8 45 31.1 45 24.5z"/><path fill="#34A853" d="M24 46c5.8 0 10.7-1.9 14.3-5.2l-7-5.5c-1.9 1.3-4.4 2.1-7.3 2.1-5.6 0-10.3-3.8-12-8.9H4.6v5.6C8.2 41.3 15.5 46 24 46z"/><path fill="#FBBC05" d="M12 28.5c-.4-1.3-.7-2.6-.7-4s.3-2.7.7-4v-5.6H4.6C3.6 13.3 3 16.6 3 20s.6 6.7 1.6 9.6L12 28.5z"/><path fill="#EA4335" d="M24 11.1c3.2 0 6 1.1 8.2 3.2l6.1-6.1C34.7 4.7 29.8 3 24 3 15.5 3 8.2 7.7 4.6 14.9l7.4 5.6c1.7-5.1 6.4-9.4 12-9.4z"/></svg>
+      Continue with Google
+    </button>
+    <div class="am-or">or</div>
+    <label>Email</label>
+    <input id="am-email" type="email" autocomplete="email" placeholder="you@email.com">
+    <label>Password</label>
+    <input id="am-pass" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')authSubmit()">
+    <div class="am-msg" id="am-msg"></div>
+    <button class="am-primary" id="am-primary" onclick="authSubmit()">Sign in</button>
+    <div class="am-toggle" id="am-toggle">New to JUICED? <a onclick="authToggle()">Create an account</a></div>
+    <div class="am-note">By continuing you agree these projections are informational only, not betting advice. 18+.</div>
+  </div>
+</div>
+
 <script>
+// ════════════ auth (Supabase) ════════════
+// Paste your Supabase project's URL + anon (public) key below. BOTH are safe to ship in the
+// client — the anon key is designed to be public and is protected by Row-Level Security.
+// Get them at: Supabase dashboard → Project Settings → API.
+const SUPABASE_URL      = 'https://YOUR-PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
+
+let _sb = null, currentUser = null, _authMode = 'signin';
+const _authConfigured = () => SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR-PROJECT');
+
+function initAuth(){
+  if(!_authConfigured() || !window.supabase){ updateAuthUI(); return; }
+  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  _sb.auth.getSession().then(({data})=>{ currentUser = data.session?.user || null; updateAuthUI(); });
+  _sb.auth.onAuthStateChange((_e, session)=>{ currentUser = session?.user || null; updateAuthUI(); closeAuth(); });
+}
+function updateAuthUI(){
+  const b = document.getElementById('auth-btn'); if(!b) return;
+  if(currentUser){ b.textContent = '⏻ ' + (currentUser.email||'Account').split('@')[0]; b.classList.add('out'); }
+  else { b.textContent = 'Sign in'; b.classList.remove('out'); }
+}
+function onAuthBtn(){ currentUser ? authLogout() : openAuth(); }
+function openAuth(){
+  if(!_authConfigured()){ alert('Sign-in isn’t configured yet — add your Supabase keys in app.html (see the auth config block).'); return; }
+  _setAuthMode('signin'); _authMsg(''); document.getElementById('auth-scrim').classList.add('open');
+  setTimeout(()=>document.getElementById('am-email').focus(), 50);
+}
+function closeAuth(){ document.getElementById('auth-scrim').classList.remove('open'); }
+function authToggle(){ _setAuthMode(_authMode==='signin'?'signup':'signin'); _authMsg(''); }
+function _setAuthMode(m){
+  _authMode = m; const up = m==='signup';
+  document.getElementById('am-title').textContent = up ? 'Create your account' : 'Welcome back';
+  document.getElementById('am-sub').textContent   = up ? 'Free during beta — unlock projections & edges.' : 'Sign in to unlock projections & edges.';
+  document.getElementById('am-primary').textContent = up ? 'Create account' : 'Sign in';
+  document.getElementById('am-pass').autocomplete   = up ? 'new-password' : 'current-password';
+  document.getElementById('am-toggle').innerHTML = up
+    ? 'Already have an account? <a onclick="authToggle()">Sign in</a>'
+    : 'New to JUICED? <a onclick="authToggle()">Create an account</a>';
+}
+function _authMsg(t, ok){ const m=document.getElementById('am-msg'); m.className='am-msg'+(t?(ok?' ok':' err'):''); m.textContent=t||''; }
+async function authSubmit(){
+  const email=document.getElementById('am-email').value.trim(), pass=document.getElementById('am-pass').value;
+  if(!email||!pass){ _authMsg('Enter your email and password.'); return; }
+  const btn=document.getElementById('am-primary'); btn.disabled=true;
+  try{
+    if(_authMode==='signup'){
+      const {error}=await _sb.auth.signUp({email,password:pass});
+      if(error) throw error;
+      _authMsg('Account created — check your email to confirm, then sign in.', true);
+    } else {
+      const {error}=await _sb.auth.signInWithPassword({email,password:pass});
+      if(error) throw error;
+    }
+  }catch(e){ _authMsg(e.message||'Something went wrong.'); }
+  finally{ btn.disabled=false; }
+}
+async function authGoogle(){
+  try{ await _sb.auth.signInWithOAuth({provider:'google', options:{redirectTo:location.href}}); }
+  catch(e){ _authMsg(e.message||'Google sign-in failed.'); }
+}
+async function authLogout(){ if(_sb) await _sb.auth.signOut(); currentUser=null; updateAuthUI(); }
+
 // ════════════ state ════════════
 let allLines = [];
 let groups = [];
@@ -1478,6 +1595,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
 // Re-fetch immediately when the tab regains focus so it's fresh the moment you look.
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadLines();});
 loadLines();
+initAuth();
+// arriving from the landing "Sign in" link (?auth) → pop the modal once configured
+if(_authConfigured() && new URLSearchParams(location.search).has('auth')) setTimeout(openAuth, 400);
 </script>
 </body>
 </html>
