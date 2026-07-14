@@ -1326,11 +1326,11 @@ def _attach_soccer_espn(lines: list[dict]) -> set:
 # ── World Cup tackles ─────────────────────────────────────────────────────────
 # ESPN's per-game soccer log carries no tackles, so tackles used to fall to the market
 # (edge 0). Instead snapshot each WC player's CLUB-season tackles/game from ESPN's core
-# stats API into soccer_tackles.json (static — completed seasons) and project from that.
-# Tackles fall in the World Cup — knockout caution, and possession-dominant favourites
-# (e.g. Spain: Cucurella) simply defend less — so deflate the club rate, then market-anchor
-# like the other WC stats. This is why heavy club tacklers correctly project UNDER.
-_WC_TACKLES_DEFLATE = 0.78
+# stats API into soccer_tackles.json (static — completed seasons) and project from that:
+# the club rate is the realistic baseline for what a player DOES, anchored 50/50 to the
+# WC-aware market line. No blanket deflation — a player tilts over OR under by how his
+# actual rate compares to his line (Rabiot 1.97 → over a 1.5 line; Cucurella 1.62 → under a
+# 2.0 line), rather than everything being force-pushed under.
 try:
     _tk_raw = json.loads((Path(__file__).parent / "soccer_tackles.json").read_text(encoding="utf-8"))
     _WC_TACKLES = {mlb._norm_name(v["name"]): float(v["tpg"]) for v in _tk_raw.values() if v.get("name")}
@@ -1359,9 +1359,8 @@ def _attach_soccer_tackles(lines: list[dict]) -> set:
         rate = _WC_TACKLES.get(key)
         if rate is None:
             continue
-        form = rate * _WC_TACKLES_DEFLATE                        # club → World Cup
         anchor = (sorted(std[key])[len(std[key]) // 2] if std.get(key) else float(l["line"]))
-        proj = 0.5 * form + 0.5 * anchor                         # 50% club-form / 50% market
+        proj = 0.5 * rate + 0.5 * anchor            # 50% club rate (realistic baseline) / 50% WC-aware market
         line = float(l["line"])
         l["model_proj"] = round(proj, 1)
         l["model_edge"] = round(proj - line, 1)
