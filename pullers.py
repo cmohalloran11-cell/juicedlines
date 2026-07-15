@@ -111,7 +111,9 @@ def _sport_from_pp_league(league: str | None) -> str:
                             "cricket", "rugby", "nba", "nfl")):
         return "other"
     if l in _PP_LEAGUE_MLB or "mlb" in l or "baseball" in l:
-        return "MLB"
+        # Exclude season-long / period sub-leagues (MLBSZN2 = rest-of-season futures, whose
+        # "Home Runs" line is 15.5+ over the remaining games — nonsense as a game prop).
+        return "other" if any(t in l for t in _period) else "MLB"
     # ONLY the actual World Cup — not club soccer. PrizePicks' "SOCCER" league is club
     # ball (friendlies / Leagues Cup / MLS), whose players aren't in the tournament
     # (e.g. Santiago Rodriguez), so it must not land on the World Cup board. Exclude the
