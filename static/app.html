@@ -29,6 +29,8 @@
 .auth-modal .am-google:hover{background:#f1f1f1}
 .auth-modal .am-or{display:flex;align-items:center;gap:10px;color:var(--muted2);font-size:11px;margin:16px 0 4px}
 .auth-modal .am-or::before,.auth-modal .am-or::after{content:'';flex:1;height:1px;background:var(--border)}
+.auth-modal .am-remember{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-top:12px;cursor:pointer;font-weight:600;user-select:none}
+.auth-modal .am-remember input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;margin:0}
 .auth-modal .am-toggle{text-align:center;font-size:12.5px;color:var(--muted);margin-top:16px}
 .auth-modal .am-toggle a{color:var(--accent);cursor:pointer;font-weight:700}
 .auth-modal .am-msg{font-size:12.5px;margin-top:12px;padding:9px 11px;border-radius:8px;display:none}
@@ -547,6 +549,7 @@ input[type=text]{min-width:190px}
     <input id="am-email" type="email" autocomplete="email" placeholder="you@email.com">
     <label>Password</label>
     <input id="am-pass" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')authSubmit()">
+    <label class="am-remember"><input type="checkbox" id="am-remember" checked> Keep me signed in</label>
     <div class="am-msg" id="am-msg"></div>
     <button class="am-primary" id="am-primary" onclick="authSubmit()">Sign in</button>
     <div class="am-toggle" id="am-toggle">New to JUICED? <a onclick="authToggle()">Create an account</a></div>
@@ -579,6 +582,24 @@ const GOOGLE_ENABLED = true;
 let _sb = null, currentUser = null, _authMode = 'signin';
 const _authConfigured = () => SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR-PROJECT');
 
+// ── "Keep me signed in" (Remember me) ─────────────────────────────────────────
+// Checked (default) → the session is stored in localStorage and survives closing the
+// browser, so you stay signed in. Unchecked → sessionStorage, which the browser clears
+// when the tab/window closes, so you're signed out on exit. The flag itself lives in
+// localStorage so the choice is remembered across visits. getItem reads whichever store
+// currently holds the session (so a session written either way is always found).
+const REMEMBER_KEY = 'juiced-remember';
+function _rememberOn(){ try{ return localStorage.getItem(REMEMBER_KEY) !== '0'; }catch(e){ return true; } }
+function _setRemember(on){ try{ localStorage.setItem(REMEMBER_KEY, on ? '1' : '0'); }catch(e){} }
+const _authStorage = {
+  getItem(k){ try{ const v = localStorage.getItem(k); return v != null ? v : sessionStorage.getItem(k); }catch(e){ return null; } },
+  setItem(k, v){ try{
+      if(_rememberOn()){ localStorage.setItem(k, v); sessionStorage.removeItem(k); }
+      else { sessionStorage.setItem(k, v); localStorage.removeItem(k); }
+    }catch(e){} },
+  removeItem(k){ try{ localStorage.removeItem(k); sessionStorage.removeItem(k); }catch(e){} },
+};
+
 function initAuth(){
   if(!GOOGLE_ENABLED){ document.querySelectorAll('.am-google,.am-or').forEach(e=>e.style.display='none'); }
   if(!_authConfigured() || !window.supabase){ updateAuthUI(); return; }
@@ -587,7 +608,7 @@ function initAuth(){
   // future SDK change can't silently drop persistence; default storageKey is kept so the
   // landing page shares the same session on this origin).
   _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: window.localStorage }
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: _authStorage }
   });
   _sb.auth.getSession().then(({data})=>{ currentUser = data.session?.user || null; updateAuthUI(); });
   _sb.auth.onAuthStateChange((_e, session)=>{ currentUser = session?.user || null; updateAuthUI(); closeAuth(); });
@@ -622,6 +643,7 @@ document.addEventListener('click', e=>{
 function openAuth(){
   if(!_authConfigured()){ alert('Sign-in isn’t configured yet — add your Supabase keys in app.html (see the auth config block).'); return; }
   _setAuthMode('signin'); _authMsg(''); document.getElementById('auth-scrim').classList.add('open');
+  document.getElementById('am-remember').checked = _rememberOn();   // reflect the saved preference
   setTimeout(()=>document.getElementById('am-email').focus(), 50);
 }
 function closeAuth(){ document.getElementById('auth-scrim').classList.remove('open'); }
@@ -640,6 +662,7 @@ function _authMsg(t, ok){ const m=document.getElementById('am-msg'); m.className
 async function authSubmit(){
   const email=document.getElementById('am-email').value.trim(), pass=document.getElementById('am-pass').value;
   if(!email||!pass){ _authMsg('Enter your email and password.'); return; }
+  _setRemember(document.getElementById('am-remember').checked);   // route the session to local/sessionStorage
   const btn=document.getElementById('am-primary'); btn.disabled=true;
   try{
     if(_authMode==='signup'){
@@ -657,6 +680,7 @@ async function authSubmit(){
   finally{ btn.disabled=false; }
 }
 async function authGoogle(){
+  _setRemember((document.getElementById('am-remember')||{checked:true}).checked);   // persist choice across the OAuth redirect
   try{ await _sb.auth.signInWithOAuth({provider:'google', options:{redirectTo:location.href}}); }
   catch(e){ _authMsg(e.message||'Google sign-in failed.'); }
 }

@@ -246,7 +246,14 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
   var URL='https://wdacuefnynthoncoxpyf.supabase.co',
       KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkYWN1ZWZueW50aG9uY294cHlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNTIzMzUsImV4cCI6MjA5OTYyODMzNX0.KRhXafORdJSb9r-vv5O-E4VH9bwnBKN-yivZObmlj5Q';
   if(!window.supabase) return;
-  var sb=window.supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,storage:window.localStorage}});
+  // Same storage shim as the app so this page finds the session whether the user chose
+  // "Keep me signed in" (localStorage) or not (sessionStorage, same tab).
+  var authStorage={
+    getItem:function(k){ try{ var v=localStorage.getItem(k); return v!=null?v:sessionStorage.getItem(k); }catch(e){ return null; } },
+    setItem:function(k,v){ try{ (localStorage.getItem('juiced-remember')!=='0'?localStorage:sessionStorage).setItem(k,v); }catch(e){} },
+    removeItem:function(k){ try{ localStorage.removeItem(k); sessionStorage.removeItem(k); }catch(e){} }
+  };
+  var sb=window.supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,storage:authStorage}});
   sb.auth.getSession().then(function(res){
     var u=res && res.data && res.data.session && res.data.session.user;
     if(!u) return;
