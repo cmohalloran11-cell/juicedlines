@@ -559,11 +559,15 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // gate (Phase 3/4) will honour that plan. Flip to true the day the paywall goes live so new
 // signups become 'free' instead (founding members keep their lifetime plan).
 const PAYWALL_LIVE = false;
+// Google login needs a Google OAuth client wired into Supabase (Auth → Providers → Google).
+// Until that's done the button just errors, so keep it hidden. Flip to true once configured.
+const GOOGLE_ENABLED = false;
 
 let _sb = null, currentUser = null, _authMode = 'signin';
 const _authConfigured = () => SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR-PROJECT');
 
 function initAuth(){
+  if(!GOOGLE_ENABLED){ document.querySelectorAll('.am-google,.am-or').forEach(e=>e.style.display='none'); }
   if(!_authConfigured() || !window.supabase){ updateAuthUI(); return; }
   _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   _sb.auth.getSession().then(({data})=>{ currentUser = data.session?.user || null; updateAuthUI(); });
