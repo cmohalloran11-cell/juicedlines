@@ -554,6 +554,12 @@ input[type=text]{min-width:190px}
 const SUPABASE_URL      = 'https://wdacuefnynthoncoxpyf.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkYWN1ZWZueW50aG9uY294cHlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNTIzMzUsImV4cCI6MjA5OTYyODMzNX0.KRhXafORdJSb9r-vv5O-E4VH9bwnBKN-yivZObmlj5Q';
 
+// Beta: the whole board (incl. edges) is FREE and nothing is gated yet. Everyone who signs
+// up while PAYWALL_LIVE is false is stamped a FOUNDING MEMBER with lifetime premium — the
+// gate (Phase 3/4) will honour that plan. Flip to true the day the paywall goes live so new
+// signups become 'free' instead (founding members keep their lifetime plan).
+const PAYWALL_LIVE = false;
+
 let _sb = null, currentUser = null, _authMode = 'signin';
 const _authConfigured = () => SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR-PROJECT');
 
@@ -563,10 +569,14 @@ function initAuth(){
   _sb.auth.getSession().then(({data})=>{ currentUser = data.session?.user || null; updateAuthUI(); });
   _sb.auth.onAuthStateChange((_e, session)=>{ currentUser = session?.user || null; updateAuthUI(); closeAuth(); });
 }
+function isPremium(u){ return u && (u.user_metadata?.plan || 'lifetime') !== 'free'; }  // founding/lifetime
 function updateAuthUI(){
   const b = document.getElementById('auth-btn'); if(!b) return;
-  if(currentUser){ b.textContent = '⏻ ' + (currentUser.email||'Account').split('@')[0]; b.classList.add('out'); }
-  else { b.textContent = 'Sign in'; b.classList.remove('out'); }
+  if(currentUser){
+    b.textContent = (isPremium(currentUser)?'⭐ ':'⏻ ') + (currentUser.email||'Account').split('@')[0];
+    b.title = isPremium(currentUser) ? 'Founding Member · Premium for life — click to sign out' : 'Click to sign out';
+    b.classList.add('out');
+  } else { b.textContent = 'Sign in'; b.classList.remove('out'); b.title=''; }
 }
 function onAuthBtn(){ currentUser ? authLogout() : openAuth(); }
 function openAuth(){
@@ -579,7 +589,7 @@ function authToggle(){ _setAuthMode(_authMode==='signin'?'signup':'signin'); _au
 function _setAuthMode(m){
   _authMode = m; const up = m==='signup';
   document.getElementById('am-title').textContent = up ? 'Create your account' : 'Welcome back';
-  document.getElementById('am-sub').textContent   = up ? 'Free during beta — unlock projections & edges.' : 'Sign in to unlock projections & edges.';
+  document.getElementById('am-sub').innerHTML     = up ? 'Sign up now → <b style="color:var(--accent)">Founding Member: Premium free for life.</b>' : 'Welcome back — sign in to your account.';
   document.getElementById('am-primary').textContent = up ? 'Create account' : 'Sign in';
   document.getElementById('am-pass').autocomplete   = up ? 'new-password' : 'current-password';
   document.getElementById('am-toggle').innerHTML = up
@@ -593,9 +603,12 @@ async function authSubmit(){
   const btn=document.getElementById('am-primary'); btn.disabled=true;
   try{
     if(_authMode==='signup'){
-      const {error}=await _sb.auth.signUp({email,password:pass});
+      const plan = PAYWALL_LIVE ? 'free' : 'lifetime';   // pre-paywall signups = founding members
+      const {error}=await _sb.auth.signUp({email,password:pass,
+        options:{data:{plan, founding:!PAYWALL_LIVE, joined:new Date().toISOString().slice(0,10)}}});
       if(error) throw error;
-      _authMsg('Account created — check your email to confirm, then sign in.', true);
+      _authMsg(PAYWALL_LIVE ? 'Account created — check your email to confirm, then sign in.'
+        : '🎉 You’re a Founding Member — Premium free for life. Check your email to confirm, then sign in.', true);
     } else {
       const {error}=await _sb.auth.signInWithPassword({email,password:pass});
       if(error) throw error;
