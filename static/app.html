@@ -36,6 +36,13 @@
 .auth-modal .am-msg.ok{display:block;background:rgba(155,232,20,.1);border:1px solid rgba(155,232,20,.25);color:var(--green)}
 .auth-modal .am-close{float:right;background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;margin:-6px -6px 0 0}
 .auth-modal .am-note{font-size:11px;color:var(--muted2);text-align:center;margin-top:14px;line-height:1.5}
+/* account menu (popover from the account button) */
+.acct-menu{position:fixed;z-index:180;min-width:210px;background:linear-gradient(165deg,var(--card2),var(--surface));border:1px solid var(--border2);border-radius:12px;padding:13px;box-shadow:0 20px 55px rgba(0,0,0,.55);display:none}
+.acct-menu.open{display:block}
+.acct-menu .ac-email{font-size:13px;font-weight:700;color:var(--text);word-break:break-all;line-height:1.3}
+.acct-menu .ac-plan{font-size:11.5px;color:var(--accent);font-weight:700;margin:3px 0 11px;display:flex;align-items:center;gap:5px}
+.acct-menu .ac-out{width:100%;padding:9px;border:1px solid rgba(255,77,95,.3);border-radius:8px;background:rgba(255,77,95,.08);color:#ff8a97;font-weight:700;font-size:12.5px;cursor:pointer}
+.acct-menu .ac-out:hover{background:rgba(255,77,95,.18)}
 </style>
 <style>
 :root {
@@ -70,8 +77,9 @@ body{background:radial-gradient(1100px 560px at 70% -12%,#1a2e05 0%,var(--bg) 55
 /* ───────── top bar ───────── */
 .topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;padding:12px 22px;background:rgba(8,11,5,.85);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
 .logo{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:900;letter-spacing:.5px;font-style:italic;color:#fff}
-.logo-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--green2));display:flex;align-items:center;justify-content:center;font-size:17px;color:#0a0e06;box-shadow:0 0 16px rgba(182,240,26,.55);font-style:normal}
-.logo span{background:linear-gradient(90deg,var(--accent2),var(--accent));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 0 22px rgba(182,240,26,.45)}
+.logo-mark{width:28px;height:28px;border-radius:8px;background:#0a0e06;border:1px solid rgba(182,240,26,.28);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(182,240,26,.4);font-style:normal;overflow:hidden;flex:none}
+.logo-mark svg{width:19px;height:19px}
+.logo>span:not(.logo-mark){background:linear-gradient(90deg,var(--accent2),var(--accent));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 0 22px rgba(182,240,26,.45)}
 .logo .tag{font-size:9px;font-style:normal;font-weight:700;letter-spacing:.12em;color:var(--muted);align-self:center}
 .status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted2);flex-shrink:0;transition:.3s}
 .status-dot.live{background:var(--green);box-shadow:0 0 0 3px rgba(155,232,20,.22)}
@@ -322,13 +330,13 @@ input[type=text]{min-width:190px}
 <body>
 
 <div class="topbar">
-  <a class="logo" href="./index.html" title="Home" style="text-decoration:none"><span class="logo-mark">⚡</span><span>JUICED</span><span class="tag">BET SMART · STAY JUICED · CASH OUT</span></a>
+  <a class="logo" href="./index.html" title="Home" style="text-decoration:none"><span class="logo-mark"><svg viewBox="0 0 100 100"><path d="M58 8 L24 54 H46 L40 92 L78 40 H54 Z" fill="var(--accent)"/></svg></span><span>JUICED</span><span class="tag">BET SMART · STAY JUICED · CASH OUT</span></a>
   <div class="status-dot" id="dot"></div>
   <div id="status-text">Loading…</div>
   <div id="err-badge-wrap"></div>
   <div class="spacer"></div>
   <div id="last-updated"></div>
-  <button class="refresh-btn" onclick="loadLines(true)"><span id="rf-ic">↺</span> Refresh</button>
+  <button class="refresh-btn" onclick="loadLines(true)"><span id="rf-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);vertical-align:-2px"><path d="M20 11a8 8 0 1 0-1.9 6M20 4v6h-6"/></svg></span> Refresh</button>
   <button class="auth-btn" id="auth-btn" onclick="onAuthBtn()">Sign in</button>
 </div>
 
@@ -390,7 +398,7 @@ input[type=text]{min-width:190px}
     <div class="muted-note">One entry = <b>one book, standard picks only</b> — goblins/demons have their own payouts and can't be freely mixed. Each leg uses the model's P(over); the parlay chance multiplies the legs assuming they're <b>independent</b> (correlated legs deviate). MLB probabilities are calibrated; <b>World Cup legs run overconfident</b> — treat those with caution.</div>
 
     <div class="parlay-head-row">
-      <h4 style="margin-bottom:0">⭐ Suggested Parlays</h4>
+      <h4 style="margin-bottom:0;display:flex;align-items:center;gap:7px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="none" style="color:var(--accent);flex:none"><path d="M12 2.5l2.9 6 6.6.6-5 4.4 1.5 6.5L12 16.9 6 20.5l1.5-6.5-5-4.4 6.6-.6z" fill="currentColor"/></svg> Suggested Parlays</h4>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <div class="seg bookseg">
           <button data-bk="prizepicks" class="active" onclick="setParlayBook('prizepicks')">PrizePicks</button>
@@ -408,7 +416,7 @@ input[type=text]{min-width:190px}
     <div style="color:var(--muted);font-size:12px;margin:4px 0 12px">The model's most-confident legs (one per player) stacked into 2–6 leg slips.</div>
     <div id="parlay-suggested" class="parlay-suggested"></div>
 
-    <h4 style="margin-top:28px">🛠️ Build Your Own</h4>
+    <h4 style="margin-top:28px;display:flex;align-items:center;gap:7px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="none" style="color:var(--accent);flex:none"><path d="M15 6.5a3.8 3.8 0 0 1-5 5L4.5 17 7 19.5 12.5 14a3.8 3.8 0 0 1 5-5l-2.2 2-2-.3-.3-2z" fill="currentColor"/></svg> Build Your Own</h4>
     <div class="parlay-grid">
       <div>
         <input id="parlay-search" placeholder="Search a player or stat to add legs…" oninput="searchParlayLines(this.value)">
@@ -460,7 +468,7 @@ input[type=text]{min-width:190px}
         <button data-sort="name" onclick="setSort('name')">A–Z</button>
       </div>
     </div>
-    <span class="clear-btn" onclick="clearFilters()">✕ Clear</span>
+    <span class="clear-btn" onclick="clearFilters()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="vertical-align:-1px"><path d="M6 6l12 12M18 6L6 18"/></svg> Clear</span>
   </div>
 
   <div class="stats-bar" id="stats-bar"></div>
@@ -519,15 +527,15 @@ input[type=text]{min-width:190px}
 <!-- ════════════ DRAWER ════════════ -->
 <div class="drawer-scrim" id="scrim" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
-  <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  <button class="drawer-close" onclick="closeDrawer()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   <div id="drawer-content"></div>
 </div>
 
 <!-- ════════════ AUTH ════════════ -->
 <div class="auth-scrim" id="auth-scrim" onclick="if(event.target===this)closeAuth()">
   <div class="auth-modal" role="dialog" aria-modal="true">
-    <button class="am-close" onclick="closeAuth()">✕</button>
-    <div class="am-logo"><span class="logo-mark">⚡</span>JUICED</div>
+    <button class="am-close" onclick="closeAuth()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="am-logo"><span class="logo-mark"><svg viewBox="0 0 100 100"><path d="M58 8 L24 54 H46 L40 92 L78 40 H54 Z" fill="var(--accent)"/></svg></span>JUICED</div>
     <h3 id="am-title">Welcome back</h3>
     <div class="am-sub" id="am-sub">Sign in to unlock projections &amp; edges.</div>
     <button class="am-google" onclick="authGoogle()">
@@ -544,6 +552,12 @@ input[type=text]{min-width:190px}
     <div class="am-toggle" id="am-toggle">New to JUICED? <a onclick="authToggle()">Create an account</a></div>
     <div class="am-note">By continuing you agree these projections are informational only, not betting advice. 18+.</div>
   </div>
+</div>
+
+<div class="acct-menu" id="acct-menu">
+  <div class="ac-email" id="ac-email"></div>
+  <div class="ac-plan" id="ac-plan"></div>
+  <button class="ac-out" onclick="authLogout(); toggleAcctMenu(false)">Sign out</button>
 </div>
 
 <script>
@@ -576,12 +590,29 @@ function isPremium(u){ return u && (u.user_metadata?.plan || 'lifetime') !== 'fr
 function updateAuthUI(){
   const b = document.getElementById('auth-btn'); if(!b) return;
   if(currentUser){
-    b.textContent = (isPremium(currentUser)?'⭐ ':'⏻ ') + (currentUser.email||'Account').split('@')[0];
-    b.title = isPremium(currentUser) ? 'Founding Member · Premium for life — click to sign out' : 'Click to sign out';
+    b.innerHTML = (isPremium(currentUser)?ic('star',14):ic('user',14)) + ' ' + esc((currentUser.email||'Account').split('@')[0]);
+    b.title = isPremium(currentUser) ? 'Founding Member · Premium for life' : 'Account';
     b.classList.add('out');
-  } else { b.textContent = 'Sign in'; b.classList.remove('out'); b.title=''; }
+  } else { b.textContent = 'Sign in'; b.classList.remove('out'); b.title=''; toggleAcctMenu(false); }
 }
-function onAuthBtn(){ currentUser ? authLogout() : openAuth(); }
+function onAuthBtn(){ currentUser ? toggleAcctMenu() : openAuth(); }
+function toggleAcctMenu(force){
+  const m=document.getElementById('acct-menu'), btn=document.getElementById('auth-btn');
+  const open = force===undefined ? !m.classList.contains('open') : !!force;
+  if(open && currentUser){
+    document.getElementById('ac-email').textContent = currentUser.email || 'Account';
+    document.getElementById('ac-plan').innerHTML = isPremium(currentUser)
+      ? ic('star',13)+' Founding Member · Premium for life' : 'Free plan';
+    const r = btn.getBoundingClientRect();
+    m.style.top = (r.bottom + 8) + 'px';
+    m.style.right = Math.max(12, window.innerWidth - r.right) + 'px';
+  }
+  m.classList.toggle('open', open);
+}
+document.addEventListener('click', e=>{
+  const m=document.getElementById('acct-menu'), btn=document.getElementById('auth-btn');
+  if(m && m.classList.contains('open') && !m.contains(e.target) && !btn.contains(e.target)) toggleAcctMenu(false);
+});
 function openAuth(){
   if(!_authConfigured()){ alert('Sign-in isn’t configured yet — add your Supabase keys in app.html (see the auth config block).'); return; }
   _setAuthMode('signin'); _authMsg(''); document.getElementById('auth-scrim').classList.add('open');
@@ -611,7 +642,7 @@ async function authSubmit(){
         options:{data:{plan, founding:!PAYWALL_LIVE, joined:new Date().toISOString().slice(0,10)}}});
       if(error) throw error;
       _authMsg(PAYWALL_LIVE ? 'Account created — check your email to confirm, then sign in.'
-        : '🎉 You’re a Founding Member — Premium free for life. Check your email to confirm, then sign in.', true);
+        : 'You’re a Founding Member — Premium free for life. Check your email to confirm, then sign in.', true);
     } else {
       const {error}=await _sb.auth.signInWithPassword({email,password:pass});
       if(error) throw error;
@@ -624,6 +655,36 @@ async function authGoogle(){
   catch(e){ _authMsg(e.message||'Google sign-in failed.'); }
 }
 async function authLogout(){ if(_sb) await _sb.auth.signOut(); currentUser=null; updateAuthUI(); }
+
+// ════════════ icons (custom neon-green SVGs — replace all emoji) ════════════
+const _ICONS = {
+  bolt:   '<path d="M13 2 4 14h6l-1 8 9-12h-6z" fill="currentColor" stroke="none"/>',
+  refresh:'<path d="M20 11a8 8 0 1 0-1.9 6M20 4v6h-6"/>',
+  star:   '<path d="M12 2.5l2.9 6 6.6.6-5 4.4 1.5 6.5L12 16.9 6 20.5l1.5-6.5-5-4.4 6.6-.6z" fill="currentColor" stroke="none"/>',
+  wrench: '<path d="M15 6.5a3.8 3.8 0 0 1-5 5L4.5 17 7 19.5 12.5 14a3.8 3.8 0 0 1 5-5l-2.2 2-2-.3-.3-2z" fill="currentColor" stroke="none"/>',
+  x:      '<path d="M6 6l12 12M18 6L6 18"/>',
+  user:   '<circle cx="12" cy="8" r="3.6"/><path d="M5 20a7 7 0 0 1 14 0"/>',
+  spark:  '<path d="M12 3l1.7 4.8L18.5 9.5l-4.8 1.7L12 16l-1.7-4.8L5.5 9.5l4.8-1.7z" fill="currentColor" stroke="none"/>',
+  chevron:'<path d="M9 5l7 7-7 7"/>',
+  up:     '<path d="M12 6l7 11H5z" fill="currentColor" stroke="none"/>',
+  down:   '<path d="M12 18L5 7h14z" fill="currentColor" stroke="none"/>',
+  target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>',
+  trend:  '<path d="M3 16l5-5 4 4 9-9M15 6h6v6"/>',
+  vs:     '<path d="M4 5l7 7-7 7M20 5l-7 7 7 7"/>',
+  check:  '<path d="M4 12.5l5 5L20 6.5"/>',
+  list:   '<path d="M8 6h12M8 12h12M8 18h9M4 6h.01M4 12h.01M4 18h.01"/>',
+  cart:   '<path d="M3 5h2l2.3 10.5h10L20 8H6"/><circle cx="9" cy="19.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="17" cy="19.5" r="1.4" fill="currentColor" stroke="none"/>',
+  bars:   '<path d="M3 20h18M6 20v-7M12 20V5M18 20v-10"/>',
+  ball:   '<circle cx="12" cy="12" r="8.5"/><path d="M5.5 6c4.5 3.2 4.5 8.8 0 12M18.5 6c-4.5 3.2-4.5 8.8 0 12"/>',
+  flask:  '<path d="M9.5 3h5M10.5 3v5l-4.2 8.4A2 2 0 0 0 8.1 19.4h7.8a2 2 0 0 0 1.8-3L13.5 8V3"/>',
+  arrow:  '<path d="M5 12h13M13 6l6 6-6 6"/>',
+  warn:   '<path d="M12 4l9 15.5H3z"/><path d="M12 10v4.5M12 17.4v.1"/>',
+};
+function ic(name, size, color){
+  const s = size || 15;
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:${color||'var(--accent)'};vertical-align:-2px;flex:none">${_ICONS[name]||''}</svg>`;
+}
+const LOGO_SVG = '<svg viewBox="0 0 100 100" width="100%" height="100%" style="display:block"><path d="M58 8 L24 54 H46 L40 92 L78 40 H54 Z" fill="var(--accent)"/></svg>';
 
 // ════════════ state ════════════
 let allLines = [];
@@ -702,7 +763,7 @@ async function loadLines(force=false){
     if(!_rendered) document.getElementById('board').innerHTML='<div class="loading-row"><span class="spinner"></span> Connecting to backend…</div>';
     delay=5000;
   }finally{
-    document.getElementById('rf-ic').textContent='↺';
+    document.getElementById('rf-ic').innerHTML=ic('refresh',14);
     if(STATIC_MODE) delay=150000;   // data branch refreshes ~every 5 min — re-poll every 2.5 min so an open page stays fresh
     _pollTimer=setTimeout(()=>loadLines(), delay);   // never stop fetching
   }
@@ -809,7 +870,7 @@ function groupHTML(g){
       <div class="gright">
         <div class="src-dots">${srcDots}</div>
         <div class="gcount"><b>${g.lines.length}</b> ${g.lines.length===1?'prop':'props'}</div>
-        <div class="chev">▶</div>
+        <div class="chev">${ic('chevron',13,'inherit')}</div>
       </div>
     </div>
     <div class="grows">${isOpen?rowsHTML(g):''}</div>
@@ -841,7 +902,7 @@ function projCell(l){
   if(l.model_proj==null) return `<div class="lproj"><span class="dash">—</span></div>`;
   const e=l.model_edge||0;
   const cls=e>0.05?'pos':e<-0.05?'neg':'';
-  const arrow=e>0.05?'▲':e<-0.05?'▼':'';
+  const arrow=e>0.05?ic('up',9,'inherit'):e<-0.05?ic('down',9,'inherit'):'';
   const edge=Math.abs(e)>=0.05?` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>`:'';
   const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':'Model projection';
   return `<div class="lproj ${cls}" title="${kindLbl} ${l.model_proj} vs line ${l.line}"><span class="proj-num">${l.model_proj}</span>${edge}</div>`;
@@ -902,7 +963,7 @@ function instantDrawer(line){
   const projLine = line.model_proj!=null
     ? `<div style="margin-top:10px;font-size:13px;color:var(--muted)">Proj <b style="color:var(--text)">${line.model_proj}</b> vs line <b style="color:var(--text)">${line.line}</b></div>` : '';
   return heroHead(a,line)+`<div class="dr-body">
-    <div class="dr-section"><h4><span class="ic">🎯</span> ${esc(line.stat_type||'')}</h4>
+    <div class="dr-section"><h4><span class="ic">${ic('target',14)}</span> ${esc(line.stat_type||'')}</h4>
       <div class="hit-card"><div class="hit-top"><div class="hit-prop"><b>${esc(line.stat_type||'')}</b></div>${line.line!=null?`<div class="hit-line-badge">Line ${line.line}</div>`:''}</div>${projLine}</div></div>
     <div class="dr-loading"><span class="spinner"></span> Loading analytics…</div>
   </div>`;
@@ -951,7 +1012,7 @@ function mlbDrawer(line,a,hist){
     const edge=(h.projection!=null&&h.line!=null)?(h.projection-h.line):null;
     const edgeCls=edge>0?'pos':'neg';
     const l5 = h.last5_n?`<div class="proj-cell"><div class="v">${h.last5_over}/${h.last5_n}</div><div class="l">Last 5 over</div></div>`:'';
-    hitCard=`<div class="dr-section"><h4><span class="ic">🎯</span> Hit Rate vs Line</h4>
+    hitCard=`<div class="dr-section"><h4><span class="ic">${ic('target',14)}</span> Hit Rate vs Line</h4>
       <div class="hit-card">
         <div class="hit-top"><div class="hit-prop"><b>${esc(h.stat)}</b></div>${(h.method&&h.method.indexOf('engine')===0)?`<div class="hit-line-badge" style="background:var(--accent);color:#0a120a;font-weight:700" title="Stat-projector engine: Bayesian recency blend${h.method==='engine+xBA'?' + Statcast xBA prior (the part with measured skill)':''} → 10k-sim Monte-Carlo distribution">⚙ ${h.method==='engine+xBA'?'engine·xBA':'engine'}</div>`:''}<div class="hit-line-badge">Line ${h.line}</div></div>
         <div class="hit-mid">
@@ -972,13 +1033,13 @@ function mlbDrawer(line,a,hist){
   const vsCard = a.vs_pitcher ? vsPitcherCard(a) : (a.vs_team ? vsTeamCard(a) : '');
   const recent=a.recent&&a.recent.length?recentTable(a):'';
   const shop=lineShopHTML(line);
-  const moveCard=hist.length>1?`<div class="dr-section"><h4><span class="ic">📈</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
+  const moveCard=hist.length>1?`<div class="dr-section"><h4><span class="ic">${ic('trend',14)}</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
   return heroHead(a,line)+`<div class="dr-body">${hitCard}${vsCard}${recent}${shop}${moveCard}</div>`;
 }
 
 function vsPitcherCard(a){
   const p=a.vs_pitcher.pitcher, st=a.vs_pitcher.stat;
-  const head=`<div class="dr-section"><h4><span class="ic">⚔️</span> Batter vs Pitcher — ${esc(p.name||'Probable P')}</h4>`;
+  const head=`<div class="dr-section"><h4><span class="ic">${ic('vs',14)}</span> Batter vs Pitcher — ${esc(p.name||'Probable P')}</h4>`;
   const pic=`<img class="avatar" src="${p.headshot}" data-name="${esc(p.name||'')}" onerror="avatarError(this)" style="width:34px;height:34px">`;
   if(!st || !st.atBats || +st.atBats===0){
     return head+`<div class="bvp-head">${pic}<div class="vs-empty">No prior matchups${st&&st.plateAppearances?` (${st.plateAppearances} PA)`:''} — first look or tiny sample.</div></div></div>`;
@@ -998,7 +1059,7 @@ function vsTeamCard(a){
   const labels={career:'Career',last5y:'Last 5Y'};
   const tabBtns=tabs.map((t,i)=>`<div class="vs-tab ${i===0?'on':''}" data-span="${t}">${labels[t]||t}</div>`).join('');
   const panels=tabs.map((t,i)=>`<div class="vs-panel" data-span="${t}" style="display:${i===0?'block':'none'}">${gridFor(spans[t],keys)}</div>`).join('');
-  return `<div class="dr-section"><h4><span class="ic">⚔️</span> ${a.player_type==='Pitcher'?'Allowed':'Career'} vs ${esc(opp.abbr||opp.name||'Opp')} ${opp.logo?`<img src="${opp.logo}" style="width:15px;height:15px" onerror="this.remove()">`:''}</h4>
+  return `<div class="dr-section"><h4><span class="ic">${ic('vs',14)}</span> ${a.player_type==='Pitcher'?'Allowed':'Career'} vs ${esc(opp.abbr||opp.name||'Opp')} ${opp.logo?`<img src="${opp.logo}" style="width:15px;height:15px" onerror="this.remove()">`:''}</h4>
     <div class="vs-tabs">${tabBtns}</div>${panels}</div>`;
 }
 function gridFor(stat,keys){
@@ -1022,7 +1083,7 @@ function recentTable(a){
   const rows=a.recent.map(g=>{
     const propCell = hasProp
       ? (g.prop_val!=null
-          ? `<td class="prop-cell ${g.cleared?'cleared':'missed'}">${g.prop_val} ${g.cleared?'✓':'✗'}</td>`
+          ? `<td class="prop-cell ${g.cleared?'cleared':'missed'}">${g.prop_val} ${g.cleared?ic('check',12,'inherit'):ic('x',12,'inherit')}</td>`
           : `<td class="prop-cell">—</td>`)
       : '';
     return `<tr>
@@ -1033,7 +1094,7 @@ function recentTable(a){
     </tr>`;
   }).join('');
   const propHead=hasProp?`<th class="prop-cell" title="${esc(a.hit_rate?a.hit_rate.stat:'')}">${esc(propLbl)}</th>`:'';
-  return `<div class="dr-section"><h4><span class="ic">📋</span> Last ${a.recent.length} Games${hasProp?` · ✓ = cleared ${a.hit_rate.line}`:''}</h4>
+  return `<div class="dr-section"><h4><span class="ic">${ic('list',14)}</span> Last ${a.recent.length} Games${hasProp?` · ${ic('check',11)} = cleared ${a.hit_rate.line}`:''}</h4>
     <table class="rtable"><thead><tr><th>Date</th><th>Opp</th>${cols.map(c=>`<th>${c}</th>`).join('')}${propHead}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 // Prop label → compact abbreviation. Ordered: multi-word / combos BEFORE the single
@@ -1089,11 +1150,11 @@ function lineShopHTML(line){
       <span style="color:var(--muted)">${esc(p.stat_type||'')}</span>
       <span class="sline">${p.line??'—'}</span><span class="sprice">${pr}</span></div>`;
   }).join('');
-  return `<div class="dr-section"><h4><span class="ic">🛒</span> Line Shopping — same prop across books</h4>${rows}</div>`;
+  return `<div class="dr-section"><h4><span class="ic">${ic('cart',14)}</span> Line Shopping — same prop across books</h4>${rows}</div>`;
 }
 
 function mlbUnavailable(line,a,hist){
-  const move=hist.length>1?`<div class="dr-section"><h4><span class="ic">📈</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
+  const move=hist.length>1?`<div class="dr-section"><h4><span class="ic">${ic('trend',14)}</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
   return heroHead({player:line.player||line.matchup,player_type:line.position||'',team:null,opponent:null},line)+
     `<div class="dr-body">
       <div class="dr-section"><h4>Prop</h4><div class="hit-card"><div class="hit-top"><div class="hit-prop"><b>${esc(line.stat_type||'')}</b></div>${line.line!=null?`<div class="hit-line-badge">Line ${line.line}</div>`:''}</div>
@@ -1116,7 +1177,7 @@ function staticAnalytics(line){
 }
 function soccerDrawer(line,a,hist){
   const prices=(line.over_price||line.under_price)?`Over ${line.over_price||'—'} / Under ${line.under_price||'—'}`:(line.over_implied!=null?`Yes ${Math.round(line.over_implied*100)}%`:'');
-  const move=(a.movement&&a.movement.length>1)||hist.length>1?`<div class="dr-section"><h4><span class="ic">📈</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
+  const move=(a.movement&&a.movement.length>1)||hist.length>1?`<div class="dr-section"><h4><span class="ic">${ic('trend',14)}</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
   // Soccer projection card — Poisson mean calibrated to the de-vigged market price
   let projCard='';
   if(a.model_proj!=null){
@@ -1129,7 +1190,7 @@ function soccerDrawer(line,a,hist){
               :kind==='poisson'?'Poisson expected count calibrated to the de-vigged market price.'
               :'Cross-book consensus line (no player-stat feed or price for this prop).');
     const title=kind==='espn'?'Form Projection (ESPN)':kind==='tennis'?'Serve/Return Model':'Model Projection';
-    projCard=`<div class="dr-section"><h4><span class="ic">📊</span> ${title}</h4>
+    projCard=`<div class="dr-section"><h4><span class="ic">${ic('bars',14)}</span> ${title}</h4>
       <div class="hit-card"><div class="hit-proj" style="border:none;padding:0">
         <div class="proj-cell"><div class="v">${a.model_proj}</div><div class="l">Proj</div></div>
         <div class="proj-cell"><div class="v">${a.line??line.line}</div><div class="l">This Line</div></div>
@@ -1140,7 +1201,7 @@ function soccerDrawer(line,a,hist){
   // Tennis: serve/return + Elo splits from the model.
   let tennisCard='';
   if(a.serve_pct!=null){
-    tennisCard=`<div class="dr-section"><h4><span class="ic">🎾</span> Serve / Return${a.tour?' · '+esc(a.tour):''}</h4>
+    tennisCard=`<div class="dr-section"><h4><span class="ic">${ic('ball',14)}</span> Serve / Return${a.tour?' · '+esc(a.tour):''}</h4>
       <div class="split-grid">
         <div class="split-cell"><div class="v">${a.serve_pct}%</div><div class="l">Serve pts won</div></div>
         <div class="split-cell"><div class="v">${a.return_pct}%</div><div class="l">Return pts won</div></div>
@@ -1149,7 +1210,7 @@ function soccerDrawer(line,a,hist){
   }
   return heroHead({player:a.player||line.player,player_type:a.player_type,headshot:a.headshot||line.headshot,team:a.team,opponent:null},line)+
     `<div class="dr-body">
-      <div class="dr-section"><h4><span class="ic">🎯</span> Prop</h4>
+      <div class="dr-section"><h4><span class="ic">${ic('target',14)}</span> Prop</h4>
         <div class="hit-card"><div class="hit-top"><div class="hit-prop"><b>${esc(a.stat||line.stat_type||'')}</b></div>${(a.line??line.line)!=null?`<div class="hit-line-badge">Line ${a.line??line.line}</div>`:''}</div>
         <div style="font-size:13px;color:var(--muted)">${esc(prettyCountry(a.team&&a.team.name)||'')}${line.matchup?' · '+esc(line.matchup):''}</div>
         <div style="font-size:13px;color:var(--orange);font-family:var(--mono);margin-top:8px">${prices}</div></div></div>
@@ -1346,7 +1407,7 @@ async function loadScorecard(){
     // The scorecard grades each line + our projection AFTER games settle, which needs the
     // persistent ledger from the live server — the hosted static snapshot can't keep it.
     el.innerHTML=`<div class="hit-card" style="padding:26px;text-align:center">
-      <div style="font-size:34px">📊</div>
+      <div style="font-size:0;margin-bottom:6px">${ic('bars',34)}</div>
       <div style="font-weight:700;margin:8px 0">Scorecard runs on the live backend</div>
       <div style="color:var(--muted);font-size:13px;max-width:470px;margin:0 auto;line-height:1.6">Grading logs every line + projection over time and settles them once games finish — that needs the persistent server (<code>python main.py</code>, or the full app deploy). The hosted static site doesn't keep that ledger, so there's nothing to grade here.</div></div>`;
     return;
@@ -1356,7 +1417,7 @@ async function loadScorecard(){
   catch(e){ el.innerHTML='<div class="loading-row">Could not load scorecard.</div>'; return; }
   if(!s.graded){
     el.innerHTML=`<div class="hit-card" style="padding:26px;text-align:center">
-      <div style="font-size:34px">📊</div>
+      <div style="font-size:0;margin-bottom:6px">${ic('bars',34)}</div>
       <div style="font-weight:700;margin:8px 0">Building up…</div>
       <div style="color:var(--muted);font-size:13px;max-width:440px;margin:0 auto">No graded props yet.
       The ledger logs lines + projections every few minutes and grades them after games finish —
@@ -1373,7 +1434,7 @@ async function loadScorecard(){
       <div class="proj-cell"><div class="v ${clvCls}">${pct(s.clv_positive_pct)}</div><div class="l">Positive CLV · ${s.clv_n}</div></div>
     </div>
     ${s.ab_n?`<div style="margin-top:14px;padding:12px;border:1px solid rgba(182,240,26,.22);border-radius:10px;background:rgba(182,240,26,.04)">
-      <div style="font-weight:700;margin-bottom:8px">🧪 A/B — plain engine vs engine + matchup + xBA <span style="color:var(--muted);font-weight:400">· ${s.ab_n} matched props</span></div>
+      <div style="font-weight:700;margin-bottom:8px">${ic('flask',15)} A/B — plain engine vs engine + matchup + xBA <span style="color:var(--muted);font-weight:400">· ${s.ab_n} matched props</span></div>
       <div class="hit-proj" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
         <div class="proj-cell"><div class="v ${cls(s.ab_plain)}">${pct(s.ab_plain)}</div><div class="l">A · plain board</div></div>
         <div class="proj-cell"><div class="v ${cls(s.ab_enhanced)}">${pct(s.ab_enhanced)}</div><div class="l">B · enhanced</div></div>
@@ -1544,7 +1605,7 @@ function renderParlaySummary(){
       <label>Stake $<input id="parlay-stake" type="number" min="0" step="1" value="${parlayStake}" oninput="updateStake(this.value)"></label>
       <div>Return <b id="pl-return">$${(parlayStake*M).toFixed(2)}</b> · EV <b id="pl-ev" class="${rc}">${P*M-1>=0?'+':''}$${(parlayStake*(P*M-1)).toFixed(2)}</b></div>
     </div>
-    <div class="muted-note" style="margin:0">Break-even hit rate is <b>${be.toFixed(1)}%</b> — you're <b class="${P*100>=be?'pos':'neg'}">${P*100>=be?'above':'below'}</b> it. ${soccer?'⚠ Includes World Cup legs (model overconfident there). ':''}Assumes calibrated, independent legs.</div>
+    <div class="muted-note" style="margin:0">Break-even hit rate is <b>${be.toFixed(1)}%</b> — you're <b class="${P*100>=be?'pos':'neg'}">${P*100>=be?'above':'below'}</b> it. ${soccer?ic('warn',12,'inherit')+' Includes World Cup legs (model overconfident there). ':''}Assumes calibrated, independent legs.</div>
     <button class="clearbtn" onclick="clearSlip()">Clear slip</button>`;
 }
 function updateStake(v){
@@ -1589,10 +1650,12 @@ function setStatus(state,msg,errors){
     const nice={prizepicks:'PrizePicks',underdog:'Underdog'};
     const names=real.map(k=>nice[k]||k).join(', ');
     // Name the offline source(s) directly; the full reason is in the hover tooltip.
-    const label=isMock?'⚡ demo data':`⚠ ${names} degraded`;
-    badge.innerHTML=`<span class="err-badge" title="${esc(titles)}">${esc(label)}</span>`;
+    const icon=isMock?ic('bolt',12,'inherit'):ic('warn',12,'inherit');
+    const label=isMock?'demo data':`${names} degraded`;
+    badge.innerHTML=`<span class="err-badge" title="${esc(titles)}">${icon} ${esc(label)}</span>`;
   }else badge.innerHTML='';
 }
+// (icon set _ICONS + ic() are defined once above, near line 660)
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function cssId(s){return String(s).replace(/[^a-z0-9]/gi,'_');}
 function srcShort(s){return ({underdog:'UD',prizepicks:'PP'})[s]||s;}

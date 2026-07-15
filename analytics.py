@@ -935,7 +935,7 @@ def _is_allstar_mlb(l: dict) -> bool:
 # Temporary per-day override: UTC dates on which ALL MLB projections are suppressed (the
 # board still shows the MLB lines, just no projections/edges). Auto-reverts the next day —
 # remove the date to re-enable. Used to sit out an off slate (e.g. All-Star day).
-_MLB_MUTE_DATES = frozenset({"2026-07-14"})
+_MLB_MUTE_DATES = frozenset()   # (was {"2026-07-14"} for the All-Star break) — MLB projects normally
 
 
 def _mlb_muted_today() -> bool:

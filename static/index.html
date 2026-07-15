@@ -25,7 +25,8 @@ a{color:inherit;text-decoration:none}
 /* nav */
 .nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:14px 22px;background:rgba(8,11,5,.8);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
 .brand{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:900;letter-spacing:.5px;font-style:italic;color:#fff}
-.mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#6db800);display:flex;align-items:center;justify-content:center;font-size:18px;color:#0a0e06;box-shadow:0 0 18px rgba(182,240,26,.5);font-style:normal}
+.mark{width:30px;height:30px;border-radius:8px;background:#0a0e06;border:1px solid rgba(182,240,26,.28);display:flex;align-items:center;justify-content:center;box-shadow:0 0 18px rgba(182,240,26,.42);font-style:normal;overflow:hidden;flex:none}
+.mark svg{width:20px;height:20px}
 .nav-links{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
 .nav-links a.ghost{color:var(--muted);padding:8px 12px;border-radius:8px}
 .nav-links a.ghost:hover{color:var(--text)}
@@ -96,9 +97,9 @@ section{padding:56px 0}
 .price .beta{font-size:12px;color:var(--accent);font-weight:700;margin-top:4px}
 .price ul{list-style:none;margin:20px 0 24px;display:flex;flex-direction:column;gap:11px}
 .price li{font-size:13.5px;display:flex;gap:9px;color:var(--text)}
-.price li::before{content:'✓';color:var(--accent);font-weight:900}
+.price li::before{content:'';flex:none;width:16px;height:16px;margin-top:1px;background:no-repeat center/contain;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b6f01a' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E")}
 .price li.off{color:var(--muted2)}
-.price li.off::before{content:'✕';color:var(--muted2)}
+.price li.off::before{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235d6b46' stroke-width='3' stroke-linecap='round'%3E%3Cline x1='18' y1='6' x2='6' y2='18'/%3E%3Cline x1='6' y1='6' x2='18' y2='18'/%3E%3C/svg%3E")}
 .price .btn{width:100%;justify-content:center}
 
 /* footer */
@@ -111,7 +112,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
 <body>
 
 <nav class="nav">
-  <a href="#top" class="brand"><span class="mark">⚡</span>JUICED</a>
+  <a href="#top" class="brand"><span class="mark"><svg viewBox="0 0 100 100"><path d="M58 8 L24 54 H46 L40 92 L78 40 H54 Z" fill="var(--accent)"/></svg></span>JUICED</a>
   <div class="nav-links">
     <a href="#features" class="ghost nav-hide">Features</a>
     <a href="#how" class="ghost nav-hide">How it works</a>
@@ -126,7 +127,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
   <!-- HERO -->
   <div class="hero">
     <div>
-      <span class="eyebrow">⚡ Model-driven betting edges</span>
+      <span class="eyebrow"><svg width="13" height="13" viewBox="0 0 100 100" style="vertical-align:-1px"><path d="M58 8 L24 54 H46 L40 92 L78 40 H54 Z" fill="currentColor"/></svg> Model-driven betting edges</span>
       <h1>Find the edge <span class="g">before the line moves.</span></h1>
       <p class="sub">JUICED projects every prop across MLB, WNBA, tennis, soccer &amp; Summer League — then shows you exactly <b>where the book is wrong</b>. Refreshed every ~5 minutes. No black box.</p>
       <div class="cta-row">
@@ -153,7 +154,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
         <div class="ebar"><div style="width:54%"></div></div>
       </div>
       <div class="erow" style="margin-bottom:0">
-        <div class="erow-top">Kylian Mbappé <span class="tag over">OVER</span> <span class="tag team">🇫🇷 FRA</span> <span class="stat">Shots · World Cup</span> <span class="ev">+0.5</span></div>
+        <div class="erow-top">Kylian Mbappé <span class="tag over">OVER</span> <span class="tag team">FRA</span> <span class="stat">Shots · World Cup</span> <span class="ev">+0.5</span></div>
         <div class="erow-sub">Proj 4.5 · Line 4.0 · 61% model</div>
         <div class="ebar"><div style="width:34%"></div></div>
       </div>
@@ -166,10 +167,10 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
     <h2 class="sec-title">Not picks. A projection for every prop.</h2>
     <p class="sec-note">JUICED runs its own models on live game logs, then ranks the biggest gaps between our number and the book's line.</p>
     <div class="grid">
-      <div class="feat"><div class="ic">🎯</div><h3>Real edges</h3><p>Our projection vs the posted line, ranked by EV — over &amp; under, every stat.</p></div>
-      <div class="feat"><div class="ic">📊</div><h3>Transparent</h3><p>Every projection shows its drivers and sample size. Low-confidence calls are flagged, not hidden.</p></div>
-      <div class="feat"><div class="ic">🧮</div><h3>Parlay builder</h3><p>Stack the model's most confident legs and see the true combined odds &amp; ROI.</p></div>
-      <div class="feat"><div class="ic">⚡</div><h3>Five sports</h3><p>MLB, WNBA, NBA Summer League, tennis &amp; the World Cup — one board, refreshed every ~5 min.</p></div>
+      <div class="feat"><div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></div><h3>Real edges</h3><p>Our projection vs the posted line, ranked by EV — over &amp; under, every stat.</p></div>
+      <div class="feat"><div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)"><line x1="6" y1="20" x2="6" y2="15"/><line x1="12" y1="20" x2="12" y2="9"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="3" y1="20" x2="21" y2="20"/></svg></div><h3>Transparent</h3><p>Every projection shows its drivers and sample size. Low-confidence calls are flagged, not hidden.</p></div>
+      <div class="feat"><div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)"><polygon points="12 2.5 21.5 7.5 12 12.5 2.5 7.5"/><polyline points="2.5 16.5 12 21.5 21.5 16.5"/><polyline points="2.5 12 12 17 21.5 12"/></svg></div><h3>Parlay builder</h3><p>Stack the model's most confident legs and see the true combined odds &amp; ROI.</p></div>
+      <div class="feat"><div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="none" style="color:var(--accent)"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10" fill="currentColor"/></svg></div><h3>Five sports</h3><p>MLB, WNBA, NBA Summer League, tennis &amp; the World Cup — one board, refreshed every ~5 min.</p></div>
     </div>
   </section>
 
@@ -230,7 +231,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
 
 <footer>
   <div class="wrap foot">
-    <a href="#top" class="brand" style="font-size:16px"><span class="mark" style="width:24px;height:24px;font-size:14px">⚡</span>JUICED</a>
+    <a href="#top" class="brand" style="font-size:16px"><span class="mark" style="width:24px;height:24px"><svg viewBox="0 0 100 100"><path d="M58 8 L24 54 H46 L40 92 L78 40 H54 Z" fill="var(--accent)"/></svg></span>JUICED</a>
     <span>© <span id="yr"></span> JUICED · Bet smart. Stay juiced.</span>
     <span style="margin-left:auto">Informational only · Not financial advice · 18+</span>
   </div>
