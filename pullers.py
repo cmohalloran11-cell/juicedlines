@@ -161,6 +161,15 @@ def _ud_dedup(props: list["UnderdogProp"]) -> list[dict[str, Any]]:
         # the real standard line for that prop.
         if p.is_boosted:
             continue
+        # Skip partial-game props (1st half / 1st set etc.) — Underdog encodes these with a
+        # "period_..." raw stat (e.g. period_1_2_pts_rebs_asts = 1st-half PRA, period_1_games_won
+        # = 1st-set games). We only model FULL games/matches, and _clean_stat() would strip the
+        # prefix so a half-line (Caitlin Clark PRA 12.5) gets grouped with the full-game label and
+        # inherits the full-game projection → a fake +80% edge. Drop them at the source. (Tennis
+        # serve stats like "first_serve_in"/"second_serve_points_won" are NOT period props and
+        # are preserved — only the literal "period_" prefix is excluded.)
+        if (p.stat or "").lower().startswith("period_"):
+            continue
         # Clean player name: strip trailing " O/U"
         raw_name = p.player_name or ""
         player = re.sub(r'\s+O/U\s*$', '', raw_name).strip()

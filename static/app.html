@@ -582,7 +582,13 @@ const _authConfigured = () => SUPABASE_URL.startsWith('https://') && !SUPABASE_U
 function initAuth(){
   if(!GOOGLE_ENABLED){ document.querySelectorAll('.am-google,.am-or').forEach(e=>e.style.display='none'); }
   if(!_authConfigured() || !window.supabase){ updateAuthUI(); return; }
-  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Persist the session in localStorage + auto-refresh the token so you STAY SIGNED IN after
+  // closing the tab / leaving the site (these are supabase-js defaults — set explicitly so a
+  // future SDK change can't silently drop persistence; default storageKey is kept so the
+  // landing page shares the same session on this origin).
+  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: window.localStorage }
+  });
   _sb.auth.getSession().then(({data})=>{ currentUser = data.session?.user || null; updateAuthUI(); });
   _sb.auth.onAuthStateChange((_e, session)=>{ currentUser = session?.user || null; updateAuthUI(); closeAuth(); });
 }

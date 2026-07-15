@@ -117,8 +117,8 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
     <a href="#features" class="ghost nav-hide">Features</a>
     <a href="#how" class="ghost nav-hide">How it works</a>
     <a href="#pricing" class="ghost nav-hide">Pricing</a>
-    <a href="./app.html?auth" class="btn btn-ghost">Sign in</a>
-    <a href="./app.html" class="btn btn-primary">Launch app →</a>
+    <a href="./app.html?auth" class="btn btn-ghost" id="nav-signin">Sign in</a>
+    <a href="./app.html" class="btn btn-primary" id="nav-launch">Launch app →</a>
   </div>
 </nav>
 
@@ -238,5 +238,29 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
 </footer>
 
 <script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
+<!-- Auth-awareness: if you're signed in (session persisted in localStorage by the app on this
+     same origin), reflect it in the nav so returning to the homepage doesn't look logged-out. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  var URL='https://wdacuefnynthoncoxpyf.supabase.co',
+      KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkYWN1ZWZueW50aG9uY294cHlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNTIzMzUsImV4cCI6MjA5OTYyODMzNX0.KRhXafORdJSb9r-vv5O-E4VH9bwnBKN-yivZObmlj5Q';
+  if(!window.supabase) return;
+  var sb=window.supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,storage:window.localStorage}});
+  sb.auth.getSession().then(function(res){
+    var u=res && res.data && res.data.session && res.data.session.user;
+    if(!u) return;
+    var name=(u.email||'account').split('@')[0];
+    var si=document.getElementById('nav-signin');
+    if(si){
+      si.href='./app.html';
+      si.title='Signed in — open the app';
+      si.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color:var(--accent);vertical-align:-2px"><path d="M12 2.6l2.9 6 6.5.6-4.9 4.3 1.5 6.4L12 16.9 6 20.5l1.5-6.4L2.6 9.8l6.5-.6z"/></svg> '+name;
+    }
+    var la=document.getElementById('nav-launch');
+    if(la) la.textContent='Open the board →';
+  });
+})();
+</script>
 </body>
 </html>
