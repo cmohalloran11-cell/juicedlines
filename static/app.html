@@ -600,6 +600,13 @@ const _authStorage = {
   removeItem(k){ try{ localStorage.removeItem(k); sessionStorage.removeItem(k); }catch(e){} },
 };
 
+// Strip the ?auth param from the URL (after it's served its purpose) so a reload or an
+// OAuth redirect back to app.html?auth never re-pops the sign-in modal when you're signed in.
+function _clearAuthParam(){
+  try{ const u=new URL(location.href);
+    if(u.searchParams.has('auth')){ u.searchParams.delete('auth'); history.replaceState(null,'',u.pathname+u.search+u.hash); }
+  }catch(e){}
+}
 function initAuth(){
   if(!GOOGLE_ENABLED){ document.querySelectorAll('.am-google,.am-or').forEach(e=>e.style.display='none'); }
   if(!_authConfigured() || !window.supabase){ updateAuthUI(); return; }
@@ -610,8 +617,17 @@ function initAuth(){
   _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: _authStorage }
   });
-  _sb.auth.getSession().then(({data})=>{ currentUser = data.session?.user || null; updateAuthUI(); });
-  _sb.auth.onAuthStateChange((_e, session)=>{ currentUser = session?.user || null; updateAuthUI(); closeAuth(); });
+  _sb.auth.getSession().then(({data})=>{
+    currentUser = data.session?.user || null; updateAuthUI();
+    // ?auth (landing "Sign in" link): open the modal ONLY if not already signed in.
+    // If a session already exists (or we just came back from an OAuth redirect), strip
+    // the param instead so the sign-in screen never shows over a signed-in user.
+    if(new URLSearchParams(location.search).has('auth')){ currentUser ? _clearAuthParam() : openAuth(); }
+  });
+  _sb.auth.onAuthStateChange((_e, session)=>{
+    currentUser = session?.user || null; updateAuthUI();
+    if(currentUser){ closeAuth(); _clearAuthParam(); }   // signed in (incl. Google redirect) → close modal + clean URL
+  });
 }
 function isPremium(u){ return u && (u.user_metadata?.plan || 'lifetime') !== 'free'; }  // founding/lifetime
 function updateAuthUI(){
@@ -1704,9 +1720,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
 // Re-fetch immediately when the tab regains focus so it's fresh the moment you look.
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadLines();});
 loadLines();
-initAuth();
-// arriving from the landing "Sign in" link (?auth) → pop the modal once configured
-if(_authConfigured() && new URLSearchParams(location.search).has('auth')) setTimeout(openAuth, 400);
+initAuth();   // ?auth handling lives inside initAuth's getSession() — opens the modal only when NOT already signed in
 </script>
 </body>
 </html>
