@@ -28,6 +28,25 @@ OUT_FREE = Path(__file__).parent / "static" / "board.free.json"
 # deploy can show the historical drawer without a live backend. Keyed by sport|player|stat.
 OUT_ANALYTICS = Path(__file__).parent / "static" / "analytics.json"
 
+# Rolling line-movement history. The live server keeps this in SQLite, but the Action is
+# STATELESS (fresh checkout every run) — so the published file on the `data` branch IS the
+# store: each build reads the previous one, appends today's values, and republishes it.
+OUT_HISTORY = Path(__file__).parent / "static" / "history.json"
+_HISTORY_URL = "https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/history.json"
+_HIST_MAX_POINTS = 40          # per line; plenty for a movement chart, keeps the file small
+
+
+def _load_prev_history() -> dict:
+    """Previous rolling history from the data branch. Best-effort: first run starts empty."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"{_HISTORY_URL}?t={int(time.time())}",
+                                     headers={"User-Agent": "juiced-build"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return (json.load(r) or {}).get("history") or {}
+    except Exception:
+        return {}
+
 # Fields the frontend actually uses (keeps the file small vs dumping every field).
 _KEEP = (
     "id", "source", "sport", "player", "team", "position", "stat_type", "line",
@@ -98,6 +117,31 @@ def main() -> None:
     print(f"wrote {OUT.name}: {len(slim)} lines, {OUT.stat().st_size/1e6:.1f} MB "
           f"| {OUT_FREE.name}: {OUT_FREE.stat().st_size/1e6:.1f} MB (lines only) | {time.time()-t0:.0f}s")
     print(f"  by sport: {dict(by)}  errors: {list(errors)}")
+
+    # ── line-movement history (rolling; the data branch is the store) ────────────
+    # A point is appended only when a line actually MOVES — so a line that never budges
+    # keeps one seed point (chart correctly hides) and the file stays tiny. Stale ids drop
+    # out naturally because we rebuild from the CURRENT lines each run.
+    try:
+        th = time.time()
+        prev = _load_prev_history()
+        hist: dict[str, list] = {}
+        for l in lines:
+            lid, lv = l.get("id"), l.get("line")
+            if not lid or lv is None:
+                continue
+            pts = prev.get(lid) or []
+            if not pts or pts[-1].get("line_value") != lv:
+                pts = pts + [{"ts": updated, "line_value": lv}]
+            hist[lid] = pts[-_HIST_MAX_POINTS:]
+        OUT_HISTORY.write_text(
+            json.dumps({"history": hist, "updated_at": updated}, separators=(",", ":"), default=_num),
+            encoding="utf-8")
+        movers = sum(1 for v in hist.values() if len(v) > 1)
+        print(f"  wrote {OUT_HISTORY.name}: {len(hist)} lines ({movers} moved), "
+              f"{OUT_HISTORY.stat().st_size/1e6:.2f} MB | +{time.time()-th:.0f}s")
+    except Exception as exc:
+        print(f"  history.json SKIPPED ({exc})")
 
     # ── research-drawer analytics (best-effort; never blocks the board) ──────────
     # One analyze() per (sport, player, stat) group — the pipeline already warmed the

@@ -801,6 +801,29 @@ async function staticDrawerData(line){
   const map=await loadAnalytics();
   return map[`${line.sport}|${_akeyNorm(line.player)}|${line.stat_type||''}`] || null;
 }
+
+// Rolling line-movement history, published next to board.json. The live server serves this
+// from SQLite (/api/lines/history); the static build keeps the same rolling series on the data
+// branch. Same lazy-once-then-cached pattern. Shape matches the live rows the chart reads:
+// [{ts, line_value}], oldest → newest.
+const HISTORY_URL='https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/history.json';
+let _history=null, _historyPromise=null;
+async function loadHistory(){
+  if(_history) return _history;
+  if(!_historyPromise){
+    const bust=Math.floor(Date.now()/60000);
+    const local=/^(localhost|127|0\.0\.0\.0|\[?::1)/.test(location.hostname)||location.protocol==='file:';
+    _historyPromise=fetch((local?'./history.json':HISTORY_URL)+'?t='+bust,{cache:'no-store'})
+      .then(r=>r.ok?r.json():null)
+      .then(d=>{ _history=(d&&d.history)||{}; return _history; })
+      .catch(()=>{ _history={}; return _history; });
+  }
+  return _historyPromise;
+}
+async function staticHistory(line){
+  const h=await loadHistory();
+  return h[line.id] || [];
+}
 async function loadLines(force=false){
   clearTimeout(_pollTimer);
   if(force) document.getElementById('rf-ic').innerHTML='<span class="spinner"></span>';
@@ -1021,14 +1044,17 @@ async function openDrawer(lineId){
   // the deeper analytics (hit-rate, vs-pitcher) stream in.
   document.getElementById('drawer-content').innerHTML = instantDrawer(line);
 
-  if(STATIC_MODE){   // no backend — use the pre-computed analytics snapshot if we have it,
-    // else fall back to a projection-only card. (Line-movement charts stay server-only.)
-    let a=null; try{ a=await staticDrawerData(line); }catch(_){}
+  if(STATIC_MODE){   // no backend — use the pre-computed analytics + rolling movement history
+    // (both published next to board.json), else fall back to a projection-only card.
+    let a=null, hist=[];
+    try{ [a, hist] = await Promise.all([staticDrawerData(line), staticHistory(line)]); }catch(_){}
+    hist = hist || [];
     if(a && a.available){
-      document.getElementById('drawer-content').innerHTML = drawerHTML(line, a, []);
-      try{ renderDrawerCharts(line, a, []); wireVsTabs(); }catch(_){}
+      document.getElementById('drawer-content').innerHTML = drawerHTML(line, a, hist);
+      try{ renderDrawerCharts(line, a, hist); wireVsTabs(); }catch(_){}
     } else {
-      document.getElementById('drawer-content').innerHTML = soccerDrawer(line, staticAnalytics(line), []);
+      document.getElementById('drawer-content').innerHTML = soccerDrawer(line, staticAnalytics(line), hist);
+      try{ renderDrawerCharts(line, staticAnalytics(line), hist); }catch(_){}
     }
     return;
   }
