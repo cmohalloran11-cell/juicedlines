@@ -780,11 +780,12 @@ async function fetchBoard(){
 
 // Pre-computed research-drawer analytics (recent games / hit-rate / matchup), published next
 // to board.json on the data branch. Fetched lazily the FIRST time a drawer opens in STATIC_MODE
-// (so the page load isn't slowed), then cached for the session. Keyed sport|player|stat to match
-// build_static.py (analytics._norm = lower+trim+collapse-whitespace).
+// (so the page load isn't slowed), then cached for the session. Entries are keyed by
+// (sport, player, stat, LINE) — the line matters because the hit-rate, each game's ✓/✗ and
+// P(over) are all computed against it — and we look them up through the build's line_id index
+// rather than re-deriving the key here (float formatting would drift).
 const ANALYTICS_URL='https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/analytics.json';
-let _analytics=null, _analyticsPromise=null;
-const _akeyNorm = s => String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,' ');
+let _analytics=null, _analyticsIndex=null, _analyticsRecent=null, _analyticsPromise=null;
 async function loadAnalytics(){
   if(_analytics) return _analytics;
   if(!_analyticsPromise){
@@ -792,14 +793,24 @@ async function loadAnalytics(){
     const local=/^(localhost|127|0\.0\.0\.0|\[?::1)/.test(location.hostname)||location.protocol==='file:';
     _analyticsPromise=fetch((local?'./analytics.json':ANALYTICS_URL)+'?t='+bust,{cache:'no-store'})
       .then(r=>r.ok?r.json():null)
-      .then(d=>{ _analytics=(d&&d.analytics)||{}; return _analytics; })
-      .catch(()=>{ _analytics={}; return _analytics; });
+      .then(d=>{ _analytics=(d&&d.analytics)||{}; _analyticsIndex=(d&&d.index)||{};
+                 _analyticsRecent=(d&&d.recent)||{}; return _analytics; })
+      .catch(()=>{ _analytics={}; _analyticsIndex={}; _analyticsRecent={}; return _analytics; });
   }
   return _analyticsPromise;
 }
 async function staticDrawerData(line){
   const map=await loadAnalytics();
-  return map[`${line.sport}|${_akeyNorm(line.player)}|${line.stat_type||''}`] || null;
+  const key=(_analyticsIndex||{})[line.id];
+  const a=key && map[key];
+  if(!a) return null;                 // no index hit → projection-only card (never a wrong line)
+  // The recent-games table is stored once per (sport,player,stat); reattach it and mark each
+  // game ✓/✗ against THIS line (the flag is the only line-dependent part of the table).
+  const rec=a._r && _analyticsRecent ? _analyticsRecent[a._r] : null;
+  if(!rec) return a;
+  const lv=Number(line.line);
+  return {...a, recent: rec.map(g => g.prop_val==null ? g
+                                    : {...g, cleared: Number(g.prop_val) > lv})};
 }
 
 // Rolling line-movement history, published next to board.json. The live server serves this
@@ -1573,7 +1584,10 @@ function abVerdict(s){
 // own payouts and can't be freely mixed). Payouts are the standard all-must-hit
 // multipliers per book (approx; they vary over time).
 const PAYOUTS_BY_BOOK = {
-  prizepicks: {2:3, 3:5, 4:10, 5:20, 6:25},
+  // NOTE: these are the STANDARD (uncorrelated) all-must-hit multipliers. Books pay LESS
+  // when legs are correlated (e.g. two players in the same game), so a slip with correlated
+  // legs will pay under what's shown here.
+  prizepicks: {2:3, 3:6, 4:10, 5:20, 6:25},
   underdog:   {2:3, 3:6, 4:10, 5:20, 6:35},
 };
 let parlayBook = 'prizepicks';

@@ -144,29 +144,56 @@ def main() -> None:
         print(f"  history.json SKIPPED ({exc})")
 
     # ── research-drawer analytics (best-effort; never blocks the board) ──────────
-    # One analyze() per (sport, player, stat) group — the pipeline already warmed the
-    # game-log caches, so this is cheap. The STANDARD line is the representative (most
-    # meaningful hit-rate). Line-movement charts are omitted (they need the live history
-    # DB the stateless build has no access to). Premium payload; gated with board.json.
+    # Keyed by (sport, player, stat, LINE) — the LINE is part of the key because analyze()
+    # computes everything against it: hit-rate, each recent game's cleared ✓/✗, P(over) and
+    # proj−line. Keying by (player, stat) alone and analyzing one representative line made a
+    # demon/alt line's drawer show the STANDARD line's card (e.g. a 1.5 demon rendering
+    # "Line 4.5"). Lines that differ only by book/odds_type share a key, so one analyze()
+    # still covers them. Emit a line_id → key index so the frontend never has to re-derive
+    # the key (float formatting differs: python "2" vs js "2"). The pipeline already warmed
+    # the game-log caches, so extra line variants are cheap. Line-movement lives in
+    # history.json. Premium payload; gated with board.json.
     try:
         ta = time.time()
         groups: dict[str, list] = {}
         for l in lines:
-            k = f"{l.get('sport')}|{analytics._norm(l.get('player') or '')}|{l.get('stat_type') or ''}"
+            if l.get("line") is None:
+                continue
+            k = (f"{l.get('sport')}|{analytics._norm(l.get('player') or '')}"
+                 f"|{l.get('stat_type') or ''}|{l.get('line')}")
             groups.setdefault(k, []).append(l)
         amap: dict[str, dict] = {}
+        index: dict[str, str] = {}
+        # `recent` is 62% of the payload and is IDENTICAL across a prop's line variants
+        # (only each game's `cleared` ✓/✗ depends on the line) — so store it ONCE per
+        # (sport, player, stat) and let the drawer recompute `cleared` against the line it
+        # was opened with. Halves the file without losing anything.
+        rmap: dict[str, list] = {}
         for k, gl in groups.items():
-            rep = next((x for x in gl if (x.get("odds_type") or "standard") == "standard"), gl[0])
             try:
-                a = analytics.analyze(rep)
+                a = analytics.analyze(gl[0])      # same player+stat+line → same analytics
             except Exception:
                 a = None
-            if a and a.get("available"):
-                amap[k] = a
+            if not (a and a.get("available")):
+                continue
+            rec = a.pop("recent", None)
+            if rec:
+                rk = "|".join(k.split("|")[:3])   # sport|player|stat
+                if rk not in rmap:
+                    for g in rec:
+                        g.pop("cleared", None)    # per-line → recomputed client-side
+                    rmap[rk] = rec
+                a["_r"] = rk
+            amap[k] = a
+            for l in gl:
+                if l.get("id"):
+                    index[l["id"]] = k
         OUT_ANALYTICS.write_text(
-            json.dumps({"analytics": amap, "updated_at": updated}, separators=(",", ":"), default=_num),
+            json.dumps({"analytics": amap, "recent": rmap, "index": index, "updated_at": updated},
+                       separators=(",", ":"), default=_num),
             encoding="utf-8")
         print(f"  wrote {OUT_ANALYTICS.name}: {len(amap)}/{len(groups)} groups, "
+              f"{len(rmap)} recent-tables (deduped), {len(index)} lines indexed, "
               f"{OUT_ANALYTICS.stat().st_size/1e6:.1f} MB | +{time.time()-ta:.0f}s")
     except Exception as exc:
         print(f"  analytics.json SKIPPED ({exc})")
