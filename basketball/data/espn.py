@@ -259,7 +259,13 @@ class EspnBasketball(GameLogSource):
         return float(league_cfg(league).get("league_pace", 98.0))
 
     def team_pace(self, league: str, team_id: str) -> TeamPace | None:
-        """Team pace/ratings from recent box scores (lazy; used by backtest/refinement)."""
+        """Team pace + off/def rating from the last ~6 completed games.
+
+        def_rtg (points allowed / 100 poss) is what the board's opponent adjustment scales
+        against. Possessions come from the team's own box line; points for/against from the
+        final score. (Both teams in a game see ~the same possessions, so using this team's
+        possessions for the 'allowed' rate is the standard approximation.)
+        """
         key = f"pace::{league}::{team_id}"
         hit = _cache.get(key)
         if hit and time.time() - hit[0] < 12 * 3600:
@@ -272,6 +278,11 @@ class EspnBasketball(GameLogSource):
         for ev in done[-6:]:
             gid = ev.get("id")
             summ = _get(_SITE.format(path=path) + f"/summary?event={gid}", 24 * 3600)
+            comp = (((summ or {}).get("header", {}) or {}).get("competitions") or [{}])[0]
+            scores = {str((c.get("team") or {}).get("id")): _num(c.get("score"))
+                      for c in (comp.get("competitors") or [])}
+            if len(scores) != 2 or str(team_id) not in scores:
+                continue                       # can't attribute points → skip this game
             for tb in (summ or {}).get("boxscore", {}).get("teams", []):
                 st = {s.get("name"): s.get("displayValue") for s in tb.get("statistics", [])}
                 if str(tb.get("team", {}).get("id")) != str(team_id):
@@ -280,10 +291,82 @@ class EspnBasketball(GameLogSource):
                 _, fta = _made_att(st.get("freeThrowsMade-freeThrowsAttempted"))
                 orb = _num(st.get("offensiveRebounds"))
                 to = _num(st.get("totalTurnovers") or st.get("turnovers"))
-                poss_sum += _possessions(fga, fta, orb, to)
+                p = _possessions(fga, fta, orb, to)
+                if p <= 0:
+                    continue
+                poss_sum += p
+                pf_sum += scores[str(team_id)]
+                pa_sum += sum(v for k, v in scores.items() if k != str(team_id))
                 n += 1
-        if n == 0:
+        if n == 0 or poss_sum <= 0:
             return None
-        tp = TeamPace(str(team_id), "", pace=round(poss_sum / n, 1), games=int(n))
+        tp = TeamPace(str(team_id), "", pace=round(poss_sum / n, 1),
+                      off_rtg=round(100.0 * pf_sum / poss_sum, 1),
+                      def_rtg=round(100.0 * pa_sum / poss_sum, 1),
+                      games=int(n))
         _cache[key] = (time.time(), tp)
         return tp
+
+    def upcoming_opponents(self, league: str) -> dict:
+        """{team_id: opp_team_id} for the current slate — lets the board use the REAL matchup
+        pace + opponent defense instead of the league baseline. Games already final are
+        included too (props are posted pre-game, but a late build shouldn't lose the map)."""
+        key = f"oppmap::{league}"
+        hit = _cache.get(key)
+        if hit and time.time() - hit[0] < 1800:
+            return hit[1]
+        from datetime import date, timedelta
+        today = date.today()
+        span = f"{today:%Y%m%d}-{today + timedelta(days=1):%Y%m%d}"
+        d = _get(_SITE.format(path=self._path(league)) + f"/scoreboard?dates={span}", 900)
+        out: dict = {}
+        for ev in (d or {}).get("events", []):
+            cs = (ev.get("competitions") or [{}])[0].get("competitors") or []
+            if len(cs) != 2:
+                continue
+            a = str((cs[0].get("team") or {}).get("id") or "")
+            b = str((cs[1].get("team") or {}).get("id") or "")
+            if a and b:
+                out.setdefault(a, b)
+                out.setdefault(b, a)
+        _cache[key] = (time.time(), out)
+        return out
+
+    def league_pace_avg(self, league: str) -> float | None:
+        """Mean COMPUTED team pace across today's slate.
+
+        Load-bearing: `_possessions()` yields ~80-85 for the WNBA while config's
+        `league_pace` is 96 — different scales. Rates are FIT at config's league_pace, so
+        feeding a raw computed pace into the sim would shrink every counting stat ~12%
+        (measured: WNBA calibration +0.00 → −2.76). The board therefore applies pace as a
+        RATIO against this average, which keeps the fitted scale intact.
+        """
+        key = f"paceavg::{league}"
+        hit = _cache.get(key)
+        if hit and time.time() - hit[0] < 12 * 3600:
+            return hit[1]
+        vals = []
+        for tid in self.upcoming_opponents(league):
+            tp = self.team_pace(league, tid)
+            if tp and tp.pace:
+                vals.append(tp.pace)
+        avg = round(sum(vals) / len(vals), 1) if len(vals) >= 4 else None
+        _cache[key] = (time.time(), avg)
+        return avg
+
+    def league_def_avg(self, league: str) -> float | None:
+        """Mean def rating across the teams on today's slate — the baseline the opponent
+        adjustment scales against. Uses only teams we already fetch paces for, so it costs
+        nothing extra; returns None (→ neutral adjustment) if the slate is too thin."""
+        key = f"defavg::{league}"
+        hit = _cache.get(key)
+        if hit and time.time() - hit[0] < 12 * 3600:
+            return hit[1]
+        vals = []
+        for tid in self.upcoming_opponents(league):
+            tp = self.team_pace(league, tid)
+            if tp and tp.def_rtg:
+                vals.append(tp.def_rtg)
+        avg = round(sum(vals) / len(vals), 1) if len(vals) >= 4 else None
+        _cache[key] = (time.time(), avg)
+        return avg

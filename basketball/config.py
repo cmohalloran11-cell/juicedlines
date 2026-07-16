@@ -18,6 +18,16 @@ CONFIG = {
         "high": 8,
         "medium": 3,
     },
+    # Opponent-DEFENSE adjustment (model/opponent.py). Wired end-to-end but DEFAULT OFF:
+    # measured on a live slate it made calibration WORSE, not better —
+    #   WNBA  baseline −0.475 → pace-only −0.294 → pace+def −0.323
+    #   SL    baseline −0.008 → pace-only −0.003 → pace+def −0.353  (much worse)
+    # A team def_rtg off ~6 games (2-3 in Summer League) is mostly noise, and ESPN gives no
+    # cheap POSITIONAL defense — so it injects error instead of signal. Flip a league to true
+    # only once a date-strict backtest shows it improves MAE (needs as-of-date def ratings,
+    # which team_pace doesn't do yet — it reads CURRENT form). Matchup PACE stays on: it's
+    # relative, mean-neutral, and measurably helped.
+    "opp_def_adjust": False,
 
     # ── per-league configs (the override hooks) ───────────────────────────────
     "leagues": {

@@ -20,6 +20,7 @@ from .data import gamelog_source, background_source
 from .model import rates as R
 from .model import priors as PR
 from .model import minutes as MIN
+from .model import opponent as OPP
 from .model.pace import matchup_pace
 from .sim import engine as E
 
@@ -146,13 +147,44 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
         rates.minutes_sample, league, lc.get("minutes_shrink_games", 4),
         lc.get("min_sd_frac", 0.15), background=bg, news_minutes=news_minutes)
 
-    pace = matchup_pace(lg_pace)                        # v1: league baseline
+    # ── matchup: real pace + opponent defense (was a league-baseline stub) ──────
+    # Both were built as hooks but never supplied, so every projection ran at league pace
+    # against a neutral defense. Resolve tonight's opponent, then use the two teams' actual
+    # paces and scale the defense-sensitive rates by the opponent's def rating. Any missing
+    # piece (unknown opponent, thin team sample) degrades to exactly the old behaviour.
+    pace, opp_adj, opp_id, opp_def = matchup_pace(lg_pace), {}, None, None
+    try:
+        opp_id = src.upcoming_opponents(league).get(str(ref.team_id))
+        if opp_id:
+            tp, op = src.team_pace(league, str(ref.team_id)), src.team_pace(league, opp_id)
+            # RELATIVE, not absolute: computed paces (~80-85 WNBA) are on a different scale
+            # than config's league_pace (96), and the rates were fit at league_pace — so feed
+            # the sim league_pace × (matchup / league-average-computed). A league-average
+            # matchup lands exactly on league_pace (calibration preserved); only the DIFFERENCE
+            # from average moves the projection. Using the raw pace here cost −2.76 of bias.
+            raw = matchup_pace(lg_pace, tp.pace if tp else None, op.pace if op else None)
+            lg_pace_avg = src.league_pace_avg(league)
+            if lg_pace_avg and raw and (tp or op):
+                pace = round(lg_pace * raw / lg_pace_avg, 1)
+            # Opponent DEFENSE is recorded for transparency but only scales the sim when the
+            # league opts in — it measured net-harmful on live slates (see config comment).
+            if op and op.def_rtg:
+                opp_def = op.def_rtg
+                if cfg("opp_def_adjust", default=False):
+                    lg_def = src.league_def_avg(league)
+                    if lg_def:
+                        opp_adj = {s: OPP.opponent_adjust(s, op.def_rtg, lg_def) for s in BASE_STATS}
+    except Exception:
+        pace, opp_adj = matchup_pace(lg_pace), {}      # never let a feed blip kill a projection
+
     sim = E.simulate(rates, proj_min, min_sd, pace, lc.get("pace_sd_frac", 0.06),
-                     game_len, lc.get("disp", 0.12), n=n or cfg("model", "n_sims"), rng=rng)
+                     game_len, lc.get("disp", 0.12), opp_adj=opp_adj,
+                     n=n or cfg("model", "n_sims"), rng=rng)
 
     proj = {
         "player": ref.name, "team": ref.team, "position": ref.position, "league": league,
         "proj_minutes": proj_min, "minutes_sd": min_sd, "pace": pace,
+        "opp_id": opp_id, "opp_def_rtg": opp_def,
         "eff_games": rates.eff_games, "n_games": rates.n_games,
         "sample_weight": rates.sample_weight,
         "confidence": _confidence(rates.eff_games, rates.sample_weight, league),
