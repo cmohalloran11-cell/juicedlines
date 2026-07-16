@@ -101,6 +101,72 @@ def _to_form_logs(logs: list[dict]) -> list[dict]:
     return out
 
 
+# ── combo dependence ──────────────────────────────────────────────────────────
+# The engine draws hits/HR/TB/BB/K off a SHARED per-sim PA draw (so those are correlated),
+# but runs and RBIs are independent negbinom draws tied to nothing. Summing them for
+# Hits+Runs+RBIs therefore drops every covariance term: measured, the engine produced
+# corr(H,R)=+0.001 / corr(H,RBI)=+0.010 / corr(R,RBI)=-0.005 and a combo SD exactly equal
+# to sqrt(sum of variances) — while real per-game correlations are ~+0.5 and the true combo
+# SD is ~40% WIDER. That makes P(over) on H+R+RBI (our most-listed MLB prop) overconfident.
+#
+# Fix: re-pair the component samples so the JOINT carries the player's real correlation,
+# leaving every MARGINAL untouched (same values, different pairing) — so single-stat props,
+# which calibrate well (ECE .0155), are completely unaffected. Only combos change.
+_COMBO_KEYS = ("hits", "runs", "rbis")
+# Fallback when a player's own sample is too thin — measured across high-PA hitters
+# (Judge/Betts/Soto/Freeman/Schwarber, last 40 games each).
+_COMBO_CORR_DEFAULT = ((1.0, 0.59, 0.49),
+                       (0.59, 1.0, 0.55),
+                       (0.49, 0.55, 1.0))
+_COMBO_MIN_GAMES = 15
+
+
+def _empirical_combo_corr(form_logs: list[dict]):
+    """Per-game corr matrix for (H, R, RBI) from the player's own games; None → use default."""
+    import numpy as np
+    if len(form_logs) < _COMBO_MIN_GAMES:
+        return None
+    try:
+        m = np.array([[float(g.get("H") or 0), float(g.get("R") or 0), float(g.get("RBI") or 0)]
+                      for g in form_logs], dtype=float)
+        if (m.std(axis=0) <= 1e-9).any():          # a constant column → corr undefined
+            return None
+        c = np.corrcoef(m, rowvar=False)
+        if not np.isfinite(c).all():
+            return None
+        # shrink toward the default: 40 games of a noisy 3x3 is still a small sample
+        d = np.array(_COMBO_CORR_DEFAULT)
+        w = min(1.0, len(form_logs) / 60.0) * 0.5
+        c = w * c + (1 - w) * d
+        np.fill_diagonal(c, 1.0)
+        return np.clip(c, -0.95, 0.95)
+    except Exception:
+        return None
+
+
+def _induce_corr(parts: list, target, seed: int = 12345):
+    """Rank-reorder each marginal so the joint carries ~`target` correlation.
+
+    Iman-Conover style: each returned array holds EXACTLY the same values as its input
+    (just re-ordered), so marginal distributions — and every single-stat P(over) — are
+    bit-identical. Only how the components pair up across sims changes, which is precisely
+    what the combo sum depends on.
+    """
+    import numpy as np
+    try:
+        t = np.array(target, dtype=float)
+        L = np.linalg.cholesky(t)
+    except Exception:
+        return parts                                # not positive-definite → leave alone
+    n = len(parts[0])
+    z = L @ np.random.default_rng(seed).standard_normal((len(parts), n))
+    out = []
+    for i, s in enumerate(parts):
+        ranks = np.argsort(np.argsort(z[i]))        # rank of each sim under the target copula
+        out.append(np.sort(s)[ranks])               # same values, re-paired to those ranks
+    return out
+
+
 def project_player(logs: list[dict], is_pitcher: bool, n: int = _BOARD_SIMS,
                    predictive: dict | None = None, ctx: dict | None = None):
     """
@@ -119,8 +185,14 @@ def project_player(logs: list[dict], is_pitcher: bool, n: int = _BOARD_SIMS,
         else:
             form = _mf.build_batter_form(form_logs, predictive)
         # ensemble off for speed + determinism.
-        return _mm.project(form, ctx or {}, role=("pitcher" if is_pitcher else "batter"),
-                           n=n, use_ensemble=False)
+        projs = _mm.project(form, ctx or {}, role=("pitcher" if is_pitcher else "batter"),
+                            n=n, use_ensemble=False)
+        # Stash the player's own H/R/RBI dependence for the combo sum (see _induce_corr).
+        # Reserved key — for_stat() only ever looks up real stat names.
+        if projs is not None and not is_pitcher:
+            c = _empirical_combo_corr(form_logs)
+            projs["_combo_corr"] = c if c is not None else _COMBO_CORR_DEFAULT
+        return projs
     except Exception:
         return None
 
@@ -177,7 +249,13 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
         parts = [projs.get(s) for s in combo]
         if any(p is None or p.samples is None for p in parts):
             return None
-        s = np.sum([p.samples for p in parts], axis=0)
+        arrs = [p.samples for p in parts]
+        # Re-pair the components to carry the player's real dependence before summing —
+        # otherwise the covariance terms vanish and the combo is ~40% too narrow.
+        corr = projs.get("_combo_corr") if tuple(combo) == _COMBO_KEYS else None
+        if corr is not None:
+            arrs = _induce_corr(arrs, corr)
+        s = np.sum(arrs, axis=0)
         return _payload_from_samples(s, line, correction)
 
     table = _PIT if is_pitcher else _BAT
