@@ -18,6 +18,7 @@ tennis/data/cache/
 static/board.json
 static/board.free.json
 static/board.premium.json
+static/analytics.json
 
 # python
 __pycache__/

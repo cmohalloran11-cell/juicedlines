@@ -777,6 +777,30 @@ async function fetchBoard(){
   }
   return await (await fetch('./board.json?t='+bust,{cache:'no-store'})).json();   // fallback
 }
+
+// Pre-computed research-drawer analytics (recent games / hit-rate / matchup), published next
+// to board.json on the data branch. Fetched lazily the FIRST time a drawer opens in STATIC_MODE
+// (so the page load isn't slowed), then cached for the session. Keyed sport|player|stat to match
+// build_static.py (analytics._norm = lower+trim+collapse-whitespace).
+const ANALYTICS_URL='https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/analytics.json';
+let _analytics=null, _analyticsPromise=null;
+const _akeyNorm = s => String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,' ');
+async function loadAnalytics(){
+  if(_analytics) return _analytics;
+  if(!_analyticsPromise){
+    const bust=Math.floor(Date.now()/60000);
+    const local=/^(localhost|127|0\.0\.0\.0|\[?::1)/.test(location.hostname)||location.protocol==='file:';
+    _analyticsPromise=fetch((local?'./analytics.json':ANALYTICS_URL)+'?t='+bust,{cache:'no-store'})
+      .then(r=>r.ok?r.json():null)
+      .then(d=>{ _analytics=(d&&d.analytics)||{}; return _analytics; })
+      .catch(()=>{ _analytics={}; return _analytics; });
+  }
+  return _analyticsPromise;
+}
+async function staticDrawerData(line){
+  const map=await loadAnalytics();
+  return map[`${line.sport}|${_akeyNorm(line.player)}|${line.stat_type||''}`] || null;
+}
 async function loadLines(force=false){
   clearTimeout(_pollTimer);
   if(force) document.getElementById('rf-ic').innerHTML='<span class="spinner"></span>';
@@ -997,8 +1021,15 @@ async function openDrawer(lineId){
   // the deeper analytics (hit-rate, vs-pitcher) stream in.
   document.getElementById('drawer-content').innerHTML = instantDrawer(line);
 
-  if(STATIC_MODE){   // no backend — show a projection drawer built from the line itself
-    document.getElementById('drawer-content').innerHTML = soccerDrawer(line, staticAnalytics(line), []);
+  if(STATIC_MODE){   // no backend — use the pre-computed analytics snapshot if we have it,
+    // else fall back to a projection-only card. (Line-movement charts stay server-only.)
+    let a=null; try{ a=await staticDrawerData(line); }catch(_){}
+    if(a && a.available){
+      document.getElementById('drawer-content').innerHTML = drawerHTML(line, a, []);
+      try{ renderDrawerCharts(line, a, []); wireVsTabs(); }catch(_){}
+    } else {
+      document.getElementById('drawer-content').innerHTML = soccerDrawer(line, staticAnalytics(line), []);
+    }
     return;
   }
 

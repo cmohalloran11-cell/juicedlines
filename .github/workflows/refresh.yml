@@ -35,12 +35,15 @@ jobs:
       - name: Build board.json
         run: python build_static.py
 
-      # Every run: publish the fresh board to the `data` branch (served via GitHub raw).
-      - name: Publish board.json → data branch
+      # Every run: publish the fresh board (+ pre-computed drawer analytics) to the `data`
+      # branch (served via GitHub raw). analytics.json is best-effort — if the build skipped
+      # it, publish the board alone rather than failing the run.
+      - name: Publish board.json + analytics.json → data branch
         env:
           REMOTE: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
           rm -rf _data && mkdir _data && cp static/board.json _data/board.json
+          if [ -f static/analytics.json ]; then cp static/analytics.json _data/analytics.json; fi
           cd _data && git init -q && git checkout -q -b data
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

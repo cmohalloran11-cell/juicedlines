@@ -24,6 +24,9 @@ import analytics
 # data branch. `board.free.json` is the free tier — live lines only, safe to serve publicly.
 OUT = Path(__file__).parent / "static" / "board.json"
 OUT_FREE = Path(__file__).parent / "static" / "board.free.json"
+# Pre-computed research-drawer analytics (recent games, hit-rate, matchup) so the STATIC
+# deploy can show the historical drawer without a live backend. Keyed by sport|player|stat.
+OUT_ANALYTICS = Path(__file__).parent / "static" / "analytics.json"
 
 # Fields the frontend actually uses (keeps the file small vs dumping every field).
 _KEEP = (
@@ -95,6 +98,34 @@ def main() -> None:
     print(f"wrote {OUT.name}: {len(slim)} lines, {OUT.stat().st_size/1e6:.1f} MB "
           f"| {OUT_FREE.name}: {OUT_FREE.stat().st_size/1e6:.1f} MB (lines only) | {time.time()-t0:.0f}s")
     print(f"  by sport: {dict(by)}  errors: {list(errors)}")
+
+    # ── research-drawer analytics (best-effort; never blocks the board) ──────────
+    # One analyze() per (sport, player, stat) group — the pipeline already warmed the
+    # game-log caches, so this is cheap. The STANDARD line is the representative (most
+    # meaningful hit-rate). Line-movement charts are omitted (they need the live history
+    # DB the stateless build has no access to). Premium payload; gated with board.json.
+    try:
+        ta = time.time()
+        groups: dict[str, list] = {}
+        for l in lines:
+            k = f"{l.get('sport')}|{analytics._norm(l.get('player') or '')}|{l.get('stat_type') or ''}"
+            groups.setdefault(k, []).append(l)
+        amap: dict[str, dict] = {}
+        for k, gl in groups.items():
+            rep = next((x for x in gl if (x.get("odds_type") or "standard") == "standard"), gl[0])
+            try:
+                a = analytics.analyze(rep)
+            except Exception:
+                a = None
+            if a and a.get("available"):
+                amap[k] = a
+        OUT_ANALYTICS.write_text(
+            json.dumps({"analytics": amap, "updated_at": updated}, separators=(",", ":"), default=_num),
+            encoding="utf-8")
+        print(f"  wrote {OUT_ANALYTICS.name}: {len(amap)}/{len(groups)} groups, "
+              f"{OUT_ANALYTICS.stat().st_size/1e6:.1f} MB | +{time.time()-ta:.0f}s")
+    except Exception as exc:
+        print(f"  analytics.json SKIPPED ({exc})")
 
 
 if __name__ == "__main__":

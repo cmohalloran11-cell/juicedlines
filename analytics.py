@@ -1048,11 +1048,18 @@ def attach_projections(lines: list[dict]) -> None:
                                 l["model_prob_b"] = engb["prob_over"]
                     continue
 
-            # 2) fallback: empirical median + empirical P(over)
+            # 2) fallback: empirical projection + empirical P(over)
             vals = [fn(g["stat"]) for g in pg]
             if not vals:
                 continue
-            proj = round(_median(vals), 1)   # median: unbiased on skewed stats
+            # Median keeps right-skewed stats (fantasy score) calibrated. BUT a median of 0 —
+            # common on low-count props (0.5 hits, 1.5 H+R+RBI for a light hitter) — displays as
+            # a misleading "PROJ 0" even though the mean is ~0.7 and he clears it a real share of
+            # the time. In exactly those zero-median cases, show the expected value (mean) so the
+            # number reads sensibly; everywhere else keep the calibrated median.
+            _med = _median(vals)
+            _skewed = "fantasy" in (l.get("stat_type") or "").lower()
+            proj = round(_med if (_skewed or _med >= 0.5) else sum(vals) / len(vals), 1)
             l["model_proj"] = proj
             l["model_edge"] = round(proj - line_val, 1)
             l["proj_kind"] = "model"
