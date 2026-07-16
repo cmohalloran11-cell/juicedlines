@@ -26,11 +26,16 @@ _WNBA_PER40 = {
 }
 
 # Generic Summer-League rookie per-40 baseline (used when no background is found).
+# Scoring baselines were raised ~+2/40 (2026-07-16): props list the featured, high-usage
+# players — not generic rookies — so the old 13.5-15 pts/40 prior sat well below the board
+# population and dragged thin (2-3 game) samples' POINTS ~0.4-0.7 under the line via
+# shrinkage (rebounds/assists priors already matched, so only scoring was biased). Reb/ast
+# unchanged (calibrated). Full-data players are barely affected (low prior weight).
 _SL_PER40 = {
-    "G": {"pts": 15.0, "reb": 3.8, "ast": 4.2, "stl": 1.1, "blk": 0.4, "3pm": 1.8, "to": 2.8},
-    "F": {"pts": 14.0, "reb": 6.2, "ast": 2.2, "stl": 0.9, "blk": 0.8, "3pm": 1.3, "to": 2.3},
-    "C": {"pts": 13.5, "reb": 8.0, "ast": 1.6, "stl": 0.7, "blk": 1.4, "3pm": 0.5, "to": 2.4},
-    "":  {"pts": 14.0, "reb": 5.5, "ast": 2.8, "stl": 1.0, "blk": 0.7, "3pm": 1.3, "to": 2.4},
+    "G": {"pts": 17.0, "reb": 3.8, "ast": 4.2, "stl": 1.1, "blk": 0.4, "3pm": 1.9, "to": 2.8},
+    "F": {"pts": 16.0, "reb": 6.2, "ast": 2.2, "stl": 0.9, "blk": 0.8, "3pm": 1.4, "to": 2.3},
+    "C": {"pts": 15.5, "reb": 8.0, "ast": 1.6, "stl": 0.7, "blk": 1.4, "3pm": 0.5, "to": 2.4},
+    "":  {"pts": 16.0, "reb": 5.5, "ast": 2.8, "stl": 1.0, "blk": 0.7, "3pm": 1.4, "to": 2.4},
 }
 
 # pre-NBA per-40 → Summer-League per-40 translation factor, by source league.
