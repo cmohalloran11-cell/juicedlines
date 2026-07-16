@@ -3,3 +3,6 @@ uvicorn[standard]>=0.29.0
 requests>=2.31.0
 urllib3>=2.0.0
 numpy>=1.26.0
+# scipy powers the vendored stat-projector engine's Monte-Carlo (projector/models/montecarlo.py).
+# Without it the board silently falls back to the empirical median for every MLB prop.
+scipy>=1.11.0

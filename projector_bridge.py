@@ -18,9 +18,13 @@ import re
 import sys
 from pathlib import Path
 
-# stat-projector lives next to sports-edge in the ChristopherO workspace
+# The engine is VENDORED at ./projector so the deploy build (which checks out juicedlines
+# only) can run it — without this, every deployed MLB prop silently fell back to the empirical
+# median. In local dev the full stat-projector sibling is the source of truth and takes
+# precedence; the .exists() guard keeps a bogus path out of sys.path in CI so the vendored
+# copy resolves cleanly.
 _SP = Path(__file__).parent.parent / "stat-projector"
-if str(_SP) not in sys.path:
+if _SP.exists() and str(_SP) not in sys.path:
     sys.path.insert(0, str(_SP))
 
 try:
