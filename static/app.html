@@ -90,6 +90,8 @@ body{background:radial-gradient(1100px 560px at 70% -12%,#1a2e05 0%,var(--bg) 55
 .err-badge{display:inline-block;background:rgba(255,77,95,.12);color:var(--red);border:1px solid rgba(255,77,95,.35);border-radius:5px;font-size:11px;padding:2px 8px;cursor:default;white-space:nowrap}
 .spacer{flex:1}
 #last-updated{font-size:11px;color:var(--muted2);white-space:nowrap}
+#last-updated.stale{color:var(--yellow);font-weight:600}
+#last-updated.stale::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--yellow);margin-right:5px;vertical-align:middle;box-shadow:0 0 6px var(--yellow)}
 .refresh-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border2);background:var(--card);color:var(--text);cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
 .refresh-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--card2)}
 
@@ -787,7 +789,7 @@ async function loadLines(force=false){
     // tab only when the live server is present (your local/private run), never on the
     // public static snapshot. STATIC_MODE is set true by fetchBoard when /api/lines is absent.
     document.getElementById('tab-btn-scorecard').style.display = STATIC_MODE ? 'none' : '';
-    document.getElementById('last-updated').textContent = data.updated_at ? 'Updated '+fmtTime(data.updated_at) : '';
+    updateFreshness(data.updated_at);
     const errs = data.errors||{};
     const realErrs = Object.keys(errs).filter(k=>k!=='mock_fallback');
     const hasMock = 'mock_fallback' in errs;
@@ -1721,6 +1723,22 @@ function fbAvatar(name,big){
   return `<div class="${big?'dr-avatar':'avatar-fb'}" ${big?'style="width:64px;height:64px;border-radius:14px;font-size:24px"':''}>${esc(ini)}</div>`;
 }
 function fmtTime(iso){if(!iso)return '';try{const d=new Date(iso),n=new Date();const same=d.toDateString()===n.toDateString();return same?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch{return iso;}}
+// Freshness badge: show how old the board data is, and flag it amber once the feed refresh
+// falls behind (>40 min → a missed rebuild cycle). Re-runs on each poll + on a 60s ticker so
+// the age stays honest even if board.json stops updating.
+const _STALE_MIN = 40;
+function updateFreshness(iso){
+  const el=document.getElementById('last-updated'); if(!el) return;
+  const ts = iso!==undefined ? iso : _lastUpdated;
+  if(!ts){ el.textContent=''; el.className=''; el.removeAttribute('title'); return; }
+  const mins=Math.max(0, Math.round((Date.now()-new Date(ts).getTime())/60000));
+  const ago = mins<1?'just now' : mins<60?mins+'m ago' : Math.floor(mins/60)+'h '+(mins%60)+'m ago';
+  const stale = mins>=_STALE_MIN;
+  el.className = stale?'stale':'';
+  el.textContent = 'Updated '+ago;
+  el.title = 'Data timestamp '+fmtTime(ts)+(stale?' — the feed refresh is running behind, so lines may be out of date':'');
+}
+setInterval(()=>updateFreshness(), 60000);   // keep the age current between polls
 function fmtDate(s){if(!s)return '';try{const d=new Date(s);return d.toLocaleDateString([],{month:'numeric',day:'numeric'});}catch{return s;}}
 function fmtImplied(p){if(p==null)return '<span style="color:var(--muted2)">—</span>';const pct=Math.round(p*100);const c=pct>=60?'var(--green)':pct>=45?'var(--yellow)':'var(--red)';return `<span style="color:${c}">${pct}%</span>`;}
 
