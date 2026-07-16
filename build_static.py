@@ -50,7 +50,7 @@ def _load_prev_history() -> dict:
 # Fields the frontend actually uses (keeps the file small vs dumping every field).
 _KEEP = (
     "id", "source", "sport", "player", "team", "position", "stat_type", "line",
-    "odds_type", "matchup", "start_time", "status",
+    "odds_type", "matchup", "start_time", "status", "game_id",
     "over_price", "under_price", "over_implied", "under_implied", "pickem_price",
     "headshot", "team_logo", "flag", "country",
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
@@ -91,6 +91,10 @@ def main() -> None:
         analytics.enrich_lines(lines)
     except Exception as exc:
         errors["enrich"] = str(exc)
+    try:
+        analytics.attach_game_ids(lines)   # lets the parlay tab detect correlated legs
+    except Exception as exc:
+        errors["game_ids"] = str(exc)
     try:
         analytics.attach_projections(lines)
     except Exception as exc:

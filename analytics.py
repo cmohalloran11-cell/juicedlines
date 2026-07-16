@@ -831,6 +831,109 @@ def enrich_lines(lines: list[dict]) -> None:
                 pass
 
 
+def _slate_game_by_team() -> dict:
+    """
+    team_id → gamePk of that team's NEXT scheduled game (today .. +3d).
+
+    Used only to tag lines with a game_id for CORRELATION detection. `_today_opponents()` is
+    deliberately TODAY-only (it drives BvP / matchup context and must not match tomorrow's
+    game), but books post props for the NEXT game — which after an off-day or the All-Star
+    break isn't today. Using today-only left MLB at 12% game_id coverage (1 game); this
+    covers the posted slate. gamePk is MLB's own game id, so both teams agree by construction.
+    """
+    if not _MLB_OK:
+        return {}
+
+    def produce():
+        from datetime import timedelta
+        try:
+            r = mlb._session.get(f"{mlb.BASE}/schedule",
+                                 params={"sportId": 1,
+                                         "startDate": date.today().isoformat(),
+                                         "endDate": (date.today() + timedelta(days=3)).isoformat(),
+                                         "hydrate": "team"}, timeout=20)
+            r.raise_for_status()
+        except Exception:
+            return {}
+        out = {}
+        for d in r.json().get("dates", []):          # chronological → first seen = next game
+            for g in d.get("games", []):
+                pk = g.get("gamePk")
+                if not pk:
+                    continue
+                for side in ("home", "away"):
+                    tid = (((g.get("teams") or {}).get(side) or {}).get("team") or {}).get("id")
+                    if tid and tid not in out:
+                        out[tid] = pk
+        return out
+    return _cached(f"slate_{date.today().isoformat()}", 1800, produce)
+
+
+def _pair_id(sport: str, a, b) -> str | None:
+    """Canonical id for the game two picks share. Sorted, so both sides produce the same
+    id (LAD-vs-SD == SD-vs-LAD)."""
+    a, b = str(a or "").strip().lower(), str(b or "").strip().lower()
+    if not a or not b or a == b:
+        return None
+    x, y = sorted((a, b))
+    return f"{sport}:{x}|{y}"
+
+
+def attach_game_ids(lines: list[dict]) -> None:
+    """
+    Attach `game_id` so the parlay builder can spot CORRELATED legs — two picks from the
+    same game, which the books pay LESS on than the standard multiplier.
+
+    Best-effort per sport (a line without one simply can't be correlation-checked):
+      MLB                        → MLB's own gamePk for the team's next scheduled game
+      WNBA / Summer League       → the player's team + today's opponent (team-id pair)
+      World Cup                  → country + opposing country
+      Tennis                     → the two players in the match
+    """
+    mlb_slate: dict = {}
+    if _MLB_OK:
+        try:
+            mlb_slate = _slate_game_by_team()
+        except Exception:
+            mlb_slate = {}
+    bb_opps: dict = {}
+
+    def _bb(sport: str) -> dict:
+        if sport not in bb_opps:
+            try:
+                from basketball.data import gamelog_source
+                bb_opps[sport] = gamelog_source().upcoming_opponents(sport) or {}
+            except Exception:
+                bb_opps[sport] = {}
+        return bb_opps[sport]
+
+    for l in lines:
+        sport, gid = l.get("sport"), None
+        try:
+            if sport == "MLB" and l.get("player"):
+                m = _resolve_player(l["player"], l.get("team"),
+                                    _prop_is_pitcher(l.get("stat_type")))
+                tid = m.get("team_id") if m else None
+                pk = mlb_slate.get(tid) if tid else None
+                if pk:
+                    gid = f"MLB:{pk}"        # MLB's own gamePk — both teams agree by definition
+            elif sport in ("WNBA", "NBA Summer League") and l.get("player"):
+                from basketball import projections as _bp
+                ref = _bp.resolve(sport, l["player"])
+                if ref and ref.team_id:
+                    opp = _bb(sport).get(str(ref.team_id))
+                    if opp:
+                        gid = _pair_id(sport, ref.team_id, opp)
+            elif sport == "World Cup":
+                gid = _pair_id("WC", l.get("country") or l.get("team"), l.get("matchup"))
+            elif sport == "Tennis":
+                gid = _pair_id("TN", l.get("player"), l.get("matchup"))
+        except Exception:
+            gid = None
+        if gid:
+            l["game_id"] = gid
+
+
 # ──────────────────────────────────── model projections (board) ──────────────
 
 _BATCH = 40

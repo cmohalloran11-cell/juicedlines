@@ -1584,12 +1584,33 @@ function abVerdict(s){
 // own payouts and can't be freely mixed). Payouts are the standard all-must-hit
 // multipliers per book (approx; they vary over time).
 const PAYOUTS_BY_BOOK = {
-  // NOTE: these are the STANDARD (uncorrelated) all-must-hit multipliers. Books pay LESS
-  // when legs are correlated (e.g. two players in the same game), so a slip with correlated
-  // legs will pay under what's shown here.
+  // STANDARD (uncorrelated) all-must-hit multipliers.
   prizepicks: {2:3, 3:6, 4:10, 5:20, 6:25},
   underdog:   {2:3, 3:6, 4:10, 5:20, 6:35},
 };
+// CORRELATED legs (two picks from the same game) pay LESS. The exact number isn't fixed —
+// the book prices each specific correlation — so these are the TYPICAL values and are shown
+// as an approximation ("~"), never as a quote. Only tiers we actually know go here; an
+// unknown tier keeps the standard number but still warns that the real payout is lower.
+const CORRELATED_PAYOUTS = {
+  prizepicks: {3: 5.75},
+};
+const legGameId = id => (allLines.find(x=>x.id===id)||{}).game_id;
+// Correlated = two legs share a game. Lines without a game_id can't be checked (they're
+// simply not counted), so this under-detects rather than crying wolf.
+function slipCorrelated(slip){
+  const g = slip.map(s=>legGameId(s.id)).filter(Boolean);
+  return new Set(g).size < g.length;
+}
+// → {M, correlated, approx, unknown}. M is what we show and price ROI/EV off.
+function slipPayout(slip){
+  const n = Math.min(6, slip.length);
+  const std = parlayPayouts()[n];
+  if(!slipCorrelated(slip)) return {M:std, correlated:false, approx:false, unknown:false};
+  const c = (CORRELATED_PAYOUTS[parlayBook]||{})[n];
+  return c ? {M:c, correlated:true, approx:true, unknown:false}
+           : {M:std, correlated:true, approx:false, unknown:true};
+}
 let parlayBook = 'prizepicks';
 const bookLabel = b => b==='prizepicks' ? 'PrizePicks' : 'Underdog';
 const parlayPayouts = () => PAYOUTS_BY_BOOK[parlayBook] || PAYOUTS_BY_BOOK.prizepicks;
@@ -1645,20 +1666,26 @@ function pickDiverseLegs(legs, n){
   // each target prob, take the nearest unused leg of a not-yet-used stat type.
   const hi = legs[0].prob;                                  // top confident leg (~ the cap)
   const lo = Math.max(0.60, hi - Math.min(0.26, 0.05 * (n - 1)));  // wider spread for more legs
-  const out = [], usedIdx = new Set(), usedStat = {};
+  // One leg per stat type AND per GAME: two picks from the same game are correlated, which
+  // the book pays less on — a suggestion advertising the standard multiplier must not be
+  // correlated or the payout we show is a lie.
+  const out = [], usedIdx = new Set(), usedStat = {}, usedGame = {};
   for (let i = 0; i < n; i++) {
     const target = n === 1 ? hi : hi - (hi - lo) * i / (n - 1);
     let best = -1, bestD = Infinity;
     for (let j = 0; j < legs.length; j++) {
       if (usedIdx.has(j) || usedStat[(legs[j].l.stat_type || '').toLowerCase()]) continue;
+      const g = legs[j].l.game_id;
+      if (g && usedGame[g]) continue;
       const d = Math.abs(legs[j].prob - target);
       if (d < bestD) { bestD = d; best = j; }
     }
-    if (best < 0) for (let j = 0; j < legs.length; j++) if (!usedIdx.has(j)) { best = j; break; }
-    if (best < 0) break;
+    if (best < 0) break;      // no uncorrelated leg left → shorter slip beats a mispriced one
     out.push(legs[best]); usedIdx.add(best);
     usedStat[(legs[best].l.stat_type || '').toLowerCase()] = 1;
+    if (legs[best].l.game_id) usedGame[legs[best].l.game_id] = 1;
   }
+  if (out.length < n) return [];      // couldn't build a clean n-leg → don't offer one
   return out.sort((a, b) => b.prob - a.prob);
 }
 function renderSuggestedParlays(){
@@ -1670,6 +1697,7 @@ function renderSuggestedParlays(){
     if(legs.length<n) break;
     const M=parlayPayouts()[n]; if(!M) break;
     const pick=pickDiverseLegs(legs,n);
+    if(pick.length<n) continue;      // no clean (uncorrelated) n-leg available → skip it
     const P=pick.reduce((a,x)=>a*x.prob,1), roi=(P*M-1)*100;
     const legHtml=pick.map(x=>`<div class="parlay-leg-row"><span>${esc(x.l.player)} · ${esc(propShort(x.l.stat_type))} ${x.side} ${x.l.line}</span><span class="pl-prob">${Math.round(x.prob*100)}%</span></div>`).join('');
     const payload=JSON.stringify(pick.map(x=>({id:x.l.id,side:x.side}))).replace(/'/g,'&#39;');
@@ -1721,25 +1749,25 @@ function renderParlaySummary(){
   if(n<2){ el.innerHTML='<div class="muted-note" style="margin:0">Add at least 2 legs to see your chance, payout, and ROI.</div>'; return; }
   let P=1, soccer=false;
   for(const s of parlaySlip){ const l=allLines.find(x=>x.id===s.id); if(!l)continue; P*= s.side==='Over'?l.model_prob:1-l.model_prob; if(l.sport==='World Cup')soccer=true; }
-  const M=parlayPayouts()[Math.min(6,n)], roi=(P*M-1)*100, be=100/M, rc=roi>=0?'pos':'neg';
+  const pay=slipPayout(parlaySlip), M=pay.M, roi=(P*M-1)*100, be=100/M, rc=roi>=0?'pos':'neg';
   el.innerHTML=`
     <div class="parlay-sum-grid">
       <div class="proj-cell"><div class="v">${(P*100).toFixed(1)}%</div><div class="l">Hit chance</div></div>
-      <div class="proj-cell"><div class="v">${M}x</div><div class="l">${bookLabel(parlayBook)} · ${n}-leg</div></div>
+      <div class="proj-cell"><div class="v${pay.correlated?' neg':''}">${pay.approx?'~':''}${M}x</div><div class="l">${bookLabel(parlayBook)} · ${n}-leg${pay.correlated?' · correlated':''}</div></div>
       <div class="proj-cell"><div class="v ${rc}">${roi>0?'+':''}${roi.toFixed(0)}%</div><div class="l">ROI / edge</div></div>
     </div>
     <div class="parlay-stake-row">
       <label>Stake $<input id="parlay-stake" type="number" min="0" step="1" value="${parlayStake}" oninput="updateStake(this.value)"></label>
       <div>Return <b id="pl-return">$${(parlayStake*M).toFixed(2)}</b> · EV <b id="pl-ev" class="${rc}">${P*M-1>=0?'+':''}$${(parlayStake*(P*M-1)).toFixed(2)}</b></div>
     </div>
-    <div class="muted-note" style="margin:0">Break-even hit rate is <b>${be.toFixed(1)}%</b> — you're <b class="${P*100>=be?'pos':'neg'}">${P*100>=be?'above':'below'}</b> it. ${soccer?ic('warn',12,'inherit')+' Includes World Cup legs (model overconfident there). ':''}Assumes calibrated, independent legs.</div>
+    <div class="muted-note" style="margin:0">Break-even hit rate is <b>${be.toFixed(1)}%</b> — you're <b class="${P*100>=be?'pos':'neg'}">${P*100>=be?'above':'below'}</b> it. ${pay.correlated?ic('warn',12,'inherit')+` <b>Correlated legs</b> (same game) — the book reduces the payout and the exact number varies per entry, so treat ${pay.unknown?`the ${M}x above as a ceiling`:`~${M}x as typical, not a quote`}. `:''}${soccer?ic('warn',12,'inherit')+' Includes World Cup legs (model overconfident there). ':''}Assumes calibrated, independent legs.</div>
     <button class="clearbtn" onclick="clearSlip()">Clear slip</button>`;
 }
 function updateStake(v){
   parlayStake=Math.max(0,parseFloat(v)||0);
   const n=parlaySlip.length; if(n<2) return;
   let P=1; for(const s of parlaySlip){ const l=allLines.find(x=>x.id===s.id); if(!l)continue; P*= s.side==='Over'?l.model_prob:1-l.model_prob; }
-  const M=parlayPayouts()[Math.min(6,n)];
+  const M=slipPayout(parlaySlip).M;      // same multiplier the summary priced (correlated-aware)
   const ret=document.getElementById('pl-return'), ev=document.getElementById('pl-ev');
   if(ret) ret.textContent='$'+(parlayStake*M).toFixed(2);
   if(ev) ev.textContent=(P*M-1>=0?'+':'')+'$'+(parlayStake*(P*M-1)).toFixed(2);
