@@ -946,12 +946,20 @@ function rowsHTML(g){
 
 function projCell(l){
   if(l.model_proj==null) return `<div class="lproj"><span class="dash">—</span></div>`;
+  const ot=(l.odds_type||'standard').toLowerCase();
+  const isStd = ot==='standard' || ot==='boosted';
   const e=l.model_edge||0;
-  const cls=e>0.05?'pos':e<-0.05?'neg':'';
-  const arrow=e>0.05?ic('up',9,'inherit'):e<-0.05?ic('down',9,'inherit'):'';
-  const edge=Math.abs(e)>=0.05?` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>`:'';
+  // Show a green/red EDGE only on STANDARD lines. Demon (deliberately unhittable) and
+  // goblin (deliberately easy) lines have warped numbers, so proj−line isn't a real edge —
+  // showing a big "−19" there just looks like the model is broken. The stat already carries a
+  // demon/goblin tag, so here we show the bare projection (still useful) with no fake edge.
+  const showEdge = isStd && Math.abs(e)>=0.05;
+  const cls   = showEdge ? (e>0?'pos':'neg') : '';
+  const arrow = showEdge ? (e>0?ic('up',9,'inherit'):ic('down',9,'inherit')) : '';
+  const edge  = showEdge ? ` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>` : '';
   const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':'Model projection';
-  return `<div class="lproj ${cls}" title="${kindLbl} ${l.model_proj} vs line ${l.line}"><span class="proj-num">${l.model_proj}</span>${edge}</div>`;
+  const tip = isStd ? `${kindLbl} ${l.model_proj} vs line ${l.line}` : `${kindLbl} ${l.model_proj} · ${ot} line (special payout — edge not comparable)`;
+  return `<div class="lproj ${cls}" title="${tip}"><span class="proj-num">${l.model_proj}</span>${edge}</div>`;
 }
 
 function toggleGroup(key){
