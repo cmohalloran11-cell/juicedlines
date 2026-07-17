@@ -64,6 +64,28 @@ def init_db() -> None:
         for col in ("close_proj_b", "close_prob_b"):
             if col not in have:
                 c.execute(f"ALTER TABLE prop_clv ADD COLUMN {col} REAL")
+        # ── audit fields (2026-07-16) ───────────────────────────────────────────
+        # Without these the ledger cannot answer the only two questions that matter:
+        #  * PRICE: profitability is unmeasurable without it. Scoring a hit-rate against a
+        #    flat −110 is meaningless when we bet the same juiced side every time — e.g.
+        #    HR 0.5 unders "won" 86% purely as a base rate (mean(m−L)=−0.37, sd 0.09), which
+        #    reads as a huge edge and is actually just the price.
+        #  * odds_type: demon/goblin lines are deliberately warped, so (m−L) vs (y−L) on them
+        #    manufactures correlation and inflates the edge regression. Must be filterable.
+        #  * model_raw / trust_weight: MLB doesn't anchor (close_proj IS the raw model), but
+        #    WNBA/SL/tennis/soccer blend toward the line, so their close_proj is NOT the model.
+        #    The edge regression (y−L)=a+γ(m−L) needs the PRE-anchor m. Recovering it later via
+        #    m=L+(final−L)/t is impossible at t=0 (snap-to-line) and numerically unstable at
+        #    small t (tennis ~0.05 → 20× any rounding), so log it directly.
+        for col, typ in (("odds_type", "TEXT"),
+                         ("close_over_price", "TEXT"), ("close_under_price", "TEXT"),
+                         ("close_over_implied", "REAL"), ("close_under_implied", "REAL"),
+                         ("model_raw", "REAL"),        # pre-anchor projection m
+                         ("model_raw_prob", "REAL"),   # pre-anchor P(over) at close_line
+                         ("trust_weight", "REAL"),     # anchor weight actually applied
+                         ("game_id", "TEXT")):
+            if col not in have:
+                c.execute(f"ALTER TABLE prop_clv ADD COLUMN {col} {typ}")
         c.commit()
 
 
@@ -143,6 +165,14 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
             ts, ln, l.get("model_prob"), l.get("model_proj"),
             l.get("proj_kind"),
             l.get("model_proj_b"), l.get("model_prob_b"),   # variant B (enhanced)
+            # audit fields — see the schema comment. Price makes profitability answerable;
+            # odds_type lets demon/goblin be filtered out of the edge regression;
+            # model_raw/trust_weight expose the PRE-anchor model on the blended sports.
+            l.get("odds_type"),
+            l.get("over_price"), l.get("under_price"),
+            l.get("over_implied"), l.get("under_implied"),
+            l.get("model_raw"), l.get("model_raw_prob"), l.get("trust_weight"),
+            l.get("game_id"),
         ))
     if not rows:
         return 0
@@ -151,13 +181,23 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
             INSERT INTO prop_clv (line_id, game_date, sport, source, player, stat_type,
                 open_ts, open_line, open_prob, open_proj,
                 close_ts, close_line, close_prob, close_proj, proj_kind,
-                close_proj_b, close_prob_b)
-            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?)
+                close_proj_b, close_prob_b,
+                odds_type, close_over_price, close_under_price,
+                close_over_implied, close_under_implied,
+                model_raw, model_raw_prob, trust_weight, game_id)
+            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?)
             ON CONFLICT(line_id, game_date) DO UPDATE SET
                 close_ts=excluded.close_ts, close_line=excluded.close_line,
                 close_prob=excluded.close_prob, close_proj=excluded.close_proj,
                 stat_type=excluded.stat_type, proj_kind=excluded.proj_kind,
-                close_proj_b=excluded.close_proj_b, close_prob_b=excluded.close_prob_b
+                close_proj_b=excluded.close_proj_b, close_prob_b=excluded.close_prob_b,
+                odds_type=excluded.odds_type,
+                close_over_price=excluded.close_over_price,
+                close_under_price=excluded.close_under_price,
+                close_over_implied=excluded.close_over_implied,
+                close_under_implied=excluded.close_under_implied,
+                model_raw=excluded.model_raw, model_raw_prob=excluded.model_raw_prob,
+                trust_weight=excluded.trust_weight, game_id=excluded.game_id
         """, rows)
         c.commit()
     return len(rows)

@@ -95,6 +95,14 @@ def attach_basketball(lines: list[dict]) -> int:
             l["model_proj"] = round(center, 1)
             l["model_edge"] = round(center - line, 1)
             l["proj_kind"] = "basketball"
+            # PRE-anchor model + the weight applied, for the ledger. `model_proj` here is the
+            # BLENDED value, so it cannot answer "does our model know anything the line
+            # doesn't" — the edge regression (y−L)=a+γ(m−L) needs the raw m. Recovering it
+            # later from the blend is impossible when trust==0 (snap-to-line) and unstable at
+            # small trust, so record it now. Display is unchanged.
+            l["model_raw"] = round(model_mean, 2)
+            l["model_raw_prob"] = round(float((arr > line).mean()), 4)
+            l["trust_weight"] = round(float(trust), 3)
             l["model_n"] = proj["n_games"]
             l["bball_confidence"] = proj["confidence"]
             done += 1
