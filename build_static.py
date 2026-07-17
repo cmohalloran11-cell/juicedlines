@@ -170,18 +170,22 @@ def main() -> None:
         db.init_db()
         logged = db.log_clv(lines, updated)
         try:
-            graded = analytics.grade_pending()          # MLB only today; needs statsapi
+            graded = analytics.grade_pending()          # MLB (statsapi game logs)
         except Exception as exc:
             graded = {"graded": 0, "voided": 0, "err": str(exc)[:40]}
+        try:
+            graded_bb = analytics.grade_basketball()     # WNBA + SL (ESPN box scores)
+        except Exception as exc:
+            graded_bb = {"graded": 0, "voided": 0, "err": str(exc)[:40]}
         pruned = db.prune_clv(keep_ungraded_days=3)
         import sqlite3 as _sq
         _c = _sq.connect(OUT_CLV)
         n_all = _c.execute("SELECT COUNT(*) FROM prop_clv").fetchone()[0]
         n_grd = _c.execute("SELECT COUNT(*) FROM prop_clv WHERE actual IS NOT NULL").fetchone()[0]
         _c.close()
-        print(f"  wrote {OUT_CLV.name} [{src}]: logged {logged}, graded {graded}, pruned {pruned} "
-              f"| {n_grd} graded / {n_all} rows, {OUT_CLV.stat().st_size/1e6:.1f} MB "
-              f"| +{time.time()-tc:.0f}s")
+        print(f"  wrote {OUT_CLV.name} [{src}]: logged {logged}, graded MLB {graded} + "
+              f"BB {graded_bb}, pruned {pruned} | {n_grd} graded / {n_all} rows, "
+              f"{OUT_CLV.stat().st_size/1e6:.1f} MB | +{time.time()-tc:.0f}s")
     except Exception as exc:
         print(f"  clv.db SKIPPED ({exc})")
 

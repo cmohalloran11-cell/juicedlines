@@ -1732,3 +1732,89 @@ def grade_pending() -> dict:
         except Exception:
             continue
     return {"graded": graded, "voided": voided}
+
+
+# ── basketball grading (WNBA + Summer League) ─────────────────────────────────
+# The MLB grader above settles props from statsapi game logs; this is the WNBA/SL analog,
+# built on ESPN box scores (the same source the projections use). It's what finally makes
+# non-MLB props MEASURABLE — until now the ledger logged WNBA every build but never graded
+# it, so we could not answer "does the WNBA model beat the line?" (the edge γ) or validate
+# any role/minutes change. Box scores carry the FULL line incl. the orb/drb split, so every
+# modelled market (singles, combos, fantasy, split rebounds) grades from one lookup.
+
+def _match_bball_game(games: list, gd: str):
+    """The player's box-score game for ledger date `gd`. Prefer an exact date match; else a
+    UNIQUE game one day either side (ESPN box dates are US game dates, the ledger's game_date
+    is the board-build UTC date, so they can differ by a day). 'Unique' guards the rare
+    back-to-back case from being mis-graded against the wrong night."""
+    g = next((x for x in games if x.date == gd), None)
+    if g is not None:
+        return g
+    from datetime import date as _date, timedelta as _td
+    try:
+        base = _date.fromisoformat(gd)
+    except Exception:
+        return None
+    near = (base - _td(days=1)).isoformat(), (base + _td(days=1)).isoformat()
+    cands = [x for x in games if x.date in near]
+    return cands[0] if len(cands) == 1 else None
+
+
+def _bball_actual(game, key: str, COMBOS, BASE_STATS, DERIVED_STATS, FANTASY_W):
+    """Actual value of a modelled market from one box-score game (None = ungradeable)."""
+    if key == "fantasy":
+        return sum(w * game.stat(s) for s, w in FANTASY_W.items())
+    if key in COMBOS:                                  # pra/pr/pa/ra/stocks → sum components
+        return sum(game.stat(c) for c in COMBOS[key])
+    if key in BASE_STATS or key in DERIVED_STATS:      # pts/reb/ast/…/orb/drb/3pm
+        return game.stat(key)
+    return None
+
+
+def grade_basketball() -> dict:
+    """Settle logged WNBA / Summer-League props from past game-days off ESPN box scores.
+    Mirrors grade_pending (MLB): resolve player → find the game for the logged date → apply
+    the market's stat → db.set_actual; void once stale if the player didn't play or the market
+    isn't gradeable. Best-effort; never raises into the build."""
+    from datetime import datetime, timezone, timedelta
+    try:
+        from basketball import projections as BP
+        from basketball import COMBOS, BASE_STATS, DERIVED_STATS
+        from basketball.projections import _FANTASY_W
+    except Exception:
+        return {"graded": 0, "voided": 0}
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    today = date.today()
+    stale_before = (today - timedelta(days=3)).isoformat()
+    src = BP.gamelog_source()
+    graded = voided = 0
+    for league in ("WNBA", "NBA Summer League"):
+        # higher cap than MLB's (150): box-score grading is one cached index fetch + dict
+        # lookups, not a per-player API call, so a day's ~3000 WNBA rows clear in a few runs
+        # before the 3-day prune. The box index is fetched once regardless of the count.
+        pend = db.pending_grades(today.isoformat(), league, limit=600)
+        if not pend:
+            continue
+        try:
+            box = src._boxscore_index(league)          # {player_id: [PlayerGame]}, last ~25d
+        except Exception:
+            box = {}
+        for p in pend:
+            try:
+                name, label, gd, lid = p["player"], p["stat_type"], p["game_date"], p["line_id"]
+                key = BP._resolve_market(label)
+                ref = BP.resolve(league, name)
+                game = _match_bball_game(box.get(str(ref.id), []), gd) if (ref and key) else None
+                if game is None:
+                    if gd < stale_before:              # DNP / unresolved / ungradeable → void
+                        db.set_actual(lid, gd, None, now); voided += 1
+                    continue
+                val = _bball_actual(game, key, COMBOS, BASE_STATS, DERIVED_STATS, _FANTASY_W)
+                if val is None:
+                    if gd < stale_before:
+                        db.set_actual(lid, gd, None, now); voided += 1
+                    continue
+                db.set_actual(lid, gd, float(val), now); graded += 1
+            except Exception:
+                continue
+    return {"graded": graded, "voided": voided}
