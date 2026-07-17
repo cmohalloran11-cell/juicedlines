@@ -42,6 +42,16 @@ def attach_basketball(lines: list[dict]) -> int:
     if not blines:
         return 0
 
+    # Injury report per league (the only reliable role signal — no free starter feed). 'Out' =
+    # a confirmed DNP → suppress like an MLB scratch; 'questionable' → flag but still project.
+    src = P.gamelog_source()
+    inj: dict = {}
+    for lg in {l["sport"] for l in blines}:
+        try:
+            inj[lg] = src.injuries(lg) if hasattr(src, "injuries") else {}
+        except Exception:
+            inj[lg] = {}
+
     proj_cache: dict = {}
 
     def get_proj(league: str, player: str):
@@ -63,6 +73,15 @@ def attach_basketball(lines: list[dict]) -> int:
 
     done = 0
     for (league, _pnorm, _mk), glines in groups.items():
+        # Injury gate (before projecting). 'Out' → confirmed DNP: badge OUT, drop from
+        # edges/parlay + the ledger (same lineup_status machinery as the MLB scratch), and
+        # skip projecting entirely. 'Questionable' → keep the projection but flag it.
+        status = inj.get(league, {}).get(_pnorm)
+        if status == "out":
+            for l in glines:
+                l["lineup_status"] = "out"
+            continue
+
         proj = get_proj(league, glines[0]["player"])
         if not proj:
             continue
@@ -105,5 +124,7 @@ def attach_basketball(lines: list[dict]) -> int:
             l["trust_weight"] = round(float(trust), 3)
             l["model_n"] = proj["n_games"]
             l["bball_confidence"] = proj["confidence"]
+            if status == "questionable":     # Day-To-Day/GTD → he may play; flag, don't suppress
+                l["lineup_status"] = "questionable"
             done += 1
     return done

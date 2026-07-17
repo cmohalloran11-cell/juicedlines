@@ -315,6 +315,26 @@ class EspnBasketball(GameLogSource):
         _cache[key] = (time.time(), tp)
         return tp
 
+    def injuries(self, league: str) -> dict:
+        """{normalized_player_name: 'out' | 'questionable'} from ESPN's league injury report.
+
+        The only reliable role signal on the free feed — ESPN does NOT publish pregame
+        starting fives for the WNBA (the summary `rosters`/starter flags come back empty for
+        upcoming AND past games), but the injury list is complete and current (matched by name;
+        the entries carry no athlete id). 'Out' → a confirmed DNP (suppress like an MLB scratch);
+        everything else present (Day-To-Day, Questionable, Doubtful, GTD) → 'questionable', which
+        we flag but still project, since the player may well play."""
+        d = _get(_SITE.format(path=self._path(league)) + "/injuries", 900)
+        out: dict = {}
+        for team in (d or {}).get("injuries", []):
+            for it in team.get("injuries", []) or []:
+                nm = _norm_name(((it.get("athlete") or {}).get("displayName")) or "")
+                st = str(it.get("status") or "").strip().lower()
+                if not nm or not st:
+                    continue
+                out[nm] = "out" if "out" in st else "questionable"
+        return out
+
     def upcoming_opponents(self, league: str) -> dict:
         """{team_id: opp_team_id} for the current slate — lets the board use the REAL matchup
         pace + opponent defense instead of the league baseline. Games already final are

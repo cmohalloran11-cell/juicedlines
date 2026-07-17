@@ -183,6 +183,7 @@ input[type=text]{min-width:190px}
 .lproj.neg .proj-edge{color:var(--red)}
 .lproj .dash{color:var(--muted2)}
 .lproj .out-badge{color:var(--red);font-size:10px;font-weight:800;letter-spacing:.5px;border:1px solid var(--red);border-radius:4px;padding:1px 4px;opacity:.85}
+.lproj .q-badge{color:var(--yellow);font-size:9px;font-weight:800;letter-spacing:.5px;border:1px solid var(--yellow);border-radius:4px;padding:0 3px;opacity:.8;vertical-align:middle}
 .lprices{text-align:right;font-family:var(--mono);font-size:12px;font-weight:600}
 .lprices .o{color:var(--orange)}.lprices .u{color:var(--muted)}
 .limplied{text-align:right;font-weight:700;font-size:13px}
@@ -1030,7 +1031,9 @@ function projCell(l){
   const tip = isMarket ? `${kindLbl} — ${l.model_proj} is the market's own median line for this prop, so there's no model edge to show`
             : isStd ? `${kindLbl} ${l.model_proj} vs line ${l.line}`
             : `${kindLbl} ${l.model_proj} · ${ot} line (special payout — edge not comparable)`;
-  return `<div class="lproj ${cls}" title="${tip}"><span class="proj-num">${l.model_proj}</span>${edge}</div>`;
+  // Questionable / game-time decision — he may play, so keep the projection but flag the risk.
+  const qflag = l.lineup_status==='questionable' ? ` <span class="q-badge" title="Questionable — game-time decision">GTD</span>` : '';
+  return `<div class="lproj ${cls}" title="${tip}"><span class="proj-num">${l.model_proj}</span>${edge}${qflag}</div>`;
 }
 
 function toggleGroup(key){
