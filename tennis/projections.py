@@ -90,14 +90,23 @@ def project_match(tour: str, player_a: str, player_b: str, surface: str,
     win_a = blend * win_sim + (1 - blend) * win_elo
 
     eff_n = min(ra.eff_matches(surface), rb.eff_matches(surface))
+    # Key the per-player markets by the REQUESTED names, not the resolved ones. `resolve` falls
+    # back to a baseline literally named "(unknown)" for anyone absent from the data, so keying
+    # by ra.player/rb.player meant a caller asking for the name it passed in got None and dropped
+    # the line — and when BOTH players were unknown the two dict keys COLLIDED and player A's
+    # distributions were silently overwritten by B's. Callers only ever know the name they asked
+    # for, so that's the contract. (An unresolved player still projects: baseline rates, 0
+    # effective matches → low confidence → the board anchors it to the market line.)
+    key_a, key_b = player_a, player_b
     dist = {"total_games": sim["total_games"], "total_sets": sim["total_sets"],
-            ra.player: {"aces": sim["aces_a"], "dfs": sim["dfs_a"], "games": sim["games_a"],
-                        "sets": sim["sets_a"], "breaks": sim["breaks_a"]},
-            rb.player: {"aces": sim["aces_b"], "dfs": sim["dfs_b"], "games": sim["games_b"],
-                        "sets": sim["sets_b"], "breaks": sim["breaks_b"]}}
+            key_a: {"aces": sim["aces_a"], "dfs": sim["dfs_a"], "games": sim["games_a"],
+                    "sets": sim["sets_a"], "breaks": sim["breaks_a"]},
+            key_b: {"aces": sim["aces_b"], "dfs": sim["dfs_b"], "games": sim["games_b"],
+                    "sets": sim["sets_b"], "breaks": sim["breaks_b"]}}
     return {
         "tour": tour, "surface": surface, "best_of": best_of,
-        "player_a": ra.player, "player_b": rb.player,
+        "player_a": player_a, "player_b": player_b,
+        "resolved_a": ra.player, "resolved_b": rb.player,   # "(unknown)" = not in the data
         "win_prob_a": round(win_a, 4), "win_prob_b": round(1 - win_a, 4),
         "win_prob_a_sim": round(win_sim, 4), "win_prob_a_elo": round(win_elo, 4),
         "win_prob_a_analytic": round(match_win_analytic(ra, rb, surface, base, best_of), 4),
@@ -105,10 +114,10 @@ def project_match(tour: str, player_a: str, player_b: str, surface: str,
         "markets": {
             "total_games": summary(sim["total_games"]),
             "total_sets": summary(sim["total_sets"]),
-            ra.player: {"aces": summary(sim["aces_a"]), "dfs": summary(sim["dfs_a"]),
-                        "games": summary(sim["games_a"])},
-            rb.player: {"aces": summary(sim["aces_b"]), "dfs": summary(sim["dfs_b"]),
-                        "games": summary(sim["games_b"])},
+            key_a: {"aces": summary(sim["aces_a"]), "dfs": summary(sim["dfs_a"]),
+                    "games": summary(sim["games_a"])},
+            key_b: {"aces": summary(sim["aces_b"]), "dfs": summary(sim["dfs_b"]),
+                    "games": summary(sim["games_b"])},
         },
         "_dist": dist,
     }

@@ -1013,12 +1013,18 @@ function projCell(l){
   // goblin (deliberately easy) lines have warped numbers, so proj−line isn't a real edge —
   // showing a big "−19" there just looks like the model is broken. The stat already carries a
   // demon/goblin tag, so here we show the bare projection (still useful) with no fake edge.
-  const showEdge = isStd && Math.abs(e)>=0.05;
+  // Same reasoning applies to MARKET-DERIVED projections (proj_kind==='market'): the number IS
+  // the book's median standard line, so proj−line only measures how far this variant sits from
+  // that median — an artifact, not an edge. Show the bare number, no arrow.
+  const isMarket = l.proj_kind==='market';
+  const showEdge = isStd && !isMarket && Math.abs(e)>=0.05;
   const cls   = showEdge ? (e>0?'pos':'neg') : '';
   const arrow = showEdge ? (e>0?ic('up',9,'inherit'):ic('down',9,'inherit')) : '';
   const edge  = showEdge ? ` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>` : '';
-  const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':'Model projection';
-  const tip = isStd ? `${kindLbl} ${l.model_proj} vs line ${l.line}` : `${kindLbl} ${l.model_proj} · ${ot} line (special payout — edge not comparable)`;
+  const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':l.proj_kind==='market'?'Market-derived — the book’s own line, not a model call':'Model projection';
+  const tip = isMarket ? `${kindLbl} — ${l.model_proj} is the market's own median line for this prop, so there's no model edge to show`
+            : isStd ? `${kindLbl} ${l.model_proj} vs line ${l.line}`
+            : `${kindLbl} ${l.model_proj} · ${ot} line (special payout — edge not comparable)`;
   return `<div class="lproj ${cls}" title="${tip}"><span class="proj-num">${l.model_proj}</span>${edge}</div>`;
 }
 
@@ -1438,6 +1444,13 @@ function runEdges(){
   if(statType) pool=pool.filter(l=>(l.stat_type||'').toLowerCase()===statType.toLowerCase());
   // odds-type include/exclude (goblin / demon / normal)
   pool=pool.filter(l=>edgeTypes.has(l.odds_type||'standard'));
+  // MARKET-DERIVED projections can never carry an edge: the projection IS the book's median
+  // standard line for that prop, so model_edge only measures how far a variant sits from that
+  // median. Left in, those artifacts SORT TO THE TOP of Biggest-Proj-Diff (they reach ~7.0) and
+  // recenter into fake +EV on far-off-median lines — i.e. the worst picks would look like the
+  // best. NOTE: 'consensus' is deliberately NOT excluded — that edge is vs OTHER books (real
+  // line-shopping signal); this one is vs the same book's own line (no information).
+  pool=pool.filter(l=>l.proj_kind!=='market');
   // require a real sample for MLB model props (avoid tiny-sample noise)
   pool=pool.filter(l=>l.sport!=='MLB' || (l.model_n||0)>=10);
 
@@ -1498,7 +1511,7 @@ function edgeCardHTML(i,maxM){
     sub=`Proj ${i.proj} · Line ${l.line} · ${Math.round(i.prob*100)}% model · ${priceLbl} ${esc(l.source)}`;
   } else {
     const epct=l.line?((i.edge/Math.abs(l.line||1))*100):0;
-    metricHTML=`<div class="edge-pct ${pos?'pos':'neg'}">${i.edge>0?'+':''}${i.edge}</div><div class="edge-metric-lbl">${l.proj_kind==='consensus'?'vs consensus':'proj−line'}</div>`;
+    metricHTML=`<div class="edge-pct ${pos?'pos':'neg'}">${i.edge>0?'+':''}${i.edge}</div><div class="edge-metric-lbl">${l.proj_kind==='consensus'?'vs consensus':l.proj_kind==='market'?'vs market line':'proj−line'}</div>`;
     sub=`Proj ${i.proj} · Line ${l.line}${l.model_prob!=null?` · ${Math.round((pos?l.model_prob:1-l.model_prob)*100)}% model`:''} · ${esc(l.source)}`;
   }
   const ot=l.odds_type||'standard';
@@ -1629,9 +1642,13 @@ function legLean(l){
 // slap hitter — not a real edge). The custom builder lets you add anything.
 const SUGGEST_LO = 0.58, SUGGEST_HI = 0.88;
 function eligibleLegs(){
+  // proj_kind!=='market': never SUGGEST a leg whose probability came from a distribution
+  // recentered on the book's own line — we have no view on it. (model_n>=10 already excludes
+  // most of these, since tennis sets model_n = eff_matches = min() over both players, but that
+  // overlap is a coincidence, not a guarantee.)
   let pool = allLines.filter(l=>l.model_prob!=null && l.line!=null && l.player && l.stat_type
     && isStd(l) && l.source===parlayBook && (l.model_n==null || l.model_n>=10)
-    && suggestSports.has(l.sport));
+    && l.proj_kind!=='market' && suggestSports.has(l.sport));
   const byPlayer = {};   // one leg per player (avoid stacking the same guy)
   for(const l of pool){
     const lean = legLean(l); if(!lean) continue;

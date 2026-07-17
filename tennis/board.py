@@ -98,7 +98,8 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
             std = [float(l["line"]) for l in glines if (l.get("odds_type") or "standard") == "standard"]
             anchor = float(np.median(std)) if std else float(np.median([float(l["line"]) for l in glines]))
             blended = trust * model_mean + (1.0 - trust) * anchor
-            if trust < 0.2:             # thin/unknown player → defer fully to the market line
+            anchored = trust < 0.2      # thin/unknown player → defer fully to the market line
+            if anchored:
                 blended = anchor
 
             for l in glines:
@@ -112,7 +113,12 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
                 l["model_prob"] = round(float((arr_line > line).mean()), 4)
                 l["model_proj"] = round(center, 2)
                 l["model_edge"] = round(center - line, 1)
-                l["proj_kind"] = "tennis"
+                # Be honest about what the number IS. Fully anchored → the projection is the
+                # market's own median standard line, NOT a model call, and any apparent "edge"
+                # is just this variant's distance from that median (demons/goblins sit far off
+                # it by design). The data is stale enough that this is currently EVERY tennis
+                # line; mislabelling them "tennis" would imply a model that isn't there.
+                l["proj_kind"] = "market" if anchored else "tennis"
                 l["model_n"] = res["eff_matches"]
                 l["tennis_confidence"] = res["confidence"]
                 done += 1
