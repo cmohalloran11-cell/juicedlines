@@ -204,7 +204,8 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
                      n=n or cfg("model", "n_sims"), rng=rng, orb_share=orb_share)
 
     proj = {
-        "player": ref.name, "team": ref.team, "position": ref.position, "league": league,
+        "player": ref.name, "team": ref.team, "team_id": ref.team_id,
+        "position": ref.position, "league": league,
         "proj_minutes": proj_min, "minutes_sd": min_sd, "pace": pace,
         "opp_id": opp_id, "opp_def_rtg": opp_def, "orb_share": round(orb_share, 3),
         "eff_games": rates.eff_games, "n_games": rates.n_games,
