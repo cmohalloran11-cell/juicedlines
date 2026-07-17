@@ -113,6 +113,33 @@ def snapshot_lines(lines: list[dict[str, Any]], ts: str) -> None:
         c.commit()
 
 
+def prune_clv(keep_ungraded_days: int = 3) -> int:
+    """
+    Drop stale UNGRADED prop_clv rows; keep every GRADED one forever.
+
+    Graded rows are the research asset (they're what the edge regression runs on) and are
+    only ~3% of the table — 3.4k rows / 0.9 MB vs 106k / 22.5 MB. The other 97% are props
+    that never resolved (sports we don't grade yet, cancellations, or rows still waiting).
+    A row only needs to survive open → close → grading (~1-2 days), so anything ungraded
+    past a few days never will be. This is what keeps the published ledger small enough to
+    live on the `data` branch.
+    """
+    with _lock, _conn() as c:
+        cur = c.execute(
+            "DELETE FROM prop_clv WHERE actual IS NULL AND graded_at IS NULL "
+            "AND game_date < date('now', ?)", (f"-{int(keep_ungraded_days)} day",))
+        n = cur.rowcount or 0
+        c.commit()
+    # VACUUM can't run inside a transaction — reclaim space on its own connection.
+    try:
+        c2 = sqlite3.connect(DB_PATH)
+        c2.execute("VACUUM")
+        c2.close()
+    except Exception:
+        pass
+    return n
+
+
 def get_history(line_id: str, limit: int = 200) -> list[dict]:
     with _lock, _conn() as c:
         rows = c.execute(

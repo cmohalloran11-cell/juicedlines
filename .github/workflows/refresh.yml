@@ -45,6 +45,9 @@ jobs:
           rm -rf _data && mkdir _data && cp static/board.json _data/board.json
           if [ -f static/analytics.json ]; then cp static/analytics.json _data/analytics.json; fi
           if [ -f static/history.json ]; then cp static/history.json _data/history.json; fi
+          # clv.db is the CLV/research ledger — the data branch IS its store (the runner is
+          # stateless). Only publish a real SQLite file, never a failed download.
+          if [ -f static/clv.db ]; then cp static/clv.db _data/clv.db; fi
           cd _data && git init -q && git checkout -q -b data
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

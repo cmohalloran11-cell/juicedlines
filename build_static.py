@@ -35,6 +35,41 @@ OUT_HISTORY = Path(__file__).parent / "static" / "history.json"
 _HISTORY_URL = "https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/history.json"
 _HIST_MAX_POINTS = 40          # per line; plenty for a movement chart, keeps the file small
 
+# ── CLV ledger (the research asset) ──────────────────────────────────────────────
+# This is what answers "does our model beat the line" — the edge regression
+# (y−L)=a+γ(m−L) runs on its GRADED rows. It used to be written ONLY by the live server's
+# snapshot loop (main.py), so it grew only while someone happened to be running uvicorn —
+# and props not logged on the day are gone forever. Now the Action maintains it, using the
+# same data-branch-as-store trick as history.json.
+#
+# NOTE this is prop_clv ONLY. The local history.db is 1.8 GB, but that's almost entirely
+# line_history (9.6M rows) which the static build doesn't need — line movement is served by
+# history.json. The ledger alone is 22.5 MB, and ~0.9 MB once pruned to graded rows.
+OUT_CLV = Path(__file__).parent / "static" / "clv.db"
+SEED_CLV = Path(__file__).parent / "clv_seed.db"     # one-time bootstrap, committed to the repo
+_CLV_URL = "https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/clv.db"
+
+
+def _load_prev_clv() -> str:
+    """Published ledger → static/clv.db. Falls back to the committed seed on first run."""
+    OUT_CLV.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"{_CLV_URL}?t={int(time.time())}",
+                                     headers={"User-Agent": "juiced-build"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            data = r.read()
+        if data[:15] == b"SQLite format 3":        # don't write a 404 page over the ledger
+            OUT_CLV.write_bytes(data)
+            return "data-branch"
+    except Exception:
+        pass
+    if SEED_CLV.exists():                          # first run: bootstrap from the seed
+        import shutil
+        shutil.copyfile(SEED_CLV, OUT_CLV)
+        return "seed"
+    return "empty"
+
 
 def _load_prev_history() -> dict:
     """Previous rolling history from the data branch. Best-effort: first run starts empty."""
@@ -121,6 +156,32 @@ def main() -> None:
     print(f"wrote {OUT.name}: {len(slim)} lines, {OUT.stat().st_size/1e6:.1f} MB "
           f"| {OUT_FREE.name}: {OUT_FREE.stat().st_size/1e6:.1f} MB (lines only) | {time.time()-t0:.0f}s")
     print(f"  by sport: {dict(by)}  errors: {list(errors)}")
+
+    # ── CLV ledger: log today's props + grade yesterday's (never blocks the board) ──
+    # Point db at the ledger-only file, NOT the 1.8GB local history.db, and never call
+    # snapshot_lines here (that's what makes history.db huge; movement lives in history.json).
+    try:
+        tc = time.time()
+        import db
+        db.DB_PATH = OUT_CLV
+        src = _load_prev_clv()
+        db.init_db()
+        logged = db.log_clv(lines, updated)
+        try:
+            graded = analytics.grade_pending()          # MLB only today; needs statsapi
+        except Exception as exc:
+            graded = {"graded": 0, "voided": 0, "err": str(exc)[:40]}
+        pruned = db.prune_clv(keep_ungraded_days=3)
+        import sqlite3 as _sq
+        _c = _sq.connect(OUT_CLV)
+        n_all = _c.execute("SELECT COUNT(*) FROM prop_clv").fetchone()[0]
+        n_grd = _c.execute("SELECT COUNT(*) FROM prop_clv WHERE actual IS NOT NULL").fetchone()[0]
+        _c.close()
+        print(f"  wrote {OUT_CLV.name} [{src}]: logged {logged}, graded {graded}, pruned {pruned} "
+              f"| {n_grd} graded / {n_all} rows, {OUT_CLV.stat().st_size/1e6:.1f} MB "
+              f"| +{time.time()-tc:.0f}s")
+    except Exception as exc:
+        print(f"  clv.db SKIPPED ({exc})")
 
     # ── line-movement history (rolling; the data branch is the store) ────────────
     # A point is appended only when a line actually MOVES — so a line that never budges
