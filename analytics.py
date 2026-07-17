@@ -869,6 +869,68 @@ def _slate_game_by_team() -> dict:
     return _cached(f"slate_{date.today().isoformat()}", 1800, produce)
 
 
+# ── lineups / expected plate appearances ─────────────────────────────────────
+# Empirical PA per game by batting-order slot (1-9), universal-DH era: the leadoff hitter
+# gets ~0.9 more PA/game than the 9-hole, a ~20% volume swing that scales EVERY counting-stat
+# projection (hits/TB/HR/RBI/…). Board projections currently assume a generic start and ignore
+# the slot entirely. League PA-by-slot, recent full seasons.
+_PA_BY_SLOT = {1: 4.64, 2: 4.53, 3: 4.42, 4: 4.31, 5: 4.21,
+               6: 4.10, 7: 3.99, 8: 3.88, 9: 3.77}
+_PA_SLOT_AVG = sum(_PA_BY_SLOT.values()) / 9.0        # ≈ 4.20
+
+
+def _todays_lineups() -> dict:
+    """
+    Confirmed batting orders for today's slate, once teams post them (~2-4h pre-game).
+    → {"slot": {player_id: batting_slot}, "set_teams": {team_id, …}}. `set_teams` = teams
+    whose lineup is FULLY posted (9 batters); only for those can an absent hitter be treated
+    as a confirmed scratch. Best-effort + cached 10 min; any failure yields empty, so the
+    projection pipeline runs exactly as it did before lineups existed.
+    """
+    if not _MLB_OK:
+        return {"slot": {}, "set_teams": set()}
+
+    def produce():
+        try:
+            r = mlb._session.get(f"{mlb.BASE}/schedule",
+                                 params={"sportId": 1, "date": date.today().isoformat(),
+                                         "hydrate": "lineups,team"}, timeout=20)
+            r.raise_for_status()
+        except Exception:
+            return {"slot": {}, "set_teams": set()}
+        slot: dict = {}
+        set_teams: set = set()
+        for d in r.json().get("dates", []):
+            for g in d.get("games", []):
+                lu = g.get("lineups") or {}
+                teams = g.get("teams") or {}
+                for side, key in (("home", "homePlayers"), ("away", "awayPlayers")):
+                    players = lu.get(key) or []
+                    tid = ((teams.get(side) or {}).get("team") or {}).get("id")
+                    if len(players) < 9:              # partial/unposted → not trustworthy for scratches
+                        continue
+                    if tid:
+                        set_teams.add(tid)
+                    for i, p in enumerate(players):
+                        pid = p.get("id")
+                        if pid:
+                            slot[pid] = i + 1          # list order = batting order
+        return {"slot": slot, "set_teams": set_teams}
+
+    return _cached(f"lineups_{date.today().isoformat()}", 600, produce)
+
+
+def _expected_pa(slot: int | None, baseline_pa: float) -> float:
+    """The player's own PA/game baseline, scaled by today's slot RELATIVE to an average slot.
+    Unknown slot → baseline unchanged. Deliberately relative (not the absolute slot table): the
+    player's baseline already carries their team's offense and sub-out pattern, so we move only
+    the DIFFERENCE from an average slot — the same 'relative not absolute' lesson as the WNBA
+    pace fix, where feeding a raw absolute on a different scale tanked calibration."""
+    if not slot or baseline_pa <= 0:
+        return baseline_pa
+    return baseline_pa * (_PA_BY_SLOT.get(slot, _PA_SLOT_AVG) / _PA_SLOT_AVG)
+
+
 def _pair_id(sport: str, a, b) -> str | None:
     """Canonical id for the game two picks share. Sorted, so both sides produce the same
     id (LAD-vs-SD == SD-vs-LAD)."""
@@ -1094,8 +1156,9 @@ def attach_projections(lines: list[dict]) -> None:
             pass
         teams = _team_map()
         corr = _stat_corrections()              # per-stat calibration offsets (ledger-driven)
+        lineups = _todays_lineups()             # today's confirmed batting orders (empty until posted)
 
-        engine_cache: dict[tuple, Any] = {}     # (pid,is_pitcher[,'b']) → engine projections
+        engine_cache: dict[tuple, Any] = {}     # (pid,is_pitcher[,'b'/'c']) → engine projections
         for l in lines:
             r = resolved.get(l["id"])
             if not r:
@@ -1112,6 +1175,22 @@ def attach_projections(lines: list[dict]) -> None:
             pg = _proj_games(logs, is_pitcher)
             if not pg:
                 continue
+
+            # Batting-order status (hitters). Set here so it's independent of the projection
+            # path: SCRATCH is a correctness flag — a hitter whose team posted a full lineup
+            # he's not in isn't playing, so no projection path should treat him as a live pick
+            # (the board badges him OUT, edges/parlay drop him, the ledger skips the DNP). The
+            # slot-scaled PROJECTION is a separate, measured thing → variant C in the engine
+            # block below (the book already prices the slot into the line, so it may add
+            # nothing — the trap matchup context fell into — hence measure before shipping).
+            slot = None
+            if not is_pitcher and lineups["slot"]:
+                slot = lineups["slot"].get(pid)
+                if slot:
+                    l["lineup_slot"] = slot
+                    l["lineup_status"] = "in"
+                elif meta.get("team_id") in lineups["set_teams"]:
+                    l["lineup_status"] = "out"      # confirmed benched (full lineup posted)
 
             # 1) stat-projector engine (variant A): plain Bayesian blend → Monte-Carlo.
             if _BRIDGE_OK:
@@ -1149,6 +1228,31 @@ def attach_projections(lines: list[dict]) -> None:
                             l["model_proj_b"] = engb["projection"]
                             if engb.get("prob_over") is not None:
                                 l["model_prob_b"] = engb["prob_over"]
+
+                    # variant C (A/B test): engine re-run at the hitter's CONFIRMED batting-order
+                    # PA (see the slot flag above). exp_pa scales every counting stat, so this is
+                    # a real volume signal — but the book already prices the slot, so it's logged
+                    # as its own variant and measured on the ledger, never merged into A.
+                    if slot:
+                        base_pa = sum(float((g.get("stat") or {}).get("plateAppearances")
+                                            or (g.get("stat") or {}).get("atBats") or 0)
+                                      for g in pg) / max(1, len(pg))
+                        exp_pa = _expected_pa(slot, base_pa)
+                        ckc = (pid, is_pitcher, "c")
+                        if ckc not in engine_cache:
+                            try:
+                                engine_cache[ckc] = projector_bridge.project_player(
+                                    pg, is_pitcher, predictive={"lineup_pa": exp_pa})
+                            except Exception:
+                                engine_cache[ckc] = None
+                        if engine_cache.get(ckc):
+                            engc = projector_bridge.for_stat(
+                                engine_cache[ckc], l.get("stat_type") or "", line_val,
+                                is_pitcher, sc_corr)
+                            if engc:
+                                l["model_proj_c"] = engc["projection"]
+                                if engc.get("prob_over") is not None:
+                                    l["model_prob_c"] = engc["prob_over"]
                     continue
 
             # 2) fallback: empirical projection + empirical P(over)

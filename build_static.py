@@ -90,6 +90,7 @@ _KEEP = (
     "headshot", "team_logo", "flag", "country",
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
     "bball_confidence", "tennis_confidence",
+    "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
 )
 
 # The paywall: everything a projection produces is PREMIUM. Stripping these leaves the free
@@ -99,7 +100,8 @@ _KEEP = (
 _PREMIUM_FIELDS = frozenset({
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
     "bball_confidence", "tennis_confidence", "model_floor", "model_ceiling",
-    "model_proj_b", "model_prob_b",
+    "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",
+    "lineup_slot", "lineup_status",
 })
 
 

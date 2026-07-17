@@ -61,7 +61,12 @@ def init_db() -> None:
         # plain variant A in close_proj/close_prob). Added via ALTER so existing rows
         # keep their data (they'll have NULL B — excluded from the head-to-head).
         have = {r[1] for r in c.execute("PRAGMA table_info(prop_clv)")}
-        for col in ("close_proj_b", "close_prob_b"):
+        # variant B = engine + matchup context + xBA prior; variant C = engine + confirmed
+        # batting-order PA (2026-07-17). Separate columns so each enhancement is measured on
+        # its own — reusing B's column for C would blend two feature definitions across time
+        # and corrupt the head-to-head. NULL where the variant didn't differ (excluded from
+        # the paired test), which for C is every prop without a posted lineup at build time.
+        for col in ("close_proj_b", "close_prob_b", "close_proj_c", "close_prob_c"):
             if col not in have:
                 c.execute(f"ALTER TABLE prop_clv ADD COLUMN {col} REAL")
         # ── audit fields (2026-07-16) ───────────────────────────────────────────
@@ -181,6 +186,8 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
     for l in lines:
         if l.get("model_proj") is None or l.get("line") is None or not l.get("player"):
             continue
+        if l.get("lineup_status") == "out":     # confirmed scratch → a DNP, don't grade it
+            continue
         try:
             ln = float(l["line"])
         except (TypeError, ValueError):
@@ -191,7 +198,8 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
             ts, ln, l.get("model_prob"), l.get("model_proj"),
             ts, ln, l.get("model_prob"), l.get("model_proj"),
             l.get("proj_kind"),
-            l.get("model_proj_b"), l.get("model_prob_b"),   # variant B (enhanced)
+            l.get("model_proj_b"), l.get("model_prob_b"),   # variant B (matchup ctx + xBA)
+            l.get("model_proj_c"), l.get("model_prob_c"),   # variant C (batting-order PA)
             # audit fields — see the schema comment. Price makes profitability answerable;
             # odds_type lets demon/goblin be filtered out of the edge regression;
             # model_raw/trust_weight expose the PRE-anchor model on the blended sports.
@@ -208,16 +216,17 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
             INSERT INTO prop_clv (line_id, game_date, sport, source, player, stat_type,
                 open_ts, open_line, open_prob, open_proj,
                 close_ts, close_line, close_prob, close_proj, proj_kind,
-                close_proj_b, close_prob_b,
+                close_proj_b, close_prob_b, close_proj_c, close_prob_c,
                 odds_type, close_over_price, close_under_price,
                 close_over_implied, close_under_implied,
                 model_raw, model_raw_prob, trust_weight, game_id)
-            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?)
+            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?,?)
             ON CONFLICT(line_id, game_date) DO UPDATE SET
                 close_ts=excluded.close_ts, close_line=excluded.close_line,
                 close_prob=excluded.close_prob, close_proj=excluded.close_proj,
                 stat_type=excluded.stat_type, proj_kind=excluded.proj_kind,
                 close_proj_b=excluded.close_proj_b, close_prob_b=excluded.close_prob_b,
+                close_proj_c=excluded.close_proj_c, close_prob_c=excluded.close_prob_c,
                 odds_type=excluded.odds_type,
                 close_over_price=excluded.close_over_price,
                 close_under_price=excluded.close_under_price,

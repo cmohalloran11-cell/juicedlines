@@ -182,6 +182,7 @@ input[type=text]{min-width:190px}
 .lproj.pos .proj-edge{color:var(--green)}
 .lproj.neg .proj-edge{color:var(--red)}
 .lproj .dash{color:var(--muted2)}
+.lproj .out-badge{color:var(--red);font-size:10px;font-weight:800;letter-spacing:.5px;border:1px solid var(--red);border-radius:4px;padding:1px 4px;opacity:.85}
 .lprices{text-align:right;font-family:var(--mono);font-size:12px;font-weight:600}
 .lprices .o{color:var(--orange)}.lprices .u{color:var(--muted)}
 .limplied{text-align:right;font-weight:700;font-size:13px}
@@ -1005,6 +1006,10 @@ function rowsHTML(g){
 }
 
 function projCell(l){
+  // Confirmed scratch — his team posted a full lineup and he's not in it. Showing a
+  // normal-start projection (or an "edge") for a DNP is misleading, so badge it and drop
+  // the number; he's also excluded from Edges + parlay suggestions and the ledger.
+  if(l.lineup_status==='out') return `<div class="lproj" title="Not in today's posted lineup"><span class="out-badge">OUT</span></div>`;
   if(l.model_proj==null) return `<div class="lproj"><span class="dash">—</span></div>`;
   const ot=(l.odds_type||'standard').toLowerCase();
   const isStd = ot==='standard' || ot==='boosted';
@@ -1438,7 +1443,7 @@ function lineEV(l){
 function runEdges(){
   const statType=val('e-stat'), side=val('e-side'), source=val('e-source');
   const hint=document.getElementById('edge-hint');
-  let pool=allLines.filter(l=>l.model_proj!=null && l.line!=null);
+  let pool=allLines.filter(l=>l.model_proj!=null && l.line!=null && l.lineup_status!=='out');
   pool=pool.filter(l=>edgeSports.has(l.sport));           // sport checkboxes
   if(source!=='all') pool=pool.filter(l=>l.source===source);
   if(statType) pool=pool.filter(l=>(l.stat_type||'').toLowerCase()===statType.toLowerCase());
@@ -1648,7 +1653,7 @@ function eligibleLegs(){
   // overlap is a coincidence, not a guarantee.)
   let pool = allLines.filter(l=>l.model_prob!=null && l.line!=null && l.player && l.stat_type
     && isStd(l) && l.source===parlayBook && (l.model_n==null || l.model_n>=10)
-    && l.proj_kind!=='market' && suggestSports.has(l.sport));
+    && l.proj_kind!=='market' && l.lineup_status!=='out' && suggestSports.has(l.sport));
   const byPlayer = {};   // one leg per player (avoid stacking the same guy)
   for(const l of pool){
     const lean = legLean(l); if(!lean) continue;
@@ -1733,7 +1738,7 @@ function searchParlayLines(q){
   q=(q||'').toLowerCase().trim();
   const el=document.getElementById('parlay-search-results'); if(!el) return;
   if(q.length<2){ el.innerHTML=''; return; }
-  const m=allLines.filter(l=>l.model_prob!=null&&l.line!=null&&l.player&&isStd(l)&&l.source===parlayBook&&((l.player||'').toLowerCase().includes(q)||(l.stat_type||'').toLowerCase().includes(q))).slice(0,40);
+  const m=allLines.filter(l=>l.model_prob!=null&&l.line!=null&&l.player&&isStd(l)&&l.source===parlayBook&&l.lineup_status!=='out'&&((l.player||'').toLowerCase().includes(q)||(l.stat_type||'').toLowerCase().includes(q))).slice(0,40);
   el.innerHTML = m.length? m.map(l=>{
     const o=Math.round(l.model_prob*100), ins=parlaySlip.find(s=>s.id===l.id);
     return `<div class="parlay-result"><div class="pr-name">${esc(l.player)} · ${esc(propShort(l.stat_type))} ${l.line} <span class="muted" style="font-size:10.5px">${esc(l.sport)}</span></div>`+`
