@@ -21,8 +21,12 @@ static/board.premium.json
 static/analytics.json
 static/history.json
 static/clv.db
-# NB: clv_seed.db IS committed on purpose — it bootstraps the Action's ledger with the
-# already-graded rows (the edge-regression asset). Only the build's working copy is ignored.
+# clv_seed.db IS committed on purpose — it bootstraps the Action's ledger with the
+# already-graded rows (the edge-regression asset). Without it the first Action run starts
+# empty, publishes an empty ledger, and every later run then prefers that empty data-branch
+# copy over the seed — orphaning the graded history permanently. The `*.db` rule above
+# would swallow it, so re-include it explicitly.
+!clv_seed.db
 
 # python
 __pycache__/
