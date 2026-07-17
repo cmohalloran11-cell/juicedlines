@@ -58,7 +58,8 @@ _MIN_GP, _MIN_MINPCT = 5, 25.0
 # don't extrapolate a limited-minute season to a full-40 rate a player never sustained
 _MPG_FLOOR = 26.0
 # sane per-40 ceilings (elite college seasons) so low-minute bursts can't blow up a prior
-_PER40_CAP = {"pts": 32.0, "reb": 15.0, "ast": 9.5, "stl": 3.2, "blk": 4.0, "3pm": 4.2, "to": 5.5}
+_PER40_CAP = {"pts": 32.0, "reb": 15.0, "orb": 6.5, "drb": 11.0,
+              "ast": 9.5, "stl": 3.2, "blk": 4.0, "3pm": 4.2, "to": 5.5}
 
 _S = requests.Session()
 _S.headers.update({"User-Agent": "Mozilla/5.0"})
@@ -86,6 +87,9 @@ def _per40_from_row(row: list) -> dict | None:
     scale = 40.0 / mpg                                   # per-game → per-40
     pg = {
         "pts": _f(row, _C_PTS), "reb": _f(row, _C_REB), "ast": _f(row, _C_AST),
+        # ORB/DRB (cols 57/58) don't become rates of their own — they seed the offensive-SHARE
+        # prior (see priors.orb_share_prior), which is what the derived orb/drb split needs.
+        "orb": _f(row, _C_ORB), "drb": _f(row, _C_DRB),
         "stl": _f(row, _C_STL), "blk": _f(row, _C_BLK),
         "3pm": _f(row, _C_3PMTOT) / gp,                  # col 19 is a season total
     }

@@ -25,6 +25,17 @@ LEAGUES = ("WNBA", "NBA Summer League")
 # Canonical base box stats the core projects (everything else is a combo of these).
 BASE_STATS = ("pts", "reb", "ast", "stl", "blk", "3pm", "to")
 
+# Offensive/Defensive rebounds are DERIVED from `reb`, not fitted as their own rates.
+# Why: ESPN's athlete gamelog (the WNBA source) only exposes totalRebounds — the OREB/DREB
+# split lives in box scores, which cover far fewer games (Reese: 25 gamelog vs 8 box). Fitting
+# separate orb/drb rates off 8 games would be noise, and switching the whole league to box
+# scores would gut the sample for every other stat.
+# Instead: total rebounds are well-estimated (25 games) and a player's OFFENSIVE SHARE is a
+# stable skill that 8 games estimates fine. So the sim splits each simulated rebound
+# binomially at that share — which keeps orb+drb == reb exactly (as reality does), and gives
+# the right variance and the right correlation with reb for free.
+DERIVED_STATS = ("orb", "drb")
+
 # Combo markets = sums of base stats (simulated jointly so they stay correlated).
 COMBOS = {
     "pra": ("pts", "reb", "ast"),

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .. import BASE_STATS, COMBOS
+from .. import BASE_STATS, COMBOS, DERIVED_STATS
 from ..model.rates import PlayerRates, player_possessions
 
 
@@ -30,7 +30,8 @@ def _negbin(mu: np.ndarray, disp: float, rng: np.random.Generator) -> np.ndarray
 def simulate(rates: PlayerRates, proj_minutes: float, minutes_sd: float,
              matchup_pace: float, pace_sd_frac: float, game_len: float,
              disp: float, opp_adj: dict | None = None, n: int = 10000,
-             rng: np.random.Generator | None = None) -> dict:
+             rng: np.random.Generator | None = None,
+             orb_share: float | None = None) -> dict:
     rng = rng or np.random.default_rng()
     opp_adj = opp_adj or {}
 
@@ -43,13 +44,24 @@ def simulate(rates: PlayerRates, proj_minutes: float, minutes_sd: float,
     for s in BASE_STATS:
         mu = rates.per_poss.get(s, 0.0) * poss * opp_adj.get(s, 1.0)
         out[s] = _negbin(mu, disp, rng)
+
+    # Offensive/defensive rebounds are DERIVED, not fitted (see DERIVED_STATS): split each
+    # simulated rebound binomially at the player's offensive share. This inherits the
+    # rebound distribution's variance, stays correlated with `reb`, and guarantees
+    # orb + drb == reb in every sim — which is what actually happens in a game.
+    if orb_share is not None and "reb" in out:
+        reb_i = np.rint(out["reb"]).astype(np.int64)
+        np.clip(reb_i, 0, None, out=reb_i)
+        orb = rng.binomial(reb_i, float(np.clip(orb_share, 0.01, 0.99)))
+        out["orb"] = orb.astype(out["reb"].dtype, copy=False)
+        out["drb"] = (reb_i - orb).astype(out["reb"].dtype, copy=False)
     return out
 
 
 def market_array(sim: dict, key: str) -> np.ndarray | None:
-    """Array for a base stat or a combo (summed from its components)."""
-    if key in BASE_STATS:
-        return sim.get(key)
+    """Array for a base stat, a DERIVED stat (orb/drb), or a combo (summed from components)."""
+    if key in BASE_STATS or key in DERIVED_STATS:
+        return sim.get(key)          # derived stats are absent if no orb_share was supplied
     if key in COMBOS:
         parts = [sim[p] for p in COMBOS[key] if p in sim]
         return sum(parts) if parts else None

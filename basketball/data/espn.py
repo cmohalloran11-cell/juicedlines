@@ -187,10 +187,18 @@ class EspnBasketball(GameLogSource):
                     fgm, fga = _made_att(v("FG"))
                     tpm, tpa = _made_att(v("3PT"))
                     ftm, fta = _made_att(v("FT"))
+                    # OREB/DREB feed the offensive-SHARE estimate, so a missing column must
+                    # stay 0/0 (→ the game is dropped from the split sample → the player falls
+                    # back to the positional prior). Do NOT synthesise a league-average split
+                    # here: it would look like real evidence and pin every player's share to
+                    # the average with the full weight of their game count.
+                    reb = _num(v("REB"))
+                    orb = _num(v("OREB")) if "OREB" in li else 0.0
+                    drb = _num(v("DREB")) if "DREB" in li else 0.0
                     out.append((pid, PlayerGame(
                         date=date, league=league, player_id=pid, player=nm,
                         team_id=tid, team=tname, opp_id=oid, opp=oname, minutes=mins,
-                        pts=_num(v("PTS")), reb=_num(v("REB")), ast=_num(v("AST")),
+                        pts=_num(v("PTS")), reb=reb, orb=orb, drb=drb, ast=_num(v("AST")),
                         stl=_num(v("STL")), blk=_num(v("BLK")), to=_num(v("TO")),
                         fgm=fgm, fga=fga, tpm=tpm, tpa=tpa, ftm=ftm, fta=fta,
                         pf=_num(v("PF")))))

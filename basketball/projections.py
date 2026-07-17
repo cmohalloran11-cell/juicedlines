@@ -46,11 +46,20 @@ def _resolve_market(label: str) -> str | None:
     if any(t in l for t in ("period", "1h", "2h", "1q", "2q", "3q", "4q", "quarter", "half", "first basket")):
         return None
     # markets we don't simulate → skip rather than mis-map onto a modelled stat
-    # (attempts, 2-pointers, split rebounds, FG/FT, double-doubles, minutes).
-    if any(t in l for t in ("attempt", "offensive", "defensive", "two point", "2 point",
+    # (attempts, 2-pointers, FG/FT, double-doubles, minutes).
+    if any(t in l for t in ("attempt", "two point", "2 point",
                             "2pt", "2-pt", "free throw", "fg ", "field goal",
                             "double double", "minutes")):
         return None
+    # Split rebounds are now MODELLED (own rates + measured priors), so they map instead of
+    # being skipped. These must come BEFORE the generic "rebound" check below — otherwise
+    # "Offensive Rebounds" falls through to total `reb` and over-projects ~285%, which is the
+    # bug that got them skipped originally.
+    if "rebound" in l or "reb" in l:
+        if "offensive" in l or l.startswith("oreb") or " oreb" in l:
+            return "orb"
+        if "defensive" in l or l.startswith("dreb") or " dreb" in l:
+            return "drb"
     if "fantasy" in l:
         return "fantasy"
     # combos first (before the single-stat substrings)
@@ -177,14 +186,27 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
     except Exception:
         pace, opp_adj = matchup_pace(lg_pace), {}      # never let a feed blip kill a projection
 
+    # Offensive-rebound share for the derived orb/drb split. WNBA's athlete gamelog carries only
+    # totalRebounds, so the split comes from box scores (fewer games, but a share is a stable
+    # skill); Summer League is already box-score-sourced, so its own games carry it. Shrunk
+    # toward the positional baseline — which for an SL player is itself informed by their
+    # college split, the same translated-prior idea the rest of SL runs on.
+    split_games = [g for g in games if (getattr(g, "orb", 0) or getattr(g, "drb", 0))]
+    if not split_games:
+        try:
+            split_games = src._boxscore_index(league).get(str(ref.id), []) or []
+        except Exception:
+            split_games = []
+    orb_share = PR.fit_orb_share(split_games, ref.position, bg)
+
     sim = E.simulate(rates, proj_min, min_sd, pace, lc.get("pace_sd_frac", 0.06),
                      game_len, lc.get("disp", 0.12), opp_adj=opp_adj,
-                     n=n or cfg("model", "n_sims"), rng=rng)
+                     n=n or cfg("model", "n_sims"), rng=rng, orb_share=orb_share)
 
     proj = {
         "player": ref.name, "team": ref.team, "position": ref.position, "league": league,
         "proj_minutes": proj_min, "minutes_sd": min_sd, "pace": pace,
-        "opp_id": opp_id, "opp_def_rtg": opp_def,
+        "opp_id": opp_id, "opp_def_rtg": opp_def, "orb_share": round(orb_share, 3),
         "eff_games": rates.eff_games, "n_games": rates.n_games,
         "sample_weight": rates.sample_weight,
         "confidence": _confidence(rates.eff_games, rates.sample_weight, league),

@@ -92,11 +92,52 @@ def test_market_resolution():
     assert P._resolve_market("Blks+Stls") == "stocks"
     assert P._resolve_market("Fantasy Score") == "fantasy"
     assert P._resolve_market("Period 1 Points") is None     # period markets skipped
+    # split rebounds are modelled (derived from `reb`) — and must beat the generic "rebound"
+    # check, or they fall through to total rebounds and over-project ~285%.
+    assert P._resolve_market("Offensive Rebounds") == "orb"
+    assert P._resolve_market("Defensive Rebounds") == "drb"
+    assert P._resolve_market("OREB") == "orb"
+    assert P._resolve_market("DREB") == "drb"
+    assert P._resolve_market("Rebounds") == "reb"
     # markets we don't simulate must NOT mis-map onto a modelled stat
     for lbl in ("Two Pointers Made", "Two Pointers Attempted", "3-PT Attempted",
-                "Offensive Rebounds", "Defensive Rebounds", "FG Made", "FG Attempted",
+                "Rebounding Attempts", "FG Made", "FG Attempted",
                 "Free Throws Made", "Double Doubles"):
         assert P._resolve_market(lbl) is None, lbl
+
+
+def test_derived_rebound_split():
+    """orb+drb must equal reb in EVERY sim, and track the player's offensive share."""
+    rates = R.PlayerRates("X", "WNBA", per_poss={s: 0.1 for s in BASE_STATS})
+    kw = dict(proj_minutes=30, minutes_sd=2, matchup_pace=96.0, pace_sd_frac=0.05,
+              game_len=40, disp=0.12, n=8000)
+    sim = E.simulate(rates, rng=np.random.default_rng(1), orb_share=0.30, **kw)
+    orb, drb, reb = (E.market_array(sim, k) for k in ("orb", "drb", "reb"))
+    assert orb is not None and drb is not None
+    assert np.all(orb + drb == np.rint(reb).astype(np.int64))   # exact, per-sim
+    assert np.all(orb >= 0) and np.all(drb >= 0)
+    assert abs(orb.mean() / reb.mean() - 0.30) < 0.02           # honours the share
+    # a different share moves only the split, never the total
+    sim2 = E.simulate(rates, rng=np.random.default_rng(1), orb_share=0.10, **kw)
+    assert np.all(sim2["reb"] == sim["reb"])
+    assert sim2["orb"].mean() < orb.mean()
+    # no share supplied (e.g. no split data anywhere) → derived stats absent, not zero/garbage
+    sim3 = E.simulate(rates, rng=np.random.default_rng(1), **kw)
+    assert E.market_array(sim3, "orb") is None
+
+
+def test_orb_share_prior_shrinks_and_uses_college():
+    base = PR.orb_share_prior("C")
+    assert 0.0 < base < 1.0
+    # no split data → prior exactly
+    assert PR.fit_orb_share([], "C") == base
+    # an extreme college split pulls the SL baseline toward it, but not all the way
+    bg = PlayerBackground(player="X", pre_league="NCAA", rates40={"orb": 9.0, "drb": 1.0})
+    pulled = PR.orb_share_prior("C", bg)
+    assert base < pulled < 0.90
+    # translation-invariance: scaling orb and drb alike must not move the share
+    bg2 = PlayerBackground(player="X", pre_league="NCAA", rates40={"orb": 9.0 * 0.93, "drb": 0.93})
+    assert abs(PR.orb_share_prior("C", bg2) - pulled) < 1e-9
 
 
 def test_value_math():

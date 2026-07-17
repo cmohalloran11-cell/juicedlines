@@ -37,6 +37,11 @@ class PlayerGame:
     minutes: float
     pts: float = 0.0
     reb: float = 0.0
+    # Rebound split — only some feeds carry it (box scores yes, athlete gamelogs no). Used to
+    # estimate the player's offensive SHARE, not as rates of their own (see DERIVED_STATS);
+    # 0/0 means "this feed didn't say", which drops the game from the split sample.
+    orb: float = 0.0
+    drb: float = 0.0
     ast: float = 0.0
     stl: float = 0.0
     blk: float = 0.0
@@ -54,7 +59,7 @@ class PlayerGame:
         """Base stat or combo by canonical key (pts/reb/ast/stl/blk/3pm/to + combos)."""
         if key == "3pm":
             return self.tpm
-        if key in ("pts", "reb", "ast", "stl", "blk", "to"):
+        if key in ("pts", "reb", "orb", "drb", "ast", "stl", "blk", "to"):
             return getattr(self, key)
         if key == "stocks":
             return self.stl + self.blk
