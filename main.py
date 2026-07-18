@@ -107,6 +107,18 @@ def refresh_lines(sport: str = "all") -> dict[str, Any]:
     except Exception as exc:
         log.warning("attach_projections failed: %s", exc)
 
+    # Per-row line movement: attach each line's opening (earliest-seen) value so the
+    # board can show how far it has drifted. Best-effort — a cold history.db just means
+    # no chips yet. Mirrors what build_static.py embeds from history.json.
+    try:
+        opens = db.open_values([l["id"] for l in lines if l.get("id")])
+        for l in lines:
+            ov = opens.get(l.get("id"))
+            if ov is not None and l.get("line") is not None and ov != l["line"]:
+                l["line_open"] = ov
+    except Exception as exc:
+        log.warning("open_values failed: %s", exc)
+
     _cache["lines"] = lines
     _cache["updated_at"] = _now_iso()
     _cache["errors"] = errors

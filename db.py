@@ -156,6 +156,38 @@ def get_history(line_id: str, limit: int = 200) -> list[dict]:
     return [dict(r) for r in reversed(rows)]
 
 
+def open_values(line_ids: list[str]) -> dict[str, float]:
+    """
+    Opening (earliest-seen) line_value for each given line_id, in one pass.
+
+    Feeds the board's per-row movement chip: the live server attaches `line_open`
+    so a row can show how far the line has drifted since we first saw it — the same
+    signal the static build embeds from history.json. Returns every id's open; the
+    caller compares it to the current line and only shows a chip when it moved.
+    Chunked to stay under SQLite's bound-variable limit; the (line_id, ts) index
+    makes the per-id MIN a cheap seek.
+    """
+    ids = [i for i in dict.fromkeys(line_ids) if i]     # de-dupe, drop falsy, keep order
+    if not ids:
+        return {}
+    out: dict[str, float] = {}
+    with _lock, _conn() as c:
+        for i in range(0, len(ids), 800):
+            chunk = ids[i:i + 800]
+            ph = ",".join("?" * len(chunk))
+            rows = c.execute(
+                f"""SELECT h.line_id, h.line_value FROM line_history h
+                    JOIN (SELECT line_id, MIN(ts) AS mt FROM line_history
+                          WHERE line_id IN ({ph}) GROUP BY line_id) m
+                      ON h.line_id = m.line_id AND h.ts = m.mt""",
+                chunk,
+            ).fetchall()
+            for r in rows:
+                if r["line_value"] is not None:
+                    out.setdefault(r["line_id"], r["line_value"])
+    return out
+
+
 def get_recent_snapshots(sport: str | None = None, limit: int = 50) -> list[dict]:
     with _lock, _conn() as c:
         if sport:
