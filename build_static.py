@@ -85,7 +85,6 @@ def _load_prev_history() -> dict:
 # Fields the frontend actually uses (keeps the file small vs dumping every field).
 _KEEP = (
     "id", "source", "sport", "player", "team", "position", "stat_type", "line",
-    "line_open",                        # opening line → the board's per-row movement chip
     "odds_type", "matchup", "start_time", "status", "game_id",
     "over_price", "under_price", "over_implied", "under_implied", "pickem_price",
     "headshot", "team_logo", "flag", "country",
@@ -138,31 +137,8 @@ def main() -> None:
     except Exception as exc:
         errors["projections"] = str(exc)
 
-    updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-    # ── line-movement history (compute BEFORE slimming so board.json can carry each
-    # line's opening value for the per-row movement chip; the file itself is written
-    # further down). Rolling store: a point is appended only when a line actually MOVES,
-    # so an unmoved line keeps one seed point. Best-effort — never blocks the board.
-    try:
-        prev_hist = _load_prev_history()
-    except Exception:
-        prev_hist = {}
-    new_hist: dict[str, list] = {}
-    for l in lines:
-        lid, lv = l.get("id"), l.get("line")
-        if not lid or lv is None:
-            continue
-        pts = prev_hist.get(lid) or []
-        if not pts or pts[-1].get("line_value") != lv:
-            pts = pts + [{"ts": updated, "line_value": lv}]
-        pts = pts[-_HIST_MAX_POINTS:]
-        new_hist[lid] = pts
-        # opening value → the board renders a movement chip only when the line has drifted
-        if len(pts) > 1 and pts[0].get("line_value") != lv:
-            l["line_open"] = pts[0]["line_value"]
-
     slim = [{k: l[k] for k in _KEEP if l.get(k) is not None} for l in lines]
+    updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def _payload(rows, tier):
         return {"lines": rows, "updated_at": updated, "errors": errors,
@@ -214,16 +190,26 @@ def main() -> None:
         print(f"  clv.db SKIPPED ({exc})")
 
     # ── line-movement history (rolling; the data branch is the store) ────────────
-    # Already computed above (into `new_hist`) so board.json could carry each line's
-    # opening value; here we just publish it. Stale ids drop out naturally because it's
-    # rebuilt from the CURRENT lines each run.
+    # A point is appended only when a line actually MOVES — so a line that never budges
+    # keeps one seed point (chart correctly hides) and the file stays tiny. Stale ids drop
+    # out naturally because we rebuild from the CURRENT lines each run.
     try:
         th = time.time()
+        prev = _load_prev_history()
+        hist: dict[str, list] = {}
+        for l in lines:
+            lid, lv = l.get("id"), l.get("line")
+            if not lid or lv is None:
+                continue
+            pts = prev.get(lid) or []
+            if not pts or pts[-1].get("line_value") != lv:
+                pts = pts + [{"ts": updated, "line_value": lv}]
+            hist[lid] = pts[-_HIST_MAX_POINTS:]
         OUT_HISTORY.write_text(
-            json.dumps({"history": new_hist, "updated_at": updated}, separators=(",", ":"), default=_num),
+            json.dumps({"history": hist, "updated_at": updated}, separators=(",", ":"), default=_num),
             encoding="utf-8")
-        movers = sum(1 for v in new_hist.values() if len(v) > 1)
-        print(f"  wrote {OUT_HISTORY.name}: {len(new_hist)} lines ({movers} moved), "
+        movers = sum(1 for v in hist.values() if len(v) > 1)
+        print(f"  wrote {OUT_HISTORY.name}: {len(hist)} lines ({movers} moved), "
               f"{OUT_HISTORY.stat().st_size/1e6:.2f} MB | +{time.time()-th:.0f}s")
     except Exception as exc:
         print(f"  history.json SKIPPED ({exc})")
