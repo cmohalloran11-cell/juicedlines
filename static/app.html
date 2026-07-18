@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Juiced — Bet Smart. Stay Juiced. Cash Out.</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23080b05'/%3E%3Cpath d='M58 8 L24 54 H46 L40 92 L78 40 H54 Z' fill='%23b6f01a'/%3E%3C/svg%3E">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── auth ── */
@@ -301,7 +300,6 @@ input[type=text]{min-width:190px}
 .rtable td.prop-cell.cleared{color:var(--green)}
 .rtable td.prop-cell.missed{color:var(--muted2)}
 
-.dr-chart-wrap{position:relative;height:170px;background:var(--card);border:1px solid var(--border);border-radius:11px;padding:10px}
 .dr-note{font-size:12px;color:var(--muted2);background:var(--card);border:1px dashed var(--border2);border-radius:9px;padding:11px;line-height:1.5}
 .dr-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:60px;color:var(--muted)}
 
@@ -741,7 +739,6 @@ let allLines = [];
 let groups = [];
 let expanded = new Set();
 let sortMode = 'props';
-let drawerCharts = [];
 const RENDER_CAP = 150;
 // If this file is opened directly (file://) instead of being served by the
 // backend, relative /api calls have no server to hit → "Connecting to backend…".
@@ -1062,7 +1059,6 @@ function chip(n,l,cls){return `<div class="stat-chip ${cls}"><div class="num">${
 // ════════════ research drawer ════════════
 async function openDrawer(lineId){
   const line=allLines.find(l=>l.id===lineId); if(!line) return;
-  destroyDrawerCharts();
   document.getElementById('scrim').classList.add('open');
   document.getElementById('drawer').classList.add('open');
   // Instant hero from data we already have, so the drawer feels immediate while
@@ -1076,10 +1072,9 @@ async function openDrawer(lineId){
     hist = hist || [];
     if(a && a.available){
       document.getElementById('drawer-content').innerHTML = drawerHTML(line, a, hist);
-      try{ renderDrawerCharts(line, a, hist); wireVsTabs(); }catch(_){}
+      try{ wireVsTabs(); }catch(_){}
     } else {
       document.getElementById('drawer-content').innerHTML = soccerDrawer(line, staticAnalytics(line), hist);
-      try{ renderDrawerCharts(line, staticAnalytics(line), hist); }catch(_){}
     }
     return;
   }
@@ -1090,7 +1085,6 @@ async function openDrawer(lineId){
   ]);
 
   document.getElementById('drawer-content').innerHTML = drawerHTML(line, analytics, hist);
-  renderDrawerCharts(line, analytics, hist);
   wireVsTabs();
 }
 
@@ -1171,8 +1165,8 @@ function mlbDrawer(line,a,hist){
   const vsCard = a.vs_pitcher ? vsPitcherCard(a) : (a.vs_team ? vsTeamCard(a) : '');
   const recent=a.recent&&a.recent.length?recentTable(a):'';
   const shop=lineShopHTML(line);
-  const moveCard=hist.length>1?`<div class="dr-section"><h4><span class="ic">${ic('trend',14)}</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
-  return heroHead(a,line)+`<div class="dr-body">${hitCard}${vsCard}${recent}${shop}${moveCard}</div>`;
+  const moveCard=lineMoveCard(line,hist);
+  return heroHead(a,line)+`<div class="dr-body">${moveCard}${hitCard}${vsCard}${recent}${shop}</div>`;
 }
 
 function vsPitcherCard(a){
@@ -1292,13 +1286,14 @@ function lineShopHTML(line){
 }
 
 function mlbUnavailable(line,a,hist){
-  const move=hist.length>1?`<div class="dr-section"><h4><span class="ic">${ic('trend',14)}</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
+  const move=lineMoveCard(line,hist);
   return heroHead({player:line.player||line.matchup,player_type:line.position||'',team:null,opponent:null},line)+
     `<div class="dr-body">
+      ${move}
       <div class="dr-section"><h4>Prop</h4><div class="hit-card"><div class="hit-top"><div class="hit-prop"><b>${esc(line.stat_type||'')}</b></div>${line.line!=null?`<div class="hit-line-badge">Line ${line.line}</div>`:''}</div>
       <div style="font-size:12px;color:var(--muted)">${line.over_price?`Over ${line.over_price} / Under ${line.under_price||'—'}`:(line.over_implied!=null?`Implied ${Math.round(line.over_implied*100)}%`:'')}</div></div></div>
       <div class="dr-section"><div class="dr-note">${esc(a.reason||'No player analytics available for this line.')}</div></div>
-      ${lineShopHTML(line)}${move}
+      ${lineShopHTML(line)}
     </div>`;
 }
 
@@ -1315,7 +1310,7 @@ function staticAnalytics(line){
 }
 function soccerDrawer(line,a,hist){
   const prices=(line.over_price||line.under_price)?`Over ${line.over_price||'—'} / Under ${line.under_price||'—'}`:(line.over_implied!=null?`Yes ${Math.round(line.over_implied*100)}%`:'');
-  const move=(a.movement&&a.movement.length>1)||hist.length>1?`<div class="dr-section"><h4><span class="ic">${ic('trend',14)}</span> Line Movement</h4><div class="dr-chart-wrap"><canvas id="dr-move"></canvas></div></div>`:'';
+  const move=lineMoveCard(line,hist);
   // Soccer projection card — Poisson mean calibrated to the de-vigged market price
   let projCard='';
   if(a.model_proj!=null){
@@ -1348,31 +1343,20 @@ function soccerDrawer(line,a,hist){
   }
   return heroHead({player:a.player||line.player,player_type:a.player_type,headshot:a.headshot||line.headshot,team:a.team,opponent:null},line)+
     `<div class="dr-body">
+      ${move}
       <div class="dr-section"><h4><span class="ic">${ic('target',14)}</span> Prop</h4>
         <div class="hit-card"><div class="hit-top"><div class="hit-prop"><b>${esc(a.stat||line.stat_type||'')}</b></div>${(a.line??line.line)!=null?`<div class="hit-line-badge">Line ${a.line??line.line}</div>`:''}</div>
         <div style="font-size:13px;color:var(--muted)">${esc(prettyCountry(a.team&&a.team.name)||'')}${line.matchup?' · '+esc(line.matchup):''}</div>
         <div style="font-size:13px;color:var(--orange);font-family:var(--mono);margin-top:8px">${prices}</div></div></div>
       ${projCard}
       ${tennisCard}
-      ${move}
       ${lineShopHTML(line)}
     </div>`;
 }
 
-// charts
-function renderDrawerCharts(line,a,hist){
-  const c=document.getElementById('dr-move');
-  if(c && hist.length>1){
-    const vals=hist.map(h=>h.line_value);
-    drawerCharts.push(new Chart(c.getContext('2d'),{
-      type:'line',
-      data:{labels:hist.map(h=>fmtTime(h.ts)),datasets:[{label:'Line',data:vals,borderColor:'#b6f01a',backgroundColor:'rgba(182,240,26,.12)',tension:.3,fill:true,pointRadius:2,borderWidth:2}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5b6883',maxRotation:0,maxTicksLimit:6,font:{size:9}},grid:{color:'rgba(36,48,73,.4)'}},y:{ticks:{color:'#5b6883',font:{size:10}},grid:{color:'rgba(36,48,73,.4)'}}}}
-    }));
-  }
-}
-function destroyDrawerCharts(){ drawerCharts.forEach(c=>{try{c.destroy()}catch(_){}}); drawerCharts=[]; }
-function closeDrawer(){ document.getElementById('scrim').classList.remove('open'); document.getElementById('drawer').classList.remove('open'); destroyDrawerCharts(); }
+// Line movement now renders as an inline SVG card (lineMoveCard), so the drawer no
+// longer needs a canvas chart library.
+function closeDrawer(){ document.getElementById('scrim').classList.remove('open'); document.getElementById('drawer').classList.remove('open'); }
 
 // sparkline with line reference (inline SVG)
 function sparklineSVG(vals,line){
@@ -1388,6 +1372,36 @@ function sparklineSVG(vals,line){
   return `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
     <line x1="0" y1="${lineY}" x2="${W}" y2="${lineY}" stroke="#f5b945" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
     <polyline points="${pts}" fill="none" stroke="#e6efd6" stroke-width="1.6"/>${dots}</svg>`;
+}
+
+// Line-movement card — deliberately the SAME shape as the Hit-Rate card (big number +
+// sparkline + stat tiles) so the drawer reads as one system. Plots the line's trajectory
+// since we first saw it as an SVG sparkline, with the OPENING value as the dashed reference
+// (dots above = line drifted up, below = down). `hist` is [{ts,line_value}] oldest→newest;
+// the card only appears once a line has actually moved, so it never shows an empty chart.
+function lineMoveCard(line, hist){
+  const vals=(hist||[]).map(h=>h.line_value).filter(v=>v!=null);
+  if(vals.length<2) return '';
+  const open=vals[0], now=vals[vals.length-1];
+  const net=Math.round((now-open)*100)/100;
+  const netCls=net>0?'hi':net<0?'lo':'';           // hi=green / lo=red, matching the hit card
+  const tileCls=net>0?'pos':net<0?'neg':'';
+  const moves=vals.reduce((n,v,i)=>i&&v!==vals[i-1]?n+1:n,0);
+  const prop=esc(line.stat_type||line.matchup||'');
+  return `<div class="dr-section"><h4><span class="ic">${ic('trend',14)}</span> Line Movement</h4>
+    <div class="hit-card">
+      <div class="hit-top"><div class="hit-prop"><b>${prop}</b></div><div class="hit-line-badge">Now ${now}</div></div>
+      <div class="hit-mid">
+        <div class="hit-big"><div class="pct ${netCls}">${net>0?'+':''}${net}</div><div class="cap">since open</div></div>
+        <div class="hit-spark">${sparklineSVG(vals,open)}<div class="spark-legend"><span>opened ${open}</span><span>${moves} move${moves===1?'':'s'}</span></div></div>
+      </div>
+      <div class="hit-proj">
+        <div class="proj-cell"><div class="v">${open}</div><div class="l">Open</div></div>
+        <div class="proj-cell"><div class="v">${now}</div><div class="l">Now</div></div>
+        <div class="proj-cell edge"><div class="v ${tileCls}">${net>0?'+':''}${net}</div><div class="l">Net move</div></div>
+        <div class="proj-cell"><div class="v">${moves}</div><div class="l">${moves===1?'Move':'Moves'}</div></div>
+      </div>
+    </div></div>`;
 }
 
 // ════════════ edges ════════════
