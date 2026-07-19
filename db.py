@@ -240,12 +240,27 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
 
 
 def pending_grades(today: str, sport: str = "MLB", limit: int = 400) -> list[dict]:
-    """Un-attempted props from past game-days (gradeable via a game-log lookup)."""
+    """Un-attempted props from past game-days (gradeable via a game-log lookup).
+
+    Ordered by RESEARCH VALUE, not just recency. The board now logs ~14k MLB rows/day but
+    grading is rate-limited, and `prune_clv` deletes ungraded rows after a few days — so a
+    plain `ORDER BY game_date` spent the whole budget on demon/goblin props that EVERY
+    analysis filters out, while the rows that answer questions were pruned unqraded. Measured
+    2026-07-19: of 24,586 pending MLB rows only 2,825 were standard odds and just 703 were
+    standard AND carried variant C — i.e. the entire remaining batting-order sample was about
+    to be deleted. Priority is on pre-treatment fields (odds type, which variant was logged),
+    never on the outcome, so this concentrates power without biasing any estimate.
+    """
     with _lock, _conn() as c:
         rows = c.execute("""
             SELECT line_id, game_date, player, stat_type FROM prop_clv
             WHERE graded_at IS NULL AND game_date < ? AND sport = ? AND player IS NOT NULL
-            ORDER BY game_date DESC LIMIT ?
+            ORDER BY
+                (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted')) DESC,
+                (close_proj_b IS NOT NULL OR close_proj_c IS NOT NULL) DESC,
+                (close_over_price IS NOT NULL) DESC,
+                game_date DESC
+            LIMIT ?
         """, (today, sport, limit)).fetchall()
     return [dict(r) for r in rows]
 

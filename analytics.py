@@ -1902,7 +1902,11 @@ def grade_pending() -> dict:
         return {"graded": 0, "voided": 0}
     from datetime import datetime, timezone, timedelta
     today = date.today().isoformat()
-    pend = db.pending_grades(today, "MLB", limit=150)
+    # 150 was set when the ledger saw ~500 MLB rows/day; the board now logs ~14k/day, so that
+    # cap graded ~5% and the rest was pruned unqraded. Cost scales with DISTINCT PLAYERS, not
+    # rows (measured: 600 rows → ~63 players, and the per-player log is cached and usually
+    # already warm from the board run), so this is a few extra statsapi calls, not 4x the work.
+    pend = db.pending_grades(today, "MLB", limit=600)
     if not pend:
         return {"graded": 0, "voided": 0}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
