@@ -721,6 +721,25 @@ def analyze_soccer(line: dict) -> dict:
     movement = [{"ts": h["ts"], "line": h["line_value"],
                  "over": h["over_implied"]} for h in hist]
     country = line.get("country") or line.get("team")
+    # Honest, method-specific description of how THIS number was produced (the old blanket
+    # "Poisson from market price / no game-log feed" note was stale — the ESPN recent-form
+    # path has long been the primary projector, so the note contradicted the actual model).
+    kind = line.get("proj_kind")
+    n, stat = line.get("model_n"), (line.get("stat_type") or "this stat").lower()
+    form = line.get("model_form")
+    seen = f" (~{form} {stat}/game)" if form is not None else ""
+    if kind == "espn" and n:
+        note = (f"Projected from the player's last {int(n)} club matches{seen}, recency-weighted and "
+                f"adjusted for the tougher World Cup environment, then blended toward the market line.")
+    elif kind == "espn":            # committed club-season rate (e.g. tackles — no per-game log)
+        note = (f"Projected from the player's club-season rate{seen}, adjusted for the World Cup and "
+                f"blended 50/50 with the market line.")
+    elif kind == "poisson":
+        note = ("Expected count implied by the de-vigged two-sided market price (Poisson). "
+                "No club game-log covers this stat, so the market is the sharpest signal.")
+    else:  # consensus / market fallback
+        note = ("No player game-log covers this stat, so we show the market line itself — "
+                "there's no independent model edge here.")
     return {
         "available": True,
         "sport": "World Cup",
@@ -737,11 +756,10 @@ def analyze_soccer(line: dict) -> dict:
         "model_edge": line.get("model_edge"),
         "model_prob": line.get("model_prob"),
         "model_n": line.get("model_n"),
-        "proj_kind": line.get("proj_kind"),
+        "model_form": form,
+        "proj_kind": kind,
         "movement": movement,
-        "note": "Projection = Poisson expected count from the de-vigged market "
-                "price where a two-sided price exists, else cross-book consensus. "
-                "No free per-player soccer game-log feed (see attach_projections).",
+        "note": note,
     }
 
 
@@ -1306,6 +1324,18 @@ def _poisson_sf(k: int, lam: float) -> float:
     return max(0.0, min(1.0, 1.0 - cdf))
 
 
+def _prob_over(line: float, lam: float) -> float:
+    """
+    P(count strictly beats the line) under Poisson(lam).
+
+    Over = X >= floor(line)+1, so a WHOLE-NUMBER line correctly treats X==line as a PUSH
+    (not a win). The old `ceil(line)` counted the push as an over on integer lines — e.g. a
+    "3" shots line used P(X>=3) instead of P(X>=4) — which inflated P(over) and the shown
+    edge on exactly the integer lines the books post. For a .5 line the two agree.
+    """
+    return round(_poisson_sf(max(1, int(math.floor(line)) + 1), lam), 3)
+
+
 def _am_prob(american: Any) -> Optional[float]:
     """American odds → implied probability (with vig)."""
     if american in (None, ""):
@@ -1516,13 +1546,21 @@ def _attach_soccer_espn(lines: list[dict]) -> set:
         if len(games) < _ESPN_MIN_GAMES:
             continue
         vals = [fn(g) for g in games[-_ESPN_WINDOW:]]
-        form = sum(vals) / len(vals)                 # raw club-form rate
-        form *= _WC_FORM_DEFLATE.get((l.get("stat_type") or "").strip().lower(), 0.75)  # club → WC
         n = len(vals)
+        # Recency-weighted rate: the log is oldest→newest, and the most recent matches (which,
+        # during the tournament, ARE the WC games in the "all-competitions" log) describe the
+        # player's current role far better than a flat mean of the last 20. Linear ramp — the
+        # newest game weighs ~n× the oldest in the window — so recent form leads without
+        # discarding the older sample entirely.
+        wts = [i + 1 for i in range(n)]
+        form_raw = sum(v * w for v, w in zip(vals, wts)) / sum(wts)
+        deflate = _WC_FORM_DEFLATE.get((l.get("stat_type") or "").strip().lower(), 0.75)
+        form = form_raw * deflate                    # club → WC environment
         key = (mlb._norm_name(l["player"]), (l.get("stat_type") or "").strip().lower())
         anchor = market_anchor(key)
         if anchor is not None:
-            # weight on club form: grows with sample, capped at 0.5 (club→intl bias)
+            # weight on club form: grows with sample, capped at 0.5 (club→intl bias — the
+            # market line already prices the WC role/opponent/minutes, so it keeps ≥ half)
             w = min(0.5, n / (n + 12))
             proj = w * form + (1 - w) * anchor
         else:
@@ -1530,8 +1568,9 @@ def _attach_soccer_espn(lines: list[dict]) -> set:
         line = float(l["line"])
         l["model_proj"] = round(proj, 1)
         l["model_edge"] = round(proj - line, 1)
-        l["model_prob"] = round(_poisson_sf(max(1, math.ceil(line)), proj), 3)
+        l["model_prob"] = _prob_over(line, proj)
         l["model_n"] = n
+        l["model_form"] = round(form_raw, 1)         # raw recent rate, shown in the drawer for transparency
         l["proj_kind"] = "espn"
         done.add(l["id"])
     return done
@@ -1578,7 +1617,8 @@ def _attach_soccer_tackles(lines: list[dict]) -> set:
         line = float(l["line"])
         l["model_proj"] = round(proj, 1)
         l["model_edge"] = round(proj - line, 1)
-        l["model_prob"] = round(_poisson_sf(max(1, math.ceil(line)), proj), 3)
+        l["model_prob"] = _prob_over(line, proj)
+        l["model_form"] = round(rate, 1)            # club-season rate, shown in the drawer for transparency
         l["proj_kind"] = "espn"
         done.add(l["id"])
     return done
@@ -1659,7 +1699,7 @@ def _attach_soccer_market(lines: list[dict], skip: set | None = None) -> None:
             lam = line
         l["model_proj"] = round(lam, 1)
         l["model_edge"] = round(lam - line, 1)
-        l["model_prob"] = round(_poisson_sf(max(1, math.ceil(line)), lam), 3)
+        l["model_prob"] = _prob_over(line, lam)
         l["proj_kind"] = kind
 
 
