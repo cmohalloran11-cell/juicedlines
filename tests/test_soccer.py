@@ -115,38 +115,67 @@ def test_espn_projection_uses_wc_matches_plus_recent_club(monkeypatch):
     assert "6 recent club games" in note
 
 
+def test_final_stat_key_maps_all_board_labels():
+    cases = {
+        "Shots": "shots", "Shots On Target": "sog", "Shots Assisted": "shots_assisted",
+        "Attempted Dribbles": "dribbles", "Crosses": "crosses", "Tackles": "tackles",
+        "Clearances": "clearances", "Fouls": "fouls", "Goalie Saves": "saves",
+        "Goalie Fantasy Score": "fantasy_gk", "Outfield Fantasy Score": "fantasy_out",
+        "Passes Attempted": "passes", "Goal + Assist": "goal_assist", "Assists": "assists",
+        "Goals + Assists": "goal_assist",
+    }
+    for label, want in cases.items():
+        assert A._final_stat_key(label) == want, label
+
+
 def test_wc_final_override_is_line_agnostic_and_wins():
-    # The hand-set final projection must apply regardless of the exact line the book posts,
-    # matching stat-label variants, and set proj_kind="final".
+    # The hand-set final projection applies regardless of the exact line the book posts,
+    # matches stat-label variants across the whole board, and sets proj_kind="final".
     lines = [
         {"id": "a", "sport": "World Cup", "player": "Lamine Yamal", "stat_type": "Shots", "line": 2.5},
-        {"id": "b", "sport": "World Cup", "player": "Julián Álvarez", "stat_type": "Shots", "line": 2.5},
-        {"id": "c", "sport": "World Cup", "player": "Lionel Messi", "stat_type": "Shots On Target", "line": 1.5},
-        {"id": "d", "sport": "World Cup", "player": "Nobody Special", "stat_type": "Shots", "line": 2.5},
+        {"id": "b", "sport": "World Cup", "player": "Lamine Yamal", "stat_type": "Shots", "line": 4.5},
+        {"id": "c", "sport": "World Cup", "player": "Rodri", "stat_type": "Passes Attempted", "line": 78.5},
+        {"id": "d", "sport": "World Cup", "player": "Unai Simón", "stat_type": "Goalie Saves", "line": 3},
+        {"id": "e", "sport": "World Cup", "player": "Lionel Messi", "stat_type": "Shots Assisted", "line": 3},
+        {"id": "f", "sport": "World Cup", "player": "Nobody Special", "stat_type": "Shots", "line": 2.5},
     ]
     A._attach_soccer_final(lines)
+    y25, y45, rodri, simon, messi_sa, other = lines
 
-    yamal, alvarez, messi, other = lines
-    assert yamal["proj_kind"] == "final" and yamal["model_proj"] == 3.6
-    assert yamal["model_edge"] == 1.1                      # 3.6 vs 2.5
-    # same projection, different line → edge/prob adapt (Álvarez 1.6 proj under a 2.5 line)
-    assert alvarez["model_proj"] == 1.6 and alvarez["model_edge"] == -0.9
-    assert alvarez["model_prob"] < 0.30
-    # "Shots On Target" label maps to the sog projection
-    assert messi["model_proj"] == 1.7
+    # one projection, applied line-agnostically: same proj, edge/prob adapt to each line
+    assert y25["proj_kind"] == "final" and y25["model_proj"] == 3.9
+    assert y45["model_proj"] == 3.9
+    assert y25["model_prob"] > y45["model_prob"]           # 3.9 clears 2.5 more easily than 4.5
+    # keeper saves is a real UNDER (Simón ~<1 save/gm on a 3 line)
+    assert simon["model_proj"] == 1.9 and simon["model_prob"] < 0.20
+    # "Shots Assisted" (key passes) now maps to its own projection, not assists
+    assert messi_sa["model_proj"] == 3.9
     # players not in the override are left untouched
     assert "model_proj" not in other
 
-    # "Shots Assisted" (key passes) must NOT be caught by the assists projection
-    assert A._final_stat_key("Shots Assisted") is None
-    assert A._final_stat_key("Assists") == "assists"
-    sa = [{"id": "sa", "sport": "World Cup", "player": "Lionel Messi",
-           "stat_type": "Shots Assisted", "line": 1.5}]
-    A._attach_soccer_final(sa)
-    assert "model_proj" not in sa[0]
-
     a = A.analyze_soccer(lines[0])
     assert "final projection" in a["note"].lower()
+
+
+def test_wc_final_projections_are_two_sided():
+    # Guardrail against the old systematic-under bug: across the covered props the leans must
+    # split both ways, not collapse to all-unders.
+    import statistics
+    from collections import defaultdict
+    lines_by = defaultdict(list)
+    # representative lines for a handful of props known to lean each way
+    probe = [
+        ("Rodri", "Passes Attempted", 78.5), ("Pau Cubarsí", "Passes Attempted", 70.5),
+        ("Lisandro Martínez", "Clearances", 5.5), ("Dani Olmo", "Shots Assisted", 1.5),
+        ("Unai Simón", "Goalie Saves", 3), ("Lamine Yamal", "Attempted Dribbles", 6),
+        ("Lionel Messi", "Crosses", 6), ("Dani Olmo", "Shots", 1.5),
+    ]
+    lines = [{"id": str(i), "sport": "World Cup", "player": p, "stat_type": s, "line": ln}
+             for i, (p, s, ln) in enumerate(probe)]
+    A._attach_soccer_final(lines)
+    overs = sum(1 for l in lines if l["model_prob"] >= 0.55)
+    unders = sum(1 for l in lines if l["model_prob"] <= 0.45)
+    assert overs >= 3 and unders >= 3          # genuinely two-sided
 
 
 def test_wc_final_override_self_expires(monkeypatch):

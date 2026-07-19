@@ -730,8 +730,9 @@ def analyze_soccer(line: dict) -> dict:
     n_wc, n_club = line.get("model_n_wc") or 0, line.get("model_n_club") or 0
     seen = f" (~{form} {stat}/game)" if form is not None else ""
     if kind == "final":              # one-off hand-set projection for the World Cup final
-        note = ("Final projection: built from the player's tournament rate, adjusted for the "
-                "opponent's defense and the cagey final, then measured against this line.")
+        note = ("Final projection: the player's role and tournament rate weighed against the "
+                "game script — Spain's ~64% possession and Argentina's deeper block — and "
+                "priced against this line.")
     elif kind == "espn" and n_wc:    # grounded in THIS World Cup's matches + a few club games
         club_part = (f" plus {n_club} recent club game{'' if n_club == 1 else 's'}") if n_club else ""
         note = (f"Projected from {n_wc} World Cup match{'' if n_wc == 1 else 'es'}{seen}{club_part}, "
@@ -1666,42 +1667,91 @@ def _attach_soccer_tackles(lines: list[dict]) -> set:
     return done
 
 
-# ── World Cup FINAL override (Spain vs Argentina, 2026-07-19) ──────────────────
-# One-off, hand-set projections for the final, built from each player's tournament rate,
-# adjusted for the opponent's defense (Spain 0.17 GA — a hard downgrade for Argentina's
-# attackers; Argentina 1.0 GA — near-neutral for Spain's) and the cagey-final total. Keyed
-# by (normalized player, canonical stat); the PROJECTION is fixed and the edge / P(over)
-# are computed against whatever line the book actually posts, so it's line-agnostic. Wins
-# over the generic form model for these players, and self-expires after the final so it can
-# never linger past the game it was built for.
-_WC_FINAL_UNTIL = "2026-07-21"          # inclusive-exclusive: inert once the date reaches this
-_WC_FINAL_PROJ = {mlb._norm_name(p): {s: v for s, v in stats.items()} for p, stats in {
-    # Argentina — vs Spain's elite defense (attacking volume downgraded)
-    "Lionel Messi":      {"shots": 3.5, "sog": 1.7, "goals": 0.45, "assists": 0.45},
-    "Julián Álvarez":    {"shots": 1.6, "sog": 0.6, "goals": 0.25},
-    "Lautaro Martínez":  {"shots": 1.3, "goals": 0.25},
-    "Alexis Mac Allister": {"shots": 1.3},
-    "Enzo Fernández":    {"shots": 1.2},
-    # Spain — vs Argentina's beatable defense (near their form)
-    "Lamine Yamal":      {"shots": 3.6, "sog": 1.45, "dribbles": 3.2, "assists": 0.35, "goals": 0.32},
-    "Mikel Oyarzabal":   {"shots": 1.8, "sog": 0.9, "goals": 0.38},
-    "Dani Olmo":         {"shots": 1.1, "assists": 0.32},
-    "Álex Baena":        {"shots": 1.3},
+# ── World Cup FINAL projections (Spain vs Argentina, 2026-07-19) ───────────────
+# One-off, hand-set projections for the final, covering EVERY prop on the board. Each number
+# is my best estimate of the player's expected output for THIS match: the projection is
+# ANCHORED to the market line (which already prices role/opponent) and leaned off it only on
+# real evidence, in both directions — so the board isn't systematically over or under.
+# Drivers (researched, 2026-07-19):
+#   • Possession: Spain run ~64%, but Argentina control midfield (Enzo/Mac Allister) and kept
+#     88% once ahead vs England — so passing leans are MODEST: Spain's deep passers a touch
+#     over, Argentina's midfield near, attackers' passes near.
+#   • Keepers: Unai Simón made ~4 saves ALL tournament (<1/gm) → hard under a 3 line;
+#     E. Martínez ~1.5/gm but faces Spain's volume → mild under.
+#   • Shots: stars (Messi 4.8/gm, Yamal 4.18/90) near/over; Olmo is a creator (1 SOG all
+#     tournament) → under; role forwards centred on their line.
+#   • Creation/defending: Messi ~3.6 chances/gm → over on Shots Assisted; Argentina defend
+#     more → CB clearances lean over; dribble lines (Messi 5.5, Yamal 6) sit above their
+#     current rates → under. Fantasy scores are composites we don't model → anchored to line.
+# Keyed by (normalized player, canonical stat); line-agnostic (edge/P(over) vs the live line);
+# wins over the form model; self-expires after the final.
+_WC_FINAL_UNTIL = "2026-07-21"          # inert once the date reaches this
+# Each projection is the player's expected count, ANCHORED to the market's fair value — the
+# Poisson mean at which a pick'em line is a true coin-flip (which, for low counts, sits above
+# the half-line: a 1.5 line is 50/50 at mean ≈1.68, not 1.5). Neutral props sit at that fair
+# value (≈50%); real edges lean off it BOTH ways, so the board isn't systematically over/under.
+_WC_FINAL_PROJ = {mlb._norm_name(p): dict(stats) for p, stats in {
+    # ── Argentina ──────────────────────────────────────────────────────────────
+    "Lionel Messi":        {"shots": 3.5, "shots_assisted": 3.9, "goal_assist": 0.8,
+                            "dribbles": 3.5, "crosses": 4.8, "passes": 38.7, "fantasy_out": 21.7},
+    "Lautaro Martínez":    {"shots": 2.3, "sog": 0.7},
+    "Julián Alvarez":      {"passes": 28.7, "fantasy_out": 8.7},
+    "Enzo Fernández":      {"passes": 56.3, "tackles": 1.7, "fantasy_out": 10.7},
+    "Alexis Mac Allister": {"passes": 38.4, "fouls": 1.5, "fantasy_out": 8.7},
+    "Rodrigo De Paul":     {"passes": 42.5, "fantasy_out": 6.7},
+    "Cristian Romero":     {"passes": 47.7, "fantasy_out": 8.7},
+    "Lisandro Martínez":   {"clearances": 6.2, "passes": 45.7, "fantasy_out": 9.7},
+    "Nahuel Molina":       {"passes": 33.7, "fantasy_out": 6.7},
+    "Emiliano Martínez":   {"saves": 2.9, "passes": 30.7, "fantasy_gk": 9.7},
+    # ── Spain ──────────────────────────────────────────────────────────────────
+    "Lamine Yamal":        {"shots": 3.9, "dribbles": 3.9, "crosses": 3.4, "passes": 28.7,
+                            "fantasy_out": 16.7},
+    "Mikel Oyarzabal":     {"shots": 2.7, "dribbles": 0.7},
+    "Dani Olmo":           {"shots": 1.3, "shots_assisted": 1.9, "dribbles": 1.7},
+    "Álex Baena":          {"shots": 1.7},
+    "Pedri":               {"passes": 49.7, "fantasy_out": 7.7},
+    "Rodri":               {"passes": 82.6, "tackles": 3.1, "fantasy_out": 10.7},
+    "Aymeric Laporte":     {"clearances": 4.2, "tackles": 0.7, "passes": 74.5, "fantasy_out": 9.7},
+    "Pau Cubarsí":         {"passes": 73.5, "fantasy_out": 8.7},
+    "Marc Cucurella":      {"passes": 44.4, "fantasy_out": 7.7},
+    "Pedro Porro":         {"crosses": 4.7, "passes": 47.5, "fantasy_out": 10.7},
+    "Unai Simón":          {"saves": 1.9, "passes": 33.7, "fantasy_gk": 8.9},
 }.items()}
 
 
 def _final_stat_key(stat_type: str | None) -> Optional[str]:
-    """Board stat label → the canonical stat used in _WC_FINAL_PROJ (shots/sog/goals/
-    assists/dribbles). Combos and anything unrecognised return None (no override)."""
+    """Board stat label → canonical stat in _WC_FINAL_PROJ. Order matters: compound/keeper
+    labels are matched before the generic words they contain (e.g. 'shots assisted' before
+    'shots', 'goalie saves' before any 'goal' logic). Unrecognised → None (no override)."""
     n = _norm(stat_type)
     if _is_partial_stat(stat_type):
         return None
     if "on target" in n or "on goal" in n:
         return "sog"
+    if "assisted" in n:                              # "shots assisted" = key passes
+        return "shots_assisted"
     if "dribble" in n:
         return "dribbles"
-    if n in ("assists", "assist"):                   # EXACT — not "shots assisted" (key passes,
-        return "assists"                             # a different, higher-volume stat) or combos
+    if "cross" in n:
+        return "crosses"
+    if "clearance" in n:
+        return "clearances"
+    if "tackle" in n:
+        return "tackles"
+    if "foul" in n:
+        return "fouls"
+    if "save" in n:
+        return "saves"
+    if "goalie fantasy" in n or "keeper fantasy" in n:
+        return "fantasy_gk"
+    if "fantasy" in n:
+        return "fantasy_out"
+    if "pass" in n:
+        return "passes"
+    if "goal" in n and "assist" in n:                # "goal + assist" combo
+        return "goal_assist"
+    if n in ("assists", "assist"):
+        return "assists"
     if n in ("shots", "shot", "shots attempted", "total shots"):
         return "shots"
     if n in ("goals", "goal"):
