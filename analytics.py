@@ -729,7 +729,10 @@ def analyze_soccer(line: dict) -> dict:
     form = line.get("model_form")
     n_wc, n_club = line.get("model_n_wc") or 0, line.get("model_n_club") or 0
     seen = f" (~{form} {stat}/game)" if form is not None else ""
-    if kind == "espn" and n_wc:      # grounded in THIS World Cup's matches + a few club games
+    if kind == "final":              # one-off hand-set projection for the World Cup final
+        note = ("Final projection: built from the player's tournament rate, adjusted for the "
+                "opponent's defense and the cagey final, then measured against this line.")
+    elif kind == "espn" and n_wc:    # grounded in THIS World Cup's matches + a few club games
         club_part = (f" plus {n_club} recent club game{'' if n_club == 1 else 's'}") if n_club else ""
         note = (f"Projected from {n_wc} World Cup match{'' if n_wc == 1 else 'es'}{seen}{club_part}, "
                 f"then blended toward the market line.")
@@ -1663,6 +1666,73 @@ def _attach_soccer_tackles(lines: list[dict]) -> set:
     return done
 
 
+# ── World Cup FINAL override (Spain vs Argentina, 2026-07-19) ──────────────────
+# One-off, hand-set projections for the final, built from each player's tournament rate,
+# adjusted for the opponent's defense (Spain 0.17 GA — a hard downgrade for Argentina's
+# attackers; Argentina 1.0 GA — near-neutral for Spain's) and the cagey-final total. Keyed
+# by (normalized player, canonical stat); the PROJECTION is fixed and the edge / P(over)
+# are computed against whatever line the book actually posts, so it's line-agnostic. Wins
+# over the generic form model for these players, and self-expires after the final so it can
+# never linger past the game it was built for.
+_WC_FINAL_UNTIL = "2026-07-21"          # inclusive-exclusive: inert once the date reaches this
+_WC_FINAL_PROJ = {mlb._norm_name(p): {s: v for s, v in stats.items()} for p, stats in {
+    # Argentina — vs Spain's elite defense (attacking volume downgraded)
+    "Lionel Messi":      {"shots": 3.5, "sog": 1.7, "goals": 0.45, "assists": 0.45},
+    "Julián Álvarez":    {"shots": 1.6, "sog": 0.6, "goals": 0.25},
+    "Lautaro Martínez":  {"shots": 1.3, "goals": 0.25},
+    "Alexis Mac Allister": {"shots": 1.3},
+    "Enzo Fernández":    {"shots": 1.2},
+    # Spain — vs Argentina's beatable defense (near their form)
+    "Lamine Yamal":      {"shots": 3.6, "sog": 1.45, "dribbles": 3.2, "assists": 0.35, "goals": 0.32},
+    "Mikel Oyarzabal":   {"shots": 1.8, "sog": 0.9, "goals": 0.38},
+    "Dani Olmo":         {"shots": 1.1, "assists": 0.32},
+    "Álex Baena":        {"shots": 1.3},
+}.items()}
+
+
+def _final_stat_key(stat_type: str | None) -> Optional[str]:
+    """Board stat label → the canonical stat used in _WC_FINAL_PROJ (shots/sog/goals/
+    assists/dribbles). Combos and anything unrecognised return None (no override)."""
+    n = _norm(stat_type)
+    if _is_partial_stat(stat_type):
+        return None
+    if "on target" in n or "on goal" in n:
+        return "sog"
+    if "dribble" in n:
+        return "dribbles"
+    if "assist" in n and "goal" not in n:            # exclude "goals + assists" combos
+        return "assists"
+    if n in ("shots", "shot", "shots attempted", "total shots"):
+        return "shots"
+    if n in ("goals", "goal"):
+        return "goals"
+    return None
+
+
+def _attach_soccer_final(lines: list[dict]) -> None:
+    """Apply the one-off World Cup final override. Runs last so it wins; inert after the game."""
+    if date.today().isoformat() >= _WC_FINAL_UNTIL:
+        return
+    for l in lines:
+        if l.get("sport") != "World Cup" or not l.get("player") or l.get("line") is None:
+            continue
+        stats = _WC_FINAL_PROJ.get(mlb._norm_name(l["player"]))
+        if not stats:
+            continue
+        sk = _final_stat_key(l.get("stat_type"))
+        proj = stats.get(sk) if sk else None
+        if proj is None:
+            continue
+        line = float(l["line"])
+        l["model_proj"] = round(proj, 1)
+        l["model_edge"] = round(proj - line, 1)
+        l["model_prob"] = _prob_over(line, proj)
+        l["model_form"] = proj
+        l["proj_kind"] = "final"
+        # clear any form-model fields so the drawer note doesn't mix methods
+        l.pop("model_n_wc", None); l.pop("model_n_club", None); l.pop("model_n", None)
+
+
 def _attach_soccer_projections(lines: list[dict]) -> None:
     """
     World Cup projections, best signal first:
@@ -1670,6 +1740,7 @@ def _attach_soccer_projections(lines: list[dict]) -> None:
       1b. Tackles → committed club-season rate, deflated + anchored (ESPN log has no tackles).
       2. Poisson mean from the de-vigged market price (where two-sided prices exist).
       3. Cross-book consensus line (last resort).
+      4. FINAL override (one-off) → hand-set final projections, wins over all of the above.
     """
     try:
         espn_done = _attach_soccer_espn(lines)
@@ -1680,6 +1751,10 @@ def _attach_soccer_projections(lines: list[dict]) -> None:
     except Exception:
         tackles_done = set()
     _attach_soccer_market(lines, skip=espn_done | tackles_done)
+    try:
+        _attach_soccer_final(lines)          # one-off final override — last word
+    except Exception:
+        pass
 
 
 # Partial-game props (tagged "(1H)"/"(2H)"/"(1Q)"/"(Half)" by the puller) describe a

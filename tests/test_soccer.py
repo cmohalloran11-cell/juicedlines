@@ -115,6 +115,45 @@ def test_espn_projection_uses_wc_matches_plus_recent_club(monkeypatch):
     assert "6 recent club games" in note
 
 
+def test_wc_final_override_is_line_agnostic_and_wins():
+    # The hand-set final projection must apply regardless of the exact line the book posts,
+    # matching stat-label variants, and set proj_kind="final".
+    lines = [
+        {"id": "a", "sport": "World Cup", "player": "Lamine Yamal", "stat_type": "Shots", "line": 2.5},
+        {"id": "b", "sport": "World Cup", "player": "Julián Álvarez", "stat_type": "Shots", "line": 2.5},
+        {"id": "c", "sport": "World Cup", "player": "Lionel Messi", "stat_type": "Shots On Target", "line": 1.5},
+        {"id": "d", "sport": "World Cup", "player": "Nobody Special", "stat_type": "Shots", "line": 2.5},
+    ]
+    A._attach_soccer_final(lines)
+
+    yamal, alvarez, messi, other = lines
+    assert yamal["proj_kind"] == "final" and yamal["model_proj"] == 3.6
+    assert yamal["model_edge"] == 1.1                      # 3.6 vs 2.5
+    # same projection, different line → edge/prob adapt (Álvarez 1.6 proj under a 2.5 line)
+    assert alvarez["model_proj"] == 1.6 and alvarez["model_edge"] == -0.9
+    assert alvarez["model_prob"] < 0.30
+    # "Shots On Target" label maps to the sog projection
+    assert messi["model_proj"] == 1.7
+    # players not in the override are left untouched
+    assert "model_proj" not in other
+
+    a = A.analyze_soccer(lines[0])
+    assert "final projection" in a["note"].lower()
+
+
+def test_wc_final_override_self_expires(monkeypatch):
+    import datetime as _dt
+
+    class _Frozen(_dt.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 7, 25)                        # after the final
+    monkeypatch.setattr(A, "date", _Frozen)
+    lines = [{"id": "a", "sport": "World Cup", "player": "Lamine Yamal", "stat_type": "Shots", "line": 2.5}]
+    A._attach_soccer_final(lines)
+    assert "model_proj" not in lines[0]                    # inert once the date passes
+
+
 def test_espn_projection_falls_back_to_club_when_no_wc_games(monkeypatch):
     # No WC games in the log → recent club form (deflated), same as before this change.
     games = [_game("2025-26 Serie A", 4) for _ in range(8)]

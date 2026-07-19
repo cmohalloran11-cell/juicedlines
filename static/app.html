@@ -1036,7 +1036,7 @@ function projCell(l){
   const cls   = showEdge ? (e>0?'pos':'neg') : '';
   const arrow = showEdge ? (e>0?ic('up',9,'inherit'):ic('down',9,'inherit')) : '';
   const edge  = showEdge ? ` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>` : '';
-  const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':l.proj_kind==='market'?'Market-derived — the book’s own line, not a model call':'Model projection';
+  const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='final'?'World Cup final projection':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':l.proj_kind==='market'?'Market-derived — the book’s own line, not a model call':'Model projection';
   const tip = isMarket ? `${kindLbl} — ${l.model_proj} is the market's own median line for this prop, so there's no model edge to show`
             : isStd ? `${kindLbl} ${l.model_proj} vs line ${l.line}`
             : `${kindLbl} ${l.model_proj} · ${ot} line (special payout — edge not comparable)`;
@@ -1334,7 +1334,7 @@ function soccerDrawer(line,a,hist){
     const note=a.note||(kind==='espn'?'Blend of the player’s recent ESPN match form and the market line (club form is bias-adjusted toward the World Cup line), with a Poisson P(over).'
               :kind==='poisson'?'Poisson expected count calibrated to the de-vigged market price.'
               :'Cross-book consensus line (no player-stat feed or price for this prop).');
-    const title=kind==='espn'?'Form Projection (ESPN)':kind==='tennis'?'Serve/Return Model':'Model Projection';
+    const title=kind==='espn'?'Form Projection (ESPN)':kind==='final'?'Final Projection':kind==='tennis'?'Serve/Return Model':'Model Projection';
     projCard=`<div class="dr-section"><h4><span class="ic">${ic('bars',14)}</span> ${title}</h4>
       <div class="hit-card"><div class="hit-proj" style="border:none;padding:0">
         <div class="proj-cell"><div class="v">${a.model_proj}</div><div class="l">Proj</div></div>
