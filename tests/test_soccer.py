@@ -74,3 +74,57 @@ def test_note_is_honest_for_market_consensus_kind():
                                       model_proj=2.5, model_edge=0.0))
     assert "market line" in a["note"].lower()
     assert "no independent model edge" in a["note"].lower()
+
+
+def test_is_wc_comp():
+    assert A._is_wc_comp("2026 FIFA World Cup")
+    assert A._is_wc_comp("FIFA World Cup")
+    assert not A._is_wc_comp("FIFA Club World Cup")   # a club tournament, not international
+    assert not A._is_wc_comp("2025-26 Serie A")
+    assert not A._is_wc_comp(None)
+
+
+def _game(comp, shots):
+    return {"_comp": comp, "totalShots": float(shots)}
+
+
+def test_espn_projection_uses_wc_matches_plus_recent_club(monkeypatch):
+    # 3 World Cup matches (shots 2,3,4) + 6 club games (all 5 shots). The WC games are the real
+    # environment and must NOT be deflated; recent club form is deflated in and stabilises them.
+    games = ([_game("2026 FIFA World Cup", s) for s in (2, 3, 4)]
+             + [_game("2025-26 MLS", 5) for _ in range(6)])
+    monkeypatch.setattr(A, "_espn_roster_map", lambda: {A.mlb._norm_name("Lionel Messi"): "123"})
+    monkeypatch.setattr(A, "_espn_gamelog", lambda _aid: games)
+
+    line = _soccer_line(id="m1", odds_type="standard")   # standard line → market anchor == 3
+    done = A._attach_soccer_espn([line])
+
+    assert "m1" in done
+    assert line["proj_kind"] == "espn"
+    assert line["model_n_wc"] == 3          # this World Cup's matches
+    assert line["model_n_club"] == 6        # a few recent club games
+    assert line["model_n"] == 9
+    # raw WC shot rate is surfaced (recency-weighted 2,3,4 -> ~3.3), NOT the deflated value
+    assert line["model_form"] == 3.3
+    # projection sits between the WC-led form and the anchoring line, well under the old ~4
+    assert 3.0 <= line["model_proj"] <= 3.6
+
+    a = A.analyze_soccer(line)
+    note = a["note"].lower()
+    assert "3 world cup matches" in note
+    assert "6 recent club games" in note
+
+
+def test_espn_projection_falls_back_to_club_when_no_wc_games(monkeypatch):
+    # No WC games in the log → recent club form (deflated), same as before this change.
+    games = [_game("2025-26 Serie A", 4) for _ in range(8)]
+    monkeypatch.setattr(A, "_espn_roster_map", lambda: {A.mlb._norm_name("Lionel Messi"): "123"})
+    monkeypatch.setattr(A, "_espn_gamelog", lambda _aid: games)
+
+    line = _soccer_line(id="m2", odds_type="standard")
+    A._attach_soccer_espn([line])
+    assert line["model_n_wc"] == 0
+    assert line["model_n_club"] == 6        # capped at _CLUB_WINDOW
+    a = A.analyze_soccer(line)
+    assert "club matches" in a["note"].lower()
+    assert "world cup match" not in a["note"].lower()

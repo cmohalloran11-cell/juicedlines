@@ -727,8 +727,13 @@ def analyze_soccer(line: dict) -> dict:
     kind = line.get("proj_kind")
     n, stat = line.get("model_n"), (line.get("stat_type") or "this stat").lower()
     form = line.get("model_form")
+    n_wc, n_club = line.get("model_n_wc") or 0, line.get("model_n_club") or 0
     seen = f" (~{form} {stat}/game)" if form is not None else ""
-    if kind == "espn" and n:
+    if kind == "espn" and n_wc:      # grounded in THIS World Cup's matches + a few club games
+        club_part = (f" plus {n_club} recent club game{'' if n_club == 1 else 's'}") if n_club else ""
+        note = (f"Projected from {n_wc} World Cup match{'' if n_wc == 1 else 'es'}{seen}{club_part}, "
+                f"then blended toward the market line.")
+    elif kind == "espn" and n:      # no WC games yet → recent club form, deflated to the WC
         note = (f"Projected from the player's last {int(n)} club matches{seen}, recency-weighted and "
                 f"adjusted for the tougher World Cup environment, then blended toward the market line.")
     elif kind == "espn":            # committed club-season rate (e.g. tackles — no per-game log)
@@ -1436,7 +1441,14 @@ def _espn_roster_map() -> dict:
 
 
 def _espn_gamelog(athlete_id: str) -> list[dict]:
-    """Per-game stat dicts for an ESPN athlete (current-season scoped), cached."""
+    """
+    Per-game stat dicts for an ESPN athlete (current-season scoped), cached.
+
+    Each game is tagged with `_comp` = the seasonType's competition label (e.g. "2026 FIFA
+    World Cup", "2025-26 Serie A"), so the projection can tell THIS World Cup's matches apart
+    from club games and weight them differently. The `_comp` key is underscore-prefixed so it
+    never collides with ESPN's camelCase stat names (totalShots, goalAssists, …).
+    """
     def produce() -> list[dict]:
         try:
             d = _espn_session.get(_ESPN_GL.format(id=athlete_id), timeout=20).json()
@@ -1447,12 +1459,13 @@ def _espn_gamelog(athlete_id: str) -> list[dict]:
             return []
         games = []
         for stp in d.get("seasonTypes", []) or []:
+            comp = stp.get("displayName") or stp.get("name") or ""
             for cat in stp.get("categories", []) or []:
                 for ev in cat.get("events", []) or []:
                     stats = ev.get("stats") or []
                     if len(stats) != len(names):
                         continue
-                    g = {}
+                    g = {"_comp": comp}
                     for k, v in zip(names, stats):
                         try:
                             g[k] = float(v)
@@ -1463,8 +1476,15 @@ def _espn_gamelog(athlete_id: str) -> list[dict]:
     return _cached(f"espn_gl_{athlete_id}", 6 * 3600, produce)
 
 
+def _is_wc_comp(label: str | None) -> bool:
+    """True for a FIFA World Cup competition label — but NOT the FIFA *Club* World Cup, a
+    separate tournament whose games are club form, not international."""
+    s = (label or "").lower()
+    return "world cup" in s and "club" not in s
+
+
 _ESPN_MIN_GAMES = 5
-_ESPN_WINDOW = 20  # most recent N games used for the projection
+_CLUB_WINDOW = 6   # "a few recent club games" that complement this World Cup's matches
 
 # ESPN only exposes a CLUB gamelog for World Cup players (e.g. "2025-26 Serie A"), never a
 # World-Cup one, so `form` is club-league form. The World Cup is a lower-event, tougher
@@ -1543,24 +1563,41 @@ def _attach_soccer_espn(lines: list[dict]) -> set:
         if not aid:
             continue
         games = _espn_gamelog(aid)
-        if len(games) < _ESPN_MIN_GAMES:
+        stat_key = (l.get("stat_type") or "").strip().lower()
+        deflate = _WC_FORM_DEFLATE.get(stat_key, 0.75)
+
+        # Split the log into THIS World Cup's matches and recent club games. The WC games are
+        # the real environment (opponents, role, minutes) — no deflation. The last few club
+        # games are deflated club→WC and fill in / stabilise a small WC sample.
+        wc_games = [g for g in games if _is_wc_comp(g.get("_comp"))]
+        club_games = [g for g in games if not _is_wc_comp(g.get("_comp"))][-_CLUB_WINDOW:]
+        n_wc, n_club = len(wc_games), len(club_games)
+        # Need either a real WC sample or enough club games to be worth projecting off.
+        if n_wc < 2 and n_club < _ESPN_MIN_GAMES:
             continue
-        vals = [fn(g) for g in games[-_ESPN_WINDOW:]]
-        n = len(vals)
-        # Recency-weighted rate: the log is oldest→newest, and the most recent matches (which,
-        # during the tournament, ARE the WC games in the "all-competitions" log) describe the
-        # player's current role far better than a flat mean of the last 20. Linear ramp — the
-        # newest game weighs ~n× the oldest in the window — so recent form leads without
-        # discarding the older sample entirely.
-        wts = [i + 1 for i in range(n)]
-        form_raw = sum(v * w for v, w in zip(vals, wts)) / sum(wts)
-        deflate = _WC_FORM_DEFLATE.get((l.get("stat_type") or "").strip().lower(), 0.75)
-        form = form_raw * deflate                    # club → WC environment
-        key = (mlb._norm_name(l["player"]), (l.get("stat_type") or "").strip().lower())
+
+        def _wmean(gs):
+            # recency-weighted mean of the stat over games (oldest→newest → newest weighs most)
+            vals = [fn(g) for g in gs]
+            wts = [i + 1 for i in range(len(vals))]
+            return sum(v * w for v, w in zip(vals, wts)) / sum(wts) if vals else None
+
+        wc_rate = _wmean(wc_games)
+        club_rate = _wmean(club_games)
+        if wc_rate is not None and club_rate is not None:
+            # WC form leads as its (small) sample grows; recent club form fills the rest.
+            w_wc = min(0.8, n_wc / (n_wc + 3))
+            form = w_wc * wc_rate + (1 - w_wc) * (club_rate * deflate)
+        elif wc_rate is not None:
+            form = wc_rate                           # WC games only — already the right environment
+        else:
+            form = club_rate * deflate               # no WC games → recent club form, deflated to WC
+        n = n_wc + n_club
+        key = (mlb._norm_name(l["player"]), stat_key)
         anchor = market_anchor(key)
         if anchor is not None:
-            # weight on club form: grows with sample, capped at 0.5 (club→intl bias — the
-            # market line already prices the WC role/opponent/minutes, so it keeps ≥ half)
+            # weight on our form estimate: grows with sample, capped at 0.5 — the market line
+            # already prices WC role/opponent/minutes, so it keeps at least half.
             w = min(0.5, n / (n + 12))
             proj = w * form + (1 - w) * anchor
         else:
@@ -1570,7 +1607,9 @@ def _attach_soccer_espn(lines: list[dict]) -> set:
         l["model_edge"] = round(proj - line, 1)
         l["model_prob"] = _prob_over(line, proj)
         l["model_n"] = n
-        l["model_form"] = round(form_raw, 1)         # raw recent rate, shown in the drawer for transparency
+        l["model_n_wc"] = n_wc                        # drawer note: "N World Cup matches + M club games"
+        l["model_n_club"] = n_club
+        l["model_form"] = round((wc_rate if wc_rate is not None else club_rate), 1)  # raw rate shown in the drawer
         l["proj_kind"] = "espn"
         done.add(l["id"])
     return done
