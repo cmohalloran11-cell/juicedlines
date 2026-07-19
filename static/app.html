@@ -573,11 +573,15 @@ input[type=text]{min-width:190px}
 const SUPABASE_URL      = 'https://wdacuefnynthoncoxpyf.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkYWN1ZWZueW50aG9uY294cHlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNTIzMzUsImV4cCI6MjA5OTYyODMzNX0.KRhXafORdJSb9r-vv5O-E4VH9bwnBKN-yivZObmlj5Q';
 
-// Beta: the whole board (incl. edges) is FREE and nothing is gated yet. Everyone who signs
-// up while PAYWALL_LIVE is false is stamped a FOUNDING MEMBER with lifetime premium — the
-// gate (Phase 3/4) will honour that plan. Flip to true the day the paywall goes live so new
-// signups become 'free' instead (founding members keep their lifetime plan).
-const PAYWALL_LIVE = false;
+// Beta: the whole board (incl. edges) is FREE and nothing is gated yet. The lifetime
+// "Founding Member" signup grant is now CLOSED — new signups get the 'free' plan. Anyone
+// who joined while it was open keeps Premium for life: email founders carry plan:'lifetime'
+// in their metadata, and Google/legacy founders (who have no plan field) are grandfathered
+// by signup date via FOUNDING_CUTOFF below. Set FOUNDING_OFFER=true only to re-open it.
+const FOUNDING_OFFER = false;
+// Accounts created before this instant keep the lifetime Founding plan even with no explicit
+// plan field (covers Google + early signups); accounts created after it are 'free'.
+const FOUNDING_CUTOFF = '2026-07-19T05:00:00Z';
 // Google login is configured in Supabase (Auth → Providers → Google), so the button is live.
 const GOOGLE_ENABLED = true;
 
@@ -631,7 +635,15 @@ function initAuth(){
     if(currentUser){ closeAuth(); _clearAuthParam(); }   // signed in (incl. Google redirect) → close modal + clean URL
   });
 }
-function isPremium(u){ return u && (u.user_metadata?.plan || 'lifetime') !== 'free'; }  // founding/lifetime
+function isPremium(u){
+  if(!u) return false;
+  const plan = u.user_metadata?.plan;
+  if(plan) return plan !== 'free';                 // explicit plan wins (lifetime founders / free)
+  // No plan field (Google or legacy signups) → grandfather anyone who joined before the
+  // Founding offer closed; anyone who joins after it is a normal free account.
+  const created = u.created_at ? Date.parse(u.created_at) : NaN;
+  return isFinite(created) && created < Date.parse(FOUNDING_CUTOFF);
+}
 function updateAuthUI(){
   const b = document.getElementById('auth-btn'); if(!b) return;
   if(currentUser){
@@ -669,7 +681,7 @@ function authToggle(){ _setAuthMode(_authMode==='signin'?'signup':'signin'); _au
 function _setAuthMode(m){
   _authMode = m; const up = m==='signup';
   document.getElementById('am-title').textContent = up ? 'Create your account' : 'Welcome back';
-  document.getElementById('am-sub').innerHTML     = up ? 'Sign up now → <b style="color:var(--accent)">Founding Member: Premium free for life.</b>' : 'Welcome back — sign in to your account.';
+  document.getElementById('am-sub').innerHTML     = up ? (FOUNDING_OFFER ? 'Sign up now → <b style="color:var(--accent)">Founding Member: Premium free for life.</b>' : 'Create your account to save picks and sync across devices.') : 'Welcome back — sign in to your account.';
   document.getElementById('am-primary').textContent = up ? 'Create account' : 'Sign in';
   document.getElementById('am-pass').autocomplete   = up ? 'new-password' : 'current-password';
   document.getElementById('am-toggle').innerHTML = up
@@ -684,12 +696,12 @@ async function authSubmit(){
   const btn=document.getElementById('am-primary'); btn.disabled=true;
   try{
     if(_authMode==='signup'){
-      const plan = PAYWALL_LIVE ? 'free' : 'lifetime';   // pre-paywall signups = founding members
+      const plan = FOUNDING_OFFER ? 'lifetime' : 'free';   // founding offer closed → new signups are 'free'
       const {error}=await _sb.auth.signUp({email,password:pass,
-        options:{data:{plan, founding:!PAYWALL_LIVE, joined:new Date().toISOString().slice(0,10)}}});
+        options:{data:{plan, founding:FOUNDING_OFFER, joined:new Date().toISOString().slice(0,10)}}});
       if(error) throw error;
-      _authMsg(PAYWALL_LIVE ? 'Account created — check your email to confirm, then sign in.'
-        : 'You’re a Founding Member — Premium free for life. Check your email to confirm, then sign in.', true);
+      _authMsg(FOUNDING_OFFER ? 'You’re a Founding Member — Premium free for life. Check your email to confirm, then sign in.'
+        : 'Account created — check your email to confirm, then sign in.', true);
     } else {
       const {error}=await _sb.auth.signInWithPassword({email,password:pass});
       if(error) throw error;
