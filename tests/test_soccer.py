@@ -137,6 +137,14 @@ def test_wc_final_override_is_line_agnostic_and_wins():
     # players not in the override are left untouched
     assert "model_proj" not in other
 
+    # "Shots Assisted" (key passes) must NOT be caught by the assists projection
+    assert A._final_stat_key("Shots Assisted") is None
+    assert A._final_stat_key("Assists") == "assists"
+    sa = [{"id": "sa", "sport": "World Cup", "player": "Lionel Messi",
+           "stat_type": "Shots Assisted", "line": 1.5}]
+    A._attach_soccer_final(sa)
+    assert "model_proj" not in sa[0]
+
     a = A.analyze_soccer(lines[0])
     assert "final projection" in a["note"].lower()
 

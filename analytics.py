@@ -1700,8 +1700,8 @@ def _final_stat_key(stat_type: str | None) -> Optional[str]:
         return "sog"
     if "dribble" in n:
         return "dribbles"
-    if "assist" in n and "goal" not in n:            # exclude "goals + assists" combos
-        return "assists"
+    if n in ("assists", "assist"):                   # EXACT — not "shots assisted" (key passes,
+        return "assists"                             # a different, higher-volume stat) or combos
     if n in ("shots", "shot", "shots attempted", "total shots"):
         return "shots"
     if n in ("goals", "goal"):
