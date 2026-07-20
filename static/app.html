@@ -1038,7 +1038,7 @@ function projCell(l){
   const edge  = showEdge ? ` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>` : '';
   const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='final'?'World Cup final projection':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':l.proj_kind==='market'?'Market-derived — the book’s own line, not a model call':'Model projection';
   const tip = l.workload_status==='returning'
-              ? `Returning from a ${l.layoff_days}-day layoff — his pitch limit isn't public, so we defer to the market line (${l.model_proj}) instead of projecting off pre-injury workload`
+              ? `Back from a ${l.layoff_days}-day layoff — projected at his own rates over a shortened outing (~${l.workload_outs ?? '?'} outs, from the market's outs line), not his pre-injury workload`
             : isMarket ? `${kindLbl} — ${l.model_proj} is the market's own median line for this prop, so there's no model edge to show`
             : isStd ? `${kindLbl} ${l.model_proj} vs line ${l.line}`
             : `${kindLbl} ${l.model_proj} · ${ot} line (special payout — edge not comparable)`;

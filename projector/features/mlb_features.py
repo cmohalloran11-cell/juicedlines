@@ -125,6 +125,18 @@ def build_pitcher_form(game_logs: list[dict], predictive: dict | None = None,
         prior = _pitcher_prior(key, predictive, blended)
         form[key] = regress_to_prior(blended, prior, s["bf"], cfg["shrinkage_pa"])
 
+    # Workload override — the pitcher-side twin of the batter's `lineup_pa` hook. When expected
+    # outs are known to differ from his own history (a starter back from the IL is on a team
+    # pitch limit), scale the VOLUME and keep the RATES. Measured across 33 layoff returns
+    # (2026-07-20): per-batter K/H/BB/ER ratios are all statistically unchanged (every CI spans
+    # 1.0) while length drops — returning pitchers are SHORTER, not worse. So correcting volume
+    # alone is the right adjustment; batters faced scales with outs so the rates carry through.
+    w = _f(predictive.get("workload_outs"), 0.0)
+    if w > 0 and _f(form.get("exp_outs")) > 0:
+        scale = w / _f(form["exp_outs"])
+        form["exp_bf"] = _f(form.get("exp_bf")) * scale
+        form["exp_outs"] = w
+
     # xERA prior drives earned runs
     form["xera"] = _f(predictive.get("xERA"), _f(predictive.get("xFIP"), 4.0))
     form["_predictive"] = {k: predictive.get(k) for k in
