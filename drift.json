@@ -1,0 +1,1 @@
+{"status":"stable","since":"2026-08-07","recent":{"n":1830,"hit_rate":0.6457,"mae":1.015},"prior":{"n":5990,"hit_rate":0.6295,"mae":1.0098},"hit_rate_drop":-0.0162,"mae_inflation_pct":0.5,"sport":"MLB","model_version":"mlb-1.2.0"}
