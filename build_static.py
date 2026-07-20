@@ -159,6 +159,10 @@ def main() -> None:
         games_meta = analytics.mlb_game_meta()
     except Exception as exc:
         errors["game_meta"] = str(exc)[:40]
+    try:
+        games_meta.update(analytics.wnba_game_meta())    # WNBA projected starters
+    except Exception as exc:
+        errors["wnba_meta"] = str(exc)[:40]
 
     def _payload(rows, tier):
         return {"lines": rows, "updated_at": updated, "errors": errors,

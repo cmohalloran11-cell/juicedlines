@@ -1074,6 +1074,68 @@ def mlb_game_meta() -> dict:
     return _cached(f"gamemeta_{date.today().isoformat()}", 600, produce)
 
 
+def wnba_game_meta() -> dict:
+    """Per-game meta for WNBA, mirroring mlb_game_meta so the game-detail modal works the same.
+    ESPN has NO free WNBA starter feed, so the starting five is PROJECTED from recent minutes
+    (top-5 by MPG over recent box scores, injured-out players excluded and shown dimmed). Keyed
+    by the board's WNBA game_id ("WNBA:<tid>|<tid>"), with team abbrs so the frontend can also
+    resolve it by teams. Best-effort; empty on any failure."""
+    try:
+        from basketball import projections as BP
+        import statistics as _st
+        from collections import defaultdict
+    except Exception:
+        return {}
+
+    def produce():
+        try:
+            src = BP.gamelog_source()
+            opp = src.upcoming_opponents("WNBA")          # {tid: opp_tid} for today
+            if not opp:
+                return {}
+            box = src._boxscore_index("WNBA")
+            inj = src.injuries("WNBA") if hasattr(src, "injuries") else {}
+            assets = src.team_assets("WNBA") if hasattr(src, "team_assets") else {}
+        except Exception:
+            return {}
+        id2a = {str(a.get("id")): a for a in assets.values() if a.get("id")}
+        mpg = defaultdict(lambda: defaultdict(list))      # tid -> player -> [minutes]
+        for pid, games in box.items():
+            for g in games[:6]:
+                if g.minutes and g.minutes > 0:
+                    mpg[str(g.team_id)][g.player].append(g.minutes)
+
+        def side(tid):
+            a = id2a.get(str(tid)) or {}
+            ranked = sorted(((nm, _st.mean(m)) for nm, m in mpg.get(str(tid), {}).items() if len(m) >= 2),
+                            key=lambda x: -x[1])
+            lineup, starters = [], 0
+            for nm, m in ranked:
+                status = inj.get(BP._norm(nm))            # 'out' | 'questionable' | None
+                is_starter = status != "out" and starters < 5
+                if is_starter:
+                    starters += 1
+                lineup.append({"player": nm, "mpg": round(m, 1),
+                               "status": status, "starter": is_starter})
+                if len(lineup) >= 8:                       # 5 starters + a few bench
+                    break
+            return {"abbr": a.get("abbr"), "name": a.get("name"), "logo": a.get("logo"),
+                    "sp": None, "lineup": lineup}
+
+        out = {}
+        seen = set()
+        for tid, otid in opp.items():
+            key = "|".join(sorted((str(tid), str(otid))))
+            if key in seen:
+                continue
+            seen.add(key)
+            out[f"WNBA:{key}"] = {"sport": "WNBA", "status": "", "start": None,
+                                  "home": side(tid), "away": side(otid)}
+        return out
+
+    return _cached(f"wnbameta_{date.today().isoformat()}", 900, produce)
+
+
 # ── pitchers returning from a long layoff (IL) ───────────────────────────────
 # A starter back from the IL is on a team-imposed pitch limit we have NO feed for. MEASURED
 # league-wide (33 layoff returns across all 40-man pitchers, 2026-07-20): the effect is REAL

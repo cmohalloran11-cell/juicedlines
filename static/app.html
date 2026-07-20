@@ -293,6 +293,9 @@ input[type=text]{min-width:190px}
 .gm-conf{font-size:8.5px;font-weight:800;letter-spacing:.4px;padding:0 4px;border-radius:4px;flex:none}
 .gm-conf.ok{color:var(--green);border:1px solid rgba(155,232,20,.4)}
 .gm-conf.proj{color:var(--yellow);border:1px solid rgba(255,210,26,.35)}
+.gm-conf.out{color:var(--red);border:1px solid rgba(255,77,95,.4)}
+.gm-bat li.out{opacity:.5}
+.gm-bat li.out .pnm{text-decoration:line-through}
 .gm-note{padding:10px 18px 4px;font-size:11px;color:var(--muted2)}
 .gm-props{padding:6px 14px 20px}
 .gm-props h4{margin:14px 6px 8px;font-size:11px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;font-weight:800}
@@ -1611,7 +1614,7 @@ function edgeTeamTag(l){
   const flag=(!l.team_logo && l.flag && l.flag.length<=4)?esc(l.flag)+' ':'';
   return `<span class="edge-team">${img}${flag}${esc(l.team)}</span>`;
 }
-function edgeCardHTML(i,maxM){
+function edgeCardHTML(i,maxM,clickPrefix){
   const l=i.l, pos=i.side==='Over';
   const pct=Math.min(100, i.metric/maxM*100);
   const sideTag=`<span class="edge-side ${pos?'over':'under'}">${i.side}</span>`;
@@ -1631,7 +1634,7 @@ function edgeCardHTML(i,maxM){
   const ot=l.odds_type||'standard';
   const typeTag=`<span class="tag-dot ${ot}">${esc(oddsLabel(ot))}</span>`;
   const head=`${esc(l.player||l.matchup||'')} ${sideTag} ${typeTag} ${edgeTeamTag(l)} <span class="edge-stat">${esc(l.stat_type||'')} · ${esc(l.sport)}</span>`;
-  return `<div class="edge-bar-wrap" onclick="openDrawer('${esc(l.id)}')">
+  return `<div class="edge-bar-wrap" onclick="${clickPrefix||''}openDrawer('${esc(l.id)}')">
     <div class="edge-bar-row"><div><span class="edge-player">${head}</span></div>
       <div class="edge-metric">${metricHTML}</div></div>
     <div class="edge-sub">${sub}</div>
@@ -2053,25 +2056,40 @@ function _bestEdge(lines){                          // biggest standard-line edg
 }
 
 function _lineupCol(side, gameLines){
-  if(!side) return '';
+  if(!side || !side.lineup || !side.lineup.length) return '';
   const byName = {};
   for(const l of gameLines){ (byName[_pk(l.player||'')] ||= []).push(l); }
-  const spLines = (side.sp ? (byName[_pk(side.sp.name||'')] || []) : []).filter(l => l.model_proj!=null);
-  const spHint = spLines.find(l => /outs/i.test(l.stat_type||'')) || spLines.find(l => /strikeout/i.test(l.stat_type||'')) || spLines[0];
-  const sp = side.sp ? `<div class="gm-sp"><span class="lbl">SP</span><span class="nm">${esc(side.sp.name)}</span>`
-      + (spHint ? `<span class="ln">${esc(propShort?propShort(spHint.stat_type):spHint.stat_type)} ${spHint.model_proj}</span>` : '') + `</div>` : '';
-  const rows = (side.lineup||[]).map(p => {
+  // starting pitcher card (MLB only)
+  let sp = '';
+  if(side.sp){
+    const spLines = (byName[_pk(side.sp.name||'')] || []).filter(l => l.model_proj!=null);
+    const h = spLines.find(l => /outs/i.test(l.stat_type||'')) || spLines.find(l => /strikeout/i.test(l.stat_type||'')) || spLines[0];
+    sp = `<div class="gm-sp"><span class="lbl">SP</span><span class="nm">${esc(side.sp.name)}</span>`
+       + (h ? `<span class="ln">${esc(propShort?propShort(h.stat_type):h.stat_type)} ${h.model_proj}</span>` : '') + `</div>`;
+  }
+  const isMin = side.lineup[0].mpg != null;      // WNBA lineups rank by minutes, MLB by slot
+  const rows = side.lineup.map(p => {
     const pl = byName[_pk(p.player)] || [];
     const be = _bestEdge(pl);
     const pos = pl.find(x=>x.position)?.position || '';
-    const conf = p.confirmed ? `<span class="gm-conf ok" title="Confirmed lineup">✓</span>`
-                             : `<span class="gm-conf proj" title="Projected — started here in ${Math.round((p.conf||0)*100)}% of recent games">${Math.round((p.conf||0)*100)}%</span>`;
     const edge = be ? `<span class="edge ${be.model_edge>0?'pos':'neg'}" title="${esc(be.stat_type)} ${be.model_proj} vs ${be.line}">${be.model_edge>0?'+':''}${be.model_edge}</span>` : '';
-    return `<li class="${pl.length?'clk':''}" ${pl.length?`onclick="closeGame();openDrawer('${esc((be||pl[0]).id)}')"`:''}>`
-      + `<span class="slot">${p.slot}</span><span class="pnm">${esc(p.player)}</span>`
-      + (pos?`<span class="pos">${esc(pos)}</span>`:'') + conf + edge + `</li>`;
+    let lead, badge;
+    if(isMin){                                    // WNBA: minutes + starter/injury flag
+      lead = `<span class="slot" title="recent minutes/game">${p.mpg}'</span>`;
+      badge = p.status==='out' ? `<span class="gm-conf out" title="Out (injury)">OUT</span>`
+            : p.status==='questionable' ? `<span class="gm-conf proj" title="Questionable">GTD</span>`
+            : p.starter ? `<span class="gm-conf ok" title="Projected starter">ST</span>` : '';
+    } else {                                       // MLB: batting slot + confirmed/projected
+      lead = `<span class="slot">${p.slot}</span>`;
+      badge = p.confirmed ? `<span class="gm-conf ok" title="Confirmed lineup">✓</span>`
+            : `<span class="gm-conf proj" title="Projected — started here in ${Math.round((p.conf||0)*100)}% of recent games">${Math.round((p.conf||0)*100)}%</span>`;
+    }
+    return `<li class="${pl.length?'clk':''}${p.status==='out'?' out':''}" ${pl.length?`onclick="closeGame();openDrawer('${esc((be||pl[0]).id)}')"`:''}>`
+      + lead + `<span class="pnm">${esc(p.player)}</span>`
+      + (pos?`<span class="pos">${esc(pos)}</span>`:'') + badge + edge + `</li>`;
   }).join('');
-  return `<div class="gm-col"><h4>${esc(side.abbr||'')} ${side.lineup&&side.lineup[0]&&!side.lineup[0].confirmed?'· projected':''}</h4>${sp}<ul class="gm-bat">${rows}</ul></div>`;
+  const label = isMin ? '· projected starters' : (side.lineup[0] && !side.lineup[0].confirmed ? '· projected' : '');
+  return `<div class="gm-col"><h4>${esc(side.abbr||'')} ${label}</h4>${sp}<ul class="gm-bat">${rows}</ul></div>`;
 }
 
 function openGameModal(gid){
@@ -2080,15 +2098,20 @@ function openGameModal(gid){
   const scrim = document.getElementById('gm-scrim'), modal = document.getElementById('gmodal');
   const el = document.getElementById('gmodal-content');
 
-  // Header — prefer backend meta; fall back to whatever the lines carry (WNBA/tennis have no meta)
+  // Header — prefer backend meta; fall back to whatever the lines carry (tennis has no meta)
   let head, body;
-  const timeLbl = g ? gameTimeLabel(g.start) : '';
+  const startISO = (g && g.start) || (gl.find(l=>l.start_time)||{}).start_time;
+  const timeLbl = gameTimeLabel(startISO);
   if(g){
     const teamH = s => `<div class="gm-team-h">${s.logo?`<img src="${esc(s.logo)}" onerror="this.remove()">`:''}<span class="ab">${esc(s.abbr||'')}</span></div>`;
     head = `<div class="gm-head">${teamH(g.away)}<div class="gm-vs"><span class="at">@</span>${timeLbl||''}</div>${teamH(g.home)}</div>`;
-    const anyProj = (g.away.lineup||[]).concat(g.home.lineup||[]).some(p=>!p.confirmed);
+    const allP = (g.away.lineup||[]).concat(g.home.lineup||[]);
+    const isMin = allP[0] && allP[0].mpg!=null;
+    const note = isMin
+      ? `<b>Projected starters</b> ranked by recent minutes/game (no free WNBA lineup feed exists); <span style="color:var(--red)">OUT</span> = injured, excluded from the five. Edges show each player's biggest standard-line lean.`
+      : (allP.some(p=>!p.confirmed) ? `Lineups marked with a % are <b>projected</b> from recent games (not yet posted); ✓ = confirmed. Edges show each hitter's biggest standard-line lean.` : '');
     body = `<div class="gm-lineups">${_lineupCol(g.away, gl)}${_lineupCol(g.home, gl)}</div>`
-      + (anyProj ? `<div class="gm-note">Lineups marked with a % are <b>projected</b> from recent games (not yet posted); ✓ = confirmed. Edges show each hitter's biggest standard-line lean.</div>` : '');
+      + (note ? `<div class="gm-note">${note}</div>` : '');
   } else {
     // no lineup meta for this sport — build a minimal header from the lines
     const teams = [...new Set(gl.map(l=>l.team).filter(Boolean))].slice(0,2);
@@ -2097,19 +2120,27 @@ function openGameModal(gid){
     body = '';
   }
 
-  // Props — every line in the game, grouped by player, most props first
-  const byP = {};
-  for(const l of gl){ (byP[l.player] ||= []).push(l); }
-  const players = Object.entries(byP).sort((a,b)=>b[1].length-a[1].length);
-  let props = '<div class="gm-props"><h4>All projections & lines</h4>';
-  for(const [name, pls] of players){
-    props += `<div style="margin:6px 4px 2px;font-weight:700;font-size:13px;color:var(--text)">${esc(name)} <span class="muted" style="font-size:11px;font-weight:500">${esc(pls[0].team||'')}</span></div>`;
-    for(const l of pls.sort((a,b)=>(propShort?propShort(a.stat_type):a.stat_type).localeCompare(propShort?propShort(b.stat_type):b.stat_type))){
-      props += `<div class="lrow" style="cursor:pointer" onclick="closeGame();openDrawer('${esc(l.id)}')">`
-        + `<div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${esc(propShort?propShort(l.stat_type):l.stat_type)} <span class="muted">${l.line??''}</span></div>`
-        + projCell(l) + `</div>`;
+  // Props — this game's standard lines rendered as edge cards (same look as the Edges tab),
+  // ranked by the current mode (EV / proj-diff). Same filters as runEdges so it can't surface
+  // the market-derived / demon-goblin artifacts. A prop click closes the modal → opens the drawer.
+  let pool = gl.filter(l => l.model_proj!=null && l.line!=null && l.lineup_status!=='out'
+      && l.proj_kind!=='market' && (l.odds_type||'standard')==='standard'
+      && (l.sport!=='MLB' || (l.model_n||0)>=10));
+  let items = [];
+  for(const l of pool){
+    if(edgeMode==='ev'){
+      const ev = lineEV(l); if(!ev) continue;
+      items.push({l, side:ev.side, ev:ev.ev, prob:ev.prob, price:ev.price, proj:l.model_proj, metric:ev.ev});
+    } else {
+      const e = l.model_edge||0;
+      items.push({l, side:e>0?'Over':'Under', edge:e, proj:l.model_proj, metric:Math.abs(e)});
     }
   }
+  items.sort((a,b)=>b.metric-a.metric);
+  const maxM = Math.max(...items.map(i=>i.metric), 0.001);
+  let props = `<div class="gm-props"><h4>${items.length} projection${items.length===1?'':'s'} · ranked by ${edgeMode==='ev'?'EV':'projection edge'}</h4>`;
+  props += items.length ? items.map(i=>edgeCardHTML(i, maxM, 'closeGame();')).join('')
+                        : `<div class="no-data" style="padding:20px">No standard-line projections for this game yet.</div>`;
   props += '</div>';
 
   el.innerHTML = head + body + props;
