@@ -95,6 +95,27 @@ body{background:radial-gradient(1100px 560px at 70% -12%,#1a2e05 0%,var(--bg) 55
 .refresh-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--card2)}
 
 /* ───────── tabs ───────── */
+/* ── games ticker ─────────────────────────────────────────────────────────── */
+.gticker{position:relative;overflow:hidden;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(182,240,26,.045),rgba(8,11,5,0));padding:7px 0}
+/* fade the edges so cards slide in/out instead of hard-clipping */
+.gticker::before,.gticker::after{content:"";position:absolute;top:0;bottom:0;width:56px;z-index:2;pointer-events:none}
+.gticker::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
+.gticker::after{right:0;background:linear-gradient(270deg,var(--bg),transparent)}
+.gticker-track{display:flex;width:max-content;gap:10px;animation:gticker-scroll 60s linear infinite}
+.gticker:hover .gticker-track{animation-play-state:paused}
+@keyframes gticker-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.gticker-track{animation:none}.gticker{overflow-x:auto}}
+.gcard{display:flex;align-items:center;gap:8px;padding:5px 12px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02);white-space:nowrap;font-size:12px;flex:none}
+.gcard .sport-pill{font-size:9px;padding:1px 6px}
+.gcard .g-team{display:flex;align-items:center;gap:4px;font-weight:700;color:var(--text)}
+.gcard .g-team img{width:16px;height:16px;object-fit:contain}
+.gcard .g-at{color:var(--muted2);font-size:10px;font-weight:600}
+.gcard .g-time{color:var(--muted);font-family:var(--mono);font-size:11px}
+.gcard .g-live{color:var(--green);font-weight:800;font-size:10px;letter-spacing:.5px}
+.gcard .g-live::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--green);margin-right:4px;vertical-align:1px;animation:g-pulse 1.6s ease-in-out infinite}
+@keyframes g-pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.gcard .g-props{color:var(--muted2);font-size:10px;font-family:var(--mono)}
+
 .tabs{display:flex;gap:4px;padding:12px 22px 0;background:transparent}
 .tab{padding:9px 18px;cursor:pointer;border-radius:9px 9px 0 0;color:var(--muted);font-size:13px;font-weight:600;transition:.15s;position:relative}
 .tab:hover{color:var(--text)}
@@ -342,6 +363,12 @@ input[type=text]{min-width:190px}
   <div id="last-updated"></div>
   <button class="refresh-btn" onclick="loadLines(true)"><span id="rf-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);vertical-align:-2px"><path d="M20 11a8 8 0 1 0-1.9 6M20 4v6h-6"/></svg></span> Refresh</button>
   <button class="auth-btn" id="auth-btn" onclick="onAuthBtn()">Sign in</button>
+</div>
+
+<!-- Auto-scrolling catalog of today's games, built from the board's own lines (grouped by
+     game_id) — no extra feed. Hidden until there's something to show. -->
+<div class="gticker" id="gticker" style="display:none">
+  <div class="gticker-track" id="gticker-track"></div>
 </div>
 
 <div class="tabs">
@@ -854,6 +881,7 @@ async function loadLines(force=false){
   try{
     const data = await fetchBoard();
     allLines = data.lines || [];
+    try{ renderTicker(); }catch(e){ /* ticker is cosmetic — never block the board */ }
     // Scorecard is a backend-only tool (it grades a live ledger) AND private — show its
     // tab only when the live server is present (your local/private run), never on the
     // public static snapshot. STATIC_MODE is set true by fetchBoard when /api/lines is absent.
@@ -1870,6 +1898,81 @@ function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 function cssId(s){return String(s).replace(/[^a-z0-9]/gi,'_');}
 function srcShort(s){return ({underdog:'UD',prizepicks:'PP'})[s]||s;}
 function sportCls(s){return s==='MLB'?'MLB':s==='World Cup'?'WC':s==='Tennis'?'TN':s==='WNBA'?'WNBA':s==='NBA Summer League'?'SL':'other';}
+
+// ── games ticker ────────────────────────────────────────────────────────────
+// Built from the board's OWN lines (grouped by game_id) rather than a new feed — every line
+// already carries team, team_logo, start_time and game_id, so the catalog costs nothing and
+// can never disagree with what's on the board.
+function buildGames(){
+  const by = new Map();
+  for(const l of allLines){
+    const gid = l.game_id; if(!gid) continue;
+    let g = by.get(gid);
+    if(!g){ g = {gid, sport:l.sport, teams:new Map(), start:null, props:0}; by.set(gid, g); }
+    g.props++;
+    if(!g.start && l.start_time) g.start = l.start_time;
+    // one logo per team abbreviation; tennis has no logos, so names carry it
+    const t = l.team || l.matchup;
+    if(t && !g.teams.has(t)) g.teams.set(t, l.team_logo || null);
+    if(l.matchup && !g.teams.has(l.matchup) && g.teams.size < 2) g.teams.set(l.matchup, null);
+  }
+  const rank={'MLB':0,'WNBA':1,'NBA Summer League':2,'World Cup':3,'Tennis':4};
+  const now = Date.now();
+  let games = [...by.values()].filter(g => g.teams.size >= 2);   // need both sides to be worth showing
+  // Today's slate only. Books post tennis days ahead (66 matches vs 15 MLB games), so without
+  // this the bar is a wall of far-future matches nobody is looking at.
+  const soon = games.filter(g => {
+    const d = Date.parse(g.start||''); if(!d) return false;
+    return d > now - 4*3600e3 && d < now + 24*3600e3;
+  });
+  if(soon.length >= 3) games = soon;
+  // Sport first (same order the board uses), then chronological within it. Purely
+  // chronological led with 6 obscure live tennis matches and buried the 14 MLB games.
+  games.sort((a,b)=>{
+    const s=(rank[a.sport]??9)-(rank[b.sport]??9); if(s) return s;
+    return (a.start||'').localeCompare(b.start||'');
+  });
+  return games.slice(0, 24);                 // a ticker, not a directory
+}
+
+function gameTimeLabel(iso){
+  if(!iso) return '';
+  const d = new Date(iso); if(isNaN(d)) return '';
+  const now = new Date();
+  // started but plausibly still going → LIVE (props vanish once a game is final)
+  if(d <= now && (now - d) < 4*3600*1000) return '<span class="g-live">LIVE</span>';
+  const sameDay = d.toDateString() === now.toDateString();
+  const t = d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  return `<span class="g-time">${sameDay ? t : d.toLocaleDateString([], {weekday:'short'})+' '+t}</span>`;
+}
+
+function renderTicker(){
+  const wrap = document.getElementById('gticker'), track = document.getElementById('gticker-track');
+  if(!wrap || !track) return;
+  const games = buildGames();
+  if(!games.length){ wrap.style.display='none'; return; }
+  const card = g => {
+    const sides = [...g.teams.entries()].slice(0,2).map(([name,logo]) =>
+      // NOT loading="lazy": the track is far wider than the viewport, so lazy images off to
+      // the right would never load and every card would render logo-less.
+      `<span class="g-team">${logo?`<img src="${esc(logo)}" alt="" onerror="this.remove()">`:''}${esc(name)}</span>`);
+    return `<div class="gcard" title="${esc(g.sport)} · ${g.props} props">`
+      + `<span class="sport-pill ${sportCls(g.sport)}">${esc(g.sport==='NBA Summer League'?'SL':g.sport)}</span>`
+      + sides.join('<span class="g-at">vs</span>')
+      + gameTimeLabel(g.start)
+      + `<span class="g-props">${g.props}</span></div>`;
+  };
+  const html = games.map(card).join('');
+  // duplicated once so translateX(-50%) wraps seamlessly with no visible jump
+  track.innerHTML = html + html;
+  wrap.style.display = '';
+  // Constant PIXEL speed, not a fixed duration: the animation travels half the track, so a
+  // long slate would otherwise crawl (74 games once produced a 518s loop that looked frozen).
+  requestAnimationFrame(() => {
+    const dist = track.scrollWidth / 2;
+    track.style.animationDuration = Math.max(20, Math.round(dist / 55)) + 's';   // ~55 px/sec
+  });
+}
 const ISO3={PRT:'Portugal',DEU:'Germany',GBR:'England',NLD:'Netherlands',HRV:'Croatia',URY:'Uruguay',CHE:'Switzerland',DNK:'Denmark',ESP:'Spain',FRA:'France',ARG:'Argentina',BRA:'Brazil',ENG:'England',ITA:'Italy',BEL:'Belgium',USA:'USA',MEX:'Mexico',COL:'Colombia',JPN:'Japan',KOR:'South Korea',MAR:'Morocco',SEN:'Senegal',POL:'Poland',AUS:'Australia',CAN:'Canada',GHA:'Ghana',ECU:'Ecuador',SRB:'Serbia',EGY:'Egypt',NGA:'Nigeria',CMR:'Cameroon',PRY:'Paraguay',PER:'Peru',CHL:'Chile',AUT:'Austria',TUR:'Turkey',NOR:'Norway',SWE:'Sweden'};
 function prettyCountry(c){if(!c)return '';const u=String(c).toUpperCase();return ISO3[u]||c;}
 function fbAvatar(name,big){
