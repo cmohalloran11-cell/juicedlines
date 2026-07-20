@@ -101,6 +101,7 @@ _KEEP = (
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
     "bball_confidence", "tennis_confidence",
     "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
+    "workload_status", "layoff_days",   # pitcher back from the IL → IL badge + "why" tooltip
 )
 
 # The paywall: everything a projection produces is PREMIUM. Stripping these leaves the free
@@ -111,7 +112,7 @@ _PREMIUM_FIELDS = frozenset({
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
     "bball_confidence", "tennis_confidence", "model_floor", "model_ceiling",
     "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",
-    "lineup_slot", "lineup_status",
+    "lineup_slot", "lineup_status", "workload_status", "layoff_days",
 })
 
 

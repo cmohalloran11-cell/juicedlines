@@ -947,6 +947,28 @@ def _todays_lineups() -> dict:
     return _cached(f"lineups_{date.today().isoformat()}", 600, produce)
 
 
+# ── pitchers returning from a long layoff (IL) ───────────────────────────────
+# A starter back from the IL is on a team-imposed pitch limit we have NO feed for. MEASURED
+# league-wide (33 layoff returns across all 40-man pitchers, 2026-07-20): the effect is REAL
+# but unpredictable — mean outs ratio 0.949, 95% CI [0.864, 1.034] (NOT significant), and it
+# does NOT scale with gap length (>=45d came back at 0.989). Yet 21% return >=3 outs short
+# (Skubal 18.7->14, Webb 18.5->13, Lopez 14.8->5). So a blanket multiplier is unjustifiable —
+# bridging Taillon's 16.8 model to his 12.5 line would need 0.74, far outside that CI.
+# Ignoring it is worse: his volume props post a +3.2 to +4.3 "edge" that is really just the
+# book knowing his pitch count. The MARKET has that information and we don't, so for these
+# pitchers we defer to the standard line and show no edge — the same honesty rule already
+# applied to market-derived tennis and demon/goblin lines.
+_LAYOFF_DAYS = 20
+
+
+def _days_since_last_game(logs: list[dict]) -> int:
+    """Days since this player's most recent appearance (0 if unknown)."""
+    try:
+        return (date.today() - date.fromisoformat(logs[-1]["date"])).days
+    except Exception:
+        return 0
+
+
 def _expected_pa(slot: int | None, baseline_pa: float) -> float:
     """The player's own PA/game baseline, scaled by today's slot RELATIVE to an average slot.
     Unknown slot → baseline unchanged. Deliberately relative (not the absolute slot table): the
@@ -1147,6 +1169,7 @@ def attach_projections(lines: list[dict]) -> None:
     if _MLB_OK:
         mlb_muted = _mlb_muted_today()      # per-day override — no MLB projections today
         resolved: dict[str, tuple] = {}
+        std_lines: dict[tuple, list] = {}
         ids_by_group: dict[str, set] = {"hitting": set(), "pitching": set()}
         hitter_names: list[str] = []
         for l in lines:
@@ -1170,6 +1193,12 @@ def attach_projections(lines: list[dict]) -> None:
                 continue
             resolved[l["id"]] = (m, group, fn)          # store full meta (for matchup ctx)
             ids_by_group[group].add(m["id"])
+            # market's standard line per (player, stat) — what a returning pitcher defers to
+            if (l.get("odds_type") or "standard").lower() in ("standard", "boosted"):
+                try:
+                    std_lines.setdefault((m["id"], stat.lower()), []).append(float(l["line"]))
+                except (TypeError, ValueError):
+                    pass
             if not is_p and m.get("name") and m["name"] not in hitter_names:
                 hitter_names.append(m["name"])
 
@@ -1186,6 +1215,7 @@ def attach_projections(lines: list[dict]) -> None:
         lineups = _todays_lineups()             # today's confirmed batting orders (empty until posted)
 
         engine_cache: dict[tuple, Any] = {}     # (pid,is_pitcher[,'b'/'c']) → engine projections
+        layoff_ratio: dict = {}                 # pid → workload cut implied by his OUTS line
         for l in lines:
             r = resolved.get(l["id"])
             if not r:
@@ -1236,6 +1266,48 @@ def attach_projections(lines: list[dict]) -> None:
                     if eng.get("prob_over") is not None:
                         l["model_prob"] = eng["prob_over"]
                     l["model_n"] = len(pg)
+
+                    # Returning from a long layoff? Our sample is his PRE-injury workload, so
+                    # every volume prop over-projects against a line the book has already cut
+                    # for his pitch limit. We can't predict the cut (measured: not significant,
+                    # doesn't scale with gap) but the book can, so defer to its standard line
+                    # and show no edge. proj_kind="market" reuses the existing suppression:
+                    # no edge arrow on the board, and excluded from Edges + parlay suggestions.
+                    if is_pitcher:
+                        _lay = _days_since_last_game(logs)
+                        if _lay >= _LAYOFF_DAYS:
+                            l["workload_status"] = "returning"
+                            l["layoff_days"] = _lay
+                            _std = std_lines.get((pid, (l.get("stat_type") or "").lower()))
+                            if _std:
+                                _anchor = _median(_std)
+                                l["model_raw"] = eng["projection"]   # keep the pre-anchor model
+                                l["model_proj"] = round(_anchor, 2)
+                                l["model_edge"] = 0.0
+                                l["proj_kind"] = "market"
+                            else:
+                                # No standard line for this stat (books often post only
+                                # demons/goblins on a returning arm), so there's nothing to
+                                # defer to directly. Infer his workload cut from the OUTS line
+                                # — the one prop that prices the pitch limit outright — and
+                                # scale by it, since every pitcher volume stat rides on batters
+                                # faced. Without this, ER/BB keep showing full-start numbers.
+                                _r = layoff_ratio.get(pid)
+                                if _r is None:
+                                    _r = 1.0
+                                    _o = (std_lines.get((pid, "pitching outs"))
+                                          or std_lines.get((pid, "outs recorded")))
+                                    _raw = projector_bridge.for_stat(
+                                        engine_cache[ck], "Pitching Outs", None, True)
+                                    if _o and _raw and _raw.get("projection"):
+                                        _r = _median(_o) / float(_raw["projection"])
+                                        _r = max(0.4, min(1.0, _r))
+                                    layoff_ratio[pid] = _r
+                                if _r < 0.999:
+                                    l["model_raw"] = eng["projection"]
+                                    l["model_proj"] = round(eng["projection"] * _r, 2)
+                                    l["model_edge"] = round(l["model_proj"] - line_val, 1)
+                                    l["proj_kind"] = "market"
 
                     # variant B (A/B test): engine + matchup context + cached xBA prior.
                     ckb = (pid, is_pitcher, "b")

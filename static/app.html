@@ -1037,12 +1037,16 @@ function projCell(l){
   const arrow = showEdge ? (e>0?ic('up',9,'inherit'):ic('down',9,'inherit')) : '';
   const edge  = showEdge ? ` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>` : '';
   const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='final'?'World Cup final projection':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':l.proj_kind==='market'?'Market-derived — the book’s own line, not a model call':'Model projection';
-  const tip = isMarket ? `${kindLbl} — ${l.model_proj} is the market's own median line for this prop, so there's no model edge to show`
+  const tip = l.workload_status==='returning'
+              ? `Returning from a ${l.layoff_days}-day layoff — his pitch limit isn't public, so we defer to the market line (${l.model_proj}) instead of projecting off pre-injury workload`
+            : isMarket ? `${kindLbl} — ${l.model_proj} is the market's own median line for this prop, so there's no model edge to show`
             : isStd ? `${kindLbl} ${l.model_proj} vs line ${l.line}`
             : `${kindLbl} ${l.model_proj} · ${ot} line (special payout — edge not comparable)`;
   // Questionable / game-time decision — he may play, so keep the projection but flag the risk.
   const qflag = l.lineup_status==='questionable' ? ` <span class="q-badge" title="Questionable — game-time decision">GTD</span>` : '';
-  return `<div class="lproj ${cls}" title="${tip}"><span class="proj-num">${l.model_proj}</span>${edge}${qflag}</div>`;
+  // Pitcher back from the IL — flag it, because the number is the book's, not ours.
+  const ilflag = l.workload_status==='returning' ? ` <span class="q-badge" title="Back from a ${l.layoff_days}-day layoff">IL</span>` : '';
+  return `<div class="lproj ${cls}" title="${tip}"><span class="proj-num">${l.model_proj}</span>${edge}${qflag}${ilflag}</div>`;
 }
 
 function toggleGroup(key){
