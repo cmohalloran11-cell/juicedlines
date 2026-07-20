@@ -1,55 +1,150 @@
 name: refresh board
 
-# Rebuilds static/board.json every ~5 min and force-pushes it to the `data` branch,
-# which is served straight from GitHub raw (updates instantly, no host redeploy → beats
-# Vercel's ~100/day deploy cap). The page itself is served by Vercel straight from
-# `main` (Root Directory = static), so code changes deploy via the normal main push —
-# no separate site branch, no Vercel preview-deploy spam. Force-push keeps `data` at a
-# single commit (no history bloat). Needs a PUBLIC repo.
+# Rebuilds static/board.json and force-pushes it to the `data` branch, which is served
+# straight from GitHub raw (updates without a host redeploy → beats Vercel's ~100/day deploy
+# cap). The page itself is served by Vercel from `main` (Root Directory = static).
+#
+# WHY THIS LOOPS INSTEAD OF JUST USING cron
+# GitHub throttles scheduled workflows on free runners HARD: a `*/5` cron actually fires
+# about once an HOUR, with observed multi-hour dead spots. That staleness — not the models —
+# was the top reason the board "looked wrong". Triggering every 5 min from outside would
+# need a personal access token, so instead ONE job stays alive and rebuilds on its own
+# schedule. The cron below is now only a restarter: whenever no loop is running, the next
+# fire starts one.
+#
+# COST CONTROL
+#  * The loop only runs during the ACTIVE window (games + the hours lines actually move);
+#    outside it, a run does a single rebuild and exits, so overnight costs ~nothing.
+#  * Each job self-terminates after LOOP_HOURS so runners recycle and the checkout/token
+#    stay fresh; a queued run picks up straight after.
+#  * Most cycles are FAST (see FAST_REFRESH in build_static.py): board + line movement only,
+#    ~100s. The full build — drawer analytics + CLV ledger — runs once an hour, because a
+#    full build is 433s of which analytics.json alone is 331s and that data changes daily.
 
 on:
   schedule:
-    - cron: "*/5 * * * *"      # every ~5 minutes (needs a PUBLIC repo → unlimited Actions
-                               # minutes; on a private repo this would exhaust the free budget)
+    - cron: "*/5 * * * *"      # restarter only — GitHub throttles this to roughly hourly
   workflow_dispatch: {}         # manual "Run workflow" button
   push:
-    branches: [main]            # rebuild when the code changes
+    branches: [main]            # rebuild immediately when the code changes
 
 permissions:
   contents: write
 
 concurrency:
   group: refresh-board
-  cancel-in-progress: true
+  # A push must PREEMPT a running loop so new code deploys at once. A scheduled fire must
+  # NOT cancel it, or the loop would be killed every few minutes and never finish a cycle.
+  # (With cancel disabled the extra fire just queues, and GitHub keeps one pending run per
+  # group — which is exactly the restarter we want waiting for the loop to end.)
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 200          # hard stop below GitHub's 6h job cap
+    env:
+      LOOP_HOURS: "3"             # recycle the runner after this long
+      CYCLE_SECONDS: "300"        # target refresh cadence
+      FULL_EVERY_SECONDS: "3600"  # how often to do a FULL build (analytics + ledger)
+      ACTIVE_START_UTC: "16"      # loop only between these UTC hours (wraps past midnight):
+      ACTIVE_END_UTC: "6"         # 16:00–06:00 UTC ≈ noon–2am ET, i.e. every game window
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip          # cache deps so each rebuild is faster
+          cache: pip
       - run: pip install -r requirements.txt
-      - name: Build board.json
-        run: python build_static.py
 
-      # Every run: publish the fresh board (+ pre-computed drawer analytics) to the `data`
-      # branch (served via GitHub raw). analytics.json is best-effort — if the build skipped
-      # it, publish the board alone rather than failing the run.
-      - name: Publish board.json + analytics.json → data branch
+      - name: Rebuild + publish on a loop
         env:
           REMOTE: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
-          rm -rf _data && mkdir _data && cp static/board.json _data/board.json
-          if [ -f static/analytics.json ]; then cp static/analytics.json _data/analytics.json; fi
-          if [ -f static/history.json ]; then cp static/history.json _data/history.json; fi
-          # clv.db is the CLV/research ledger — the data branch IS its store (the runner is
-          # stateless). Only publish a real SQLite file, never a failed download.
-          if [ -f static/clv.db ]; then cp static/clv.db _data/clv.db; fi
-          cd _data && git init -q && git checkout -q -b data
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A && git commit -q -m "board $(date -u +%FT%TZ)"
-          git push -f "$REMOTE" data
+          set -u
+          LOOP_UNTIL=$(( $(date -u +%s) + LOOP_HOURS * 3600 ))
+          LAST_FULL=0
+          PUBLISH_FAILS=0
+
+          in_active_window () {
+            H=$(date -u +%-H)
+            if [ "$ACTIVE_START_UTC" -le "$ACTIVE_END_UTC" ]; then
+              [ "$H" -ge "$ACTIVE_START_UTC" ] && [ "$H" -lt "$ACTIVE_END_UTC" ]
+            else   # window wraps midnight (e.g. 16 → 6)
+              [ "$H" -ge "$ACTIVE_START_UTC" ] || [ "$H" -lt "$ACTIVE_END_UTC" ]
+            fi
+          }
+
+          # Clone the data branch ONCE per job. A fresh `git init` + force-push shares no
+          # objects with the remote, so it re-uploads EVERY file each cycle — analytics.json
+          # (24MB) + clv.db (19MB) don't change on fast cycles, and re-sending them every 5
+          # minutes is ~8GB/day. With a persistent clone we amend a single commit instead:
+          # the branch stays flat (no history bloat, the reason it was force-pushed) AND git
+          # only uploads blobs that actually changed (~8MB: board.json + history.json).
+          # It also removes the wipe risk — files we don't rebuild are already in the clone,
+          # so a skipped or failed step can no longer delete them from `data`.
+          rm -rf _data
+          git clone -q --single-branch --branch data "$REMOTE" _data 2>/dev/null \
+            || { mkdir -p _data && cd _data && git init -q && git checkout -q -b data && cd ..; }
+          git -C _data config user.name "github-actions[bot]"
+          git -C _data config user.email "github-actions[bot]@users.noreply.github.com"
+
+          publish () {
+            cp static/board.json _data/board.json || return 1
+            for f in analytics.json history.json clv.db board.free.json; do
+              if [ -f "static/$f" ]; then cp "static/$f" "_data/$f"; fi
+            done
+            git -C _data add -A
+            if git -C _data rev-parse HEAD >/dev/null 2>&1; then
+              git -C _data commit -q --amend -m "board $(date -u +%FT%TZ)"
+            else
+              git -C _data commit -q -m "board $(date -u +%FT%TZ)"
+            fi
+            git -C _data push -f "$REMOTE" data
+          }
+
+          CYCLE=0
+          while :; do
+            CYCLE=$(( CYCLE + 1 ))
+            START=$(date -u +%s)
+
+            if [ $(( START - LAST_FULL )) -ge "$FULL_EVERY_SECONDS" ]; then
+              MODE=full; LAST_FULL=$START
+            else
+              MODE=fast
+            fi
+
+            echo "::group::cycle $CYCLE ($MODE) $(date -u +%T)Z"
+            if [ "$MODE" = full ]; then
+              python build_static.py || echo "build FAILED — keeping the previous board"
+            else
+              FAST_REFRESH=1 python build_static.py || echo "build FAILED — keeping the previous board"
+            fi
+            if publish; then
+              PUBLISH_FAILS=0
+            else
+              PUBLISH_FAILS=$(( PUBLISH_FAILS + 1 ))
+              echo "publish FAILED ($PUBLISH_FAILS in a row)"
+            fi
+            echo "::endgroup::"
+
+            NOW=$(date -u +%s)
+            echo "cycle $CYCLE ($MODE) took $(( NOW - START ))s"
+
+            # GITHUB_TOKEN can expire inside a long job. If publishing keeps failing the board
+            # is silently frozen, so bail out and let a fresh run (with a fresh token) take
+            # over rather than looping for hours writing nothing.
+            if [ "$PUBLISH_FAILS" -ge 2 ]; then
+              echo "publish failing repeatedly (token expired?) — exiting for a fresh run"; break
+            fi
+
+            if [ "$NOW" -ge "$LOOP_UNTIL" ]; then
+              echo "loop budget reached — exiting so a fresh run takes over"; break
+            fi
+            if ! in_active_window; then
+              echo "outside the active window ($ACTIVE_START_UTC:00–$ACTIVE_END_UTC:00 UTC) — exiting"; break
+            fi
+
+            SLEEP=$(( CYCLE_SECONDS - (NOW - START) ))
+            if [ "$SLEEP" -gt 0 ]; then echo "sleeping ${SLEEP}s"; sleep "$SLEEP"; fi
+          done

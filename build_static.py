@@ -12,12 +12,22 @@ Only the fields the frontend reads are kept, to keep the file small.
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pullers
 import analytics
+
+# FAST refresh: rebuild only what actually changes minute-to-minute — the LINES (board.json)
+# and their movement (history.json). Measured 2026-07-19, a full build is 433s of which
+# analytics.json alone is 331s (77%); the drawer analytics are derived from game logs that
+# update DAILY, and the CLV ledger upserts today's props, so neither needs a 5-minute cadence.
+# Skipping both drops a cycle to ~100s, which is what makes a real 5-minute refresh possible.
+# The refresh workflow runs one FULL build per hour and fast cycles in between; the previous
+# analytics.json/clv.db stay on disk and are republished unchanged.
+FAST = os.environ.get("FAST_REFRESH") == "1"
 
 # Full board (with projections/edges). Keeps the name `board.json` so nothing breaks today;
 # it is the PREMIUM payload and Phase 3 routes it through the auth gate instead of the public
@@ -163,6 +173,8 @@ def main() -> None:
     # Point db at the ledger-only file, NOT the 1.8GB local history.db, and never call
     # snapshot_lines here (that's what makes history.db huge; movement lives in history.json).
     try:
+        if FAST:                       # reuse this block's own best-effort skip path
+            raise RuntimeError("fast refresh")
         tc = time.time()
         import db
         db.DB_PATH = OUT_CLV
@@ -225,6 +237,8 @@ def main() -> None:
     # the game-log caches, so extra line variants are cheap. Line-movement lives in
     # history.json. Premium payload; gated with board.json.
     try:
+        if FAST:                       # 331s of a 433s build — daily-cadence data, not 5-min
+            raise RuntimeError("fast refresh")
         ta = time.time()
         groups: dict[str, list] = {}
         for l in lines:
