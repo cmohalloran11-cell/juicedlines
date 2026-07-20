@@ -151,9 +151,18 @@ def main() -> None:
     slim = [{k: l[k] for k in _KEEP if l.get(k) is not None} for l in lines]
     updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    # Per-game meta (probable pitchers + confirmed/projected lineups) for the game-detail view.
+    # Cheap on FAST cycles — the today-schedule call is cached and the recent-lineup projection
+    # is cached 3h — so it stays in the 5-minute path. Best-effort; never blocks the board.
+    games_meta: dict = {}
+    try:
+        games_meta = analytics.mlb_game_meta()
+    except Exception as exc:
+        errors["game_meta"] = str(exc)[:40]
+
     def _payload(rows, tier):
         return {"lines": rows, "updated_at": updated, "errors": errors,
-                "static": True, "tier": tier}
+                "static": True, "tier": tier, "games": games_meta}
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     # premium: the full board (with projections/edges) — auth-gated in production

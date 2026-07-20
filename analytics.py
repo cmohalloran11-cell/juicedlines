@@ -947,6 +947,133 @@ def _todays_lineups() -> dict:
     return _cached(f"lineups_{date.today().isoformat()}", 600, produce)
 
 
+def _recent_lineups_by_team(days: int = 12) -> dict:
+    """{team_id: {player_name: {"slot": modal_slot, "gp": games_started, "seen": lineups}}}
+    from the last `days` of POSTED lineups — the basis for PROJECTING a batting order before
+    tonight's is posted. One schedule call per day (each returns every team), cached 3h since
+    yesterday's lineups never change."""
+    if not _MLB_OK:
+        return {}
+
+    def produce():
+        from collections import Counter
+        from datetime import timedelta
+        agg: dict = {}                       # tid -> {name: {"slots":Counter, "gp":int}}
+        seen: dict = {}                      # tid -> lineups observed
+        for i in range(1, days + 1):
+            d = (date.today() - timedelta(days=i)).isoformat()
+            try:
+                r = mlb._session.get(f"{mlb.BASE}/schedule",
+                                     params={"sportId": 1, "date": d,
+                                             "hydrate": "lineups,team"}, timeout=20)
+                r.raise_for_status()
+            except Exception:
+                continue
+            for dd in r.json().get("dates", []):
+                for g in dd.get("games", []):
+                    lu = g.get("lineups") or {}
+                    teams = g.get("teams") or {}
+                    for side, key in (("home", "homePlayers"), ("away", "awayPlayers")):
+                        players = lu.get(key) or []
+                        tid = ((teams.get(side) or {}).get("team") or {}).get("id")
+                        if not tid or len(players) < 9:
+                            continue
+                        seen[tid] = seen.get(tid, 0) + 1
+                        team = agg.setdefault(tid, {})
+                        for idx, p in enumerate(players):
+                            nm = p.get("fullName")
+                            if not nm:
+                                continue
+                            e = team.setdefault(nm, {"slots": Counter(), "gp": 0})
+                            e["slots"][idx + 1] += 1
+                            e["gp"] += 1
+        out: dict = {}
+        for tid, team in agg.items():
+            out[tid] = {nm: {"slot": e["slots"].most_common(1)[0][0], "gp": e["gp"],
+                             "seen": seen.get(tid, 0)}
+                        for nm, e in team.items()}
+        return out
+
+    return _cached(f"recent_lineups_{date.today().isoformat()}", 3 * 3600, produce)
+
+
+def _project_lineup(tid: int, posted_ids: dict, id_name: dict, recent: dict) -> list:
+    """Batting order for one team as a list of dicts (slot 1-9). Uses tonight's POSTED lineup
+    if we have it (confirmed=True, conf 1.0); otherwise PROJECTS from recent games — the nine
+    players who start most often, each at their modal slot, collisions broken by frequency."""
+    # 1) posted tonight → confirmed
+    posted = [(id_name.get(pid, str(pid)), slot) for pid, slot in posted_ids.items()]
+    if len(posted) >= 9:
+        return [{"slot": s, "player": nm, "confirmed": True, "conf": 1.0}
+                for nm, s in sorted(posted, key=lambda x: x[1])[:9]]
+    # 2) project from recent lineups
+    tr = recent.get(tid) or {}
+    if not tr:
+        return []
+    ranked = sorted(tr.items(), key=lambda kv: -kv[1]["gp"])   # most-frequent starters first
+    order, used = [], set()
+    for nm, e in ranked:
+        if len(order) >= 9:
+            break
+        slot = e["slot"]
+        while slot in used and slot < 9:      # a taken slot → next open one, keep it 1-9
+            slot += 1
+        if slot in used:
+            continue
+        used.add(slot)
+        order.append({"slot": slot, "player": nm, "confirmed": False,
+                      "conf": round(e["gp"] / max(1, e["seen"]), 2)})
+    return sorted(order, key=lambda x: x["slot"])
+
+
+def mlb_game_meta() -> dict:
+    """Per-game meta for the game-detail view: teams, start, status, probable pitchers, and each
+    side's confirmed-or-projected batting order. Keyed by "MLB:<gamePk>" (the board's game_id).
+    Best-effort; the frontend degrades to plain grouped props if a game has no entry."""
+    if not _MLB_OK:
+        return {}
+
+    def produce():
+        try:
+            r = mlb._session.get(f"{mlb.BASE}/schedule",
+                                 params={"sportId": 1, "date": date.today().isoformat(),
+                                         "hydrate": "probablePitcher,lineups,team,linescore"},
+                                 timeout=25)
+            r.raise_for_status()
+        except Exception:
+            return {}
+        recent = _recent_lineups_by_team()
+        games = [g for d in r.json().get("dates", []) for g in d.get("games", [])]
+        out: dict = {}
+        for g in games:
+            pk = g.get("gamePk")
+            if not pk:
+                continue
+            lu = g.get("lineups") or {}
+            teams = g.get("teams") or {}
+            status = ((g.get("status") or {}).get("abstractGameState") or "")   # Preview/Live/Final
+            side_out = {}
+            for side, lkey in (("home", "homePlayers"), ("away", "awayPlayers")):
+                t = (teams.get(side) or {}).get("team") or {}
+                tid = t.get("id")
+                sp = ((teams.get(side) or {}).get("probablePitcher") or {})
+                posted = {p["id"]: i + 1 for i, p in enumerate(lu.get(lkey) or []) if p.get("id")}
+                id_name = {p["id"]: p.get("fullName") for p in (lu.get(lkey) or []) if p.get("id")}
+                side_out[side] = {
+                    "abbr": t.get("abbreviation"), "name": t.get("teamName") or t.get("name"),
+                    "logo": (f"https://www.mlbstatic.com/team-logos/{tid}.svg" if tid else None),
+                    "sp": ({"name": sp.get("fullName"), "id": sp.get("id")} if sp.get("id") else None),
+                    "lineup": _project_lineup(tid, posted, id_name, recent),
+                }
+            out[f"MLB:{pk}"] = {
+                "sport": "MLB", "status": status, "start": g.get("gameDate"),
+                "home": side_out["home"], "away": side_out["away"],
+            }
+        return out
+
+    return _cached(f"gamemeta_{date.today().isoformat()}", 600, produce)
+
+
 # ── pitchers returning from a long layoff (IL) ───────────────────────────────
 # A starter back from the IL is on a team-imposed pitch limit we have NO feed for. MEASURED
 # league-wide (33 layoff returns across all 40-man pitchers, 2026-07-20): the effect is REAL

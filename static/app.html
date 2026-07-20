@@ -258,6 +258,45 @@ input[type=text]{min-width:190px}
 .drawer-scrim.open{opacity:1;pointer-events:auto}
 .drawer{position:fixed;right:0;top:0;bottom:0;width:min(480px,100vw);background:var(--surface);border-left:1px solid var(--border2);z-index:90;transform:translateX(100%);transition:transform .28s cubic-bezier(.3,.8,.3,1);overflow-y:auto;box-shadow:-20px 0 60px rgba(0,0,0,.4)}
 .drawer.open{transform:translateX(0)}
+/* ── game-detail modal ─────────────────────────────────────────────────────── */
+.gm-scrim{position:fixed;inset:0;background:rgba(3,6,14,.62);backdrop-filter:blur(3px);z-index:92;opacity:0;pointer-events:none;transition:.22s}
+.gm-scrim.open{opacity:1;pointer-events:auto}
+.gmodal{position:fixed;left:50%;top:50%;transform:translate(-50%,-48%) scale(.98);width:min(860px,94vw);max-height:90vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border2);border-radius:16px;z-index:94;opacity:0;pointer-events:none;transition:.22s cubic-bezier(.3,.8,.3,1);box-shadow:0 30px 90px rgba(0,0,0,.55)}
+.gmodal.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+.gm-head{display:flex;align-items:center;justify-content:center;gap:18px;padding:20px 22px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2;border-radius:16px 16px 0 0}
+.gm-team-h{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:96px}
+.gm-team-h img{width:44px;height:44px;object-fit:contain}
+.gm-team-h .ab{font-weight:800;font-size:15px;color:var(--text)}
+.gm-team-h .rec{font-size:10px;color:var(--muted)}
+.gm-vs{display:flex;flex-direction:column;align-items:center;gap:3px}
+.gm-vs .at{color:var(--muted2);font-size:11px;font-weight:700}
+.gm-vs .tm{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.gm-vs .live{color:var(--green);font-weight:800;font-size:11px;letter-spacing:.5px}
+.gm-vs .live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:5px;animation:g-pulse 1.6s ease-in-out infinite}
+.gm-lineups{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.gm-col{padding:14px 18px}
+.gm-col:first-child{border-right:1px solid var(--border)}
+.gm-col h4{margin:0 0 10px;font-size:11px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;font-weight:800}
+.gm-sp{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(182,240,26,.25);background:rgba(182,240,26,.05);border-radius:9px;margin-bottom:10px}
+.gm-sp .lbl{font-size:9px;font-weight:800;color:var(--accent);letter-spacing:.5px;border:1px solid rgba(182,240,26,.4);border-radius:4px;padding:1px 4px}
+.gm-sp .nm{font-weight:700;font-size:13px;color:var(--text)}
+.gm-sp .ln{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.gm-bat{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.gm-bat li{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;cursor:default;transition:.12s;font-size:12.5px}
+.gm-bat li.clk{cursor:pointer}
+.gm-bat li.clk:hover{background:rgba(255,255,255,.04)}
+.gm-bat .slot{width:16px;text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted2);flex:none}
+.gm-bat .pnm{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gm-bat .pos{font-size:9px;color:var(--muted2);font-weight:700}
+.gm-bat .edge{margin-left:auto;font-size:11px;font-weight:800;font-family:var(--mono);flex:none}
+.gm-bat .edge.pos{color:var(--green)} .gm-bat .edge.neg{color:var(--red)}
+.gm-conf{font-size:8.5px;font-weight:800;letter-spacing:.4px;padding:0 4px;border-radius:4px;flex:none}
+.gm-conf.ok{color:var(--green);border:1px solid rgba(155,232,20,.4)}
+.gm-conf.proj{color:var(--yellow);border:1px solid rgba(255,210,26,.35)}
+.gm-note{padding:10px 18px 4px;font-size:11px;color:var(--muted2)}
+.gm-props{padding:6px 14px 20px}
+.gm-props h4{margin:14px 6px 8px;font-size:11px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;font-weight:800}
+@media(max-width:640px){.gm-lineups{grid-template-columns:1fr}.gm-col:first-child{border-right:none;border-bottom:1px solid var(--border)}}
 .drawer-close{position:absolute;top:16px;right:16px;background:var(--card);border:1px solid var(--border2);color:var(--muted);width:30px;height:30px;border-radius:8px;font-size:15px;cursor:pointer;z-index:3}
 .drawer-close:hover{color:var(--text);border-color:var(--accent)}
 .dr-hero{padding:22px 22px 18px;background:linear-gradient(160deg,var(--card2),var(--surface));border-bottom:1px solid var(--border)}
@@ -555,6 +594,13 @@ input[type=text]{min-width:190px}
   <div id="edge-list"></div>
 </div>
 
+<!-- ════════════ GAME MODAL ════════════ -->
+<div class="gm-scrim" id="gm-scrim" onclick="closeGame()"></div>
+<div class="gmodal" id="gmodal" role="dialog" aria-modal="true">
+  <button class="drawer-close" onclick="closeGame()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div id="gmodal-content"></div>
+</div>
+
 <!-- ════════════ DRAWER ════════════ -->
 <div class="drawer-scrim" id="scrim" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
@@ -775,6 +821,7 @@ const LOGO_SVG = '<svg viewBox="0 0 100 100" width="100%" height="100%" style="d
 
 // ════════════ state ════════════
 let allLines = [];
+let boardGames = {};          // game_id → {home,away,sp,lineup,…} meta for the game-detail modal
 let groups = [];
 let expanded = new Set();
 let sortMode = 'props';
@@ -881,6 +928,7 @@ async function loadLines(force=false){
   try{
     const data = await fetchBoard();
     allLines = data.lines || [];
+    boardGames = data.games || {};
     try{ renderTicker(); }catch(e){ /* ticker is cosmetic — never block the board */ }
     // Scorecard is a backend-only tool (it grades a live ledger) AND private — show its
     // tab only when the live server is present (your local/private run), never on the
@@ -1956,7 +2004,7 @@ function renderTicker(){
       // NOT loading="lazy": the track is far wider than the viewport, so lazy images off to
       // the right would never load and every card would render logo-less.
       `<span class="g-team">${logo?`<img src="${esc(logo)}" alt="" onerror="this.remove()">`:''}${esc(name)}</span>`);
-    return `<div class="gcard" title="${esc(g.sport)} · ${g.props} props">`
+    return `<div class="gcard" onclick="openGameModal('${esc(g.gid)}')" style="cursor:pointer" title="${esc(g.sport)} · ${g.props} props — click for lineups & projections">`
       + `<span class="sport-pill ${sportCls(g.sport)}">${esc(g.sport==='NBA Summer League'?'SL':g.sport)}</span>`
       + sides.join('<span class="g-at">vs</span>')
       + gameTimeLabel(g.start)
@@ -1973,6 +2021,103 @@ function renderTicker(){
     track.style.animationDuration = Math.max(20, Math.round(dist / 55)) + 's';   // ~55 px/sec
   });
 }
+
+// ── game-detail modal ───────────────────────────────────────────────────────
+// Opens on a ticker click: our projected/confirmed starting lineups + the SP for each side,
+// then every projection & line in that game grouped by player. Backend game meta (boardGames)
+// supplies the lineup + pitcher; the per-player props come from allLines (already loaded).
+function _gameLines(gid){ return allLines.filter(l => l.game_id === gid); }
+// The lines' game_id (team's next-game gamePk) and the meta's key (today's schedule gamePk)
+// match for almost every game but can drift by one on a doubleheader, so resolve the meta by
+// the two TEAM abbreviations — which both the lines and the meta carry reliably — with a direct
+// key hit as the fast path.
+function _gameMeta(gid, gl){
+  if(boardGames[gid]) return boardGames[gid];
+  const teams = new Set(gl.map(l => l.team).filter(Boolean));
+  if(teams.size < 2) return null;
+  return Object.values(boardGames).find(g =>
+    teams.has(g.home && g.home.abbr) && teams.has(g.away && g.away.abbr)) || null;
+}
+// match lineup names (statsapi) to line players (same MLB feed) tolerantly — strip accents,
+// punctuation and case so "Andrés Giménez" == "Andres Gimenez"
+function _pk(s){ return String(s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z ]/g,'').trim(); }
+
+function _bestEdge(lines){                          // biggest standard-line edge for a player
+  let best = null;
+  for(const l of lines){
+    if((l.odds_type||'standard')!=='standard' || l.model_edge==null) continue;
+    if(l.lineup_status==='out' || l.proj_kind==='market') continue;
+    if(!best || Math.abs(l.model_edge) > Math.abs(best.model_edge)) best = l;
+  }
+  return best;
+}
+
+function _lineupCol(side, gameLines){
+  if(!side) return '';
+  const byName = {};
+  for(const l of gameLines){ (byName[_pk(l.player||'')] ||= []).push(l); }
+  const spLines = (side.sp ? (byName[_pk(side.sp.name||'')] || []) : []).filter(l => l.model_proj!=null);
+  const spHint = spLines.find(l => /outs/i.test(l.stat_type||'')) || spLines.find(l => /strikeout/i.test(l.stat_type||'')) || spLines[0];
+  const sp = side.sp ? `<div class="gm-sp"><span class="lbl">SP</span><span class="nm">${esc(side.sp.name)}</span>`
+      + (spHint ? `<span class="ln">${esc(propShort?propShort(spHint.stat_type):spHint.stat_type)} ${spHint.model_proj}</span>` : '') + `</div>` : '';
+  const rows = (side.lineup||[]).map(p => {
+    const pl = byName[_pk(p.player)] || [];
+    const be = _bestEdge(pl);
+    const pos = pl.find(x=>x.position)?.position || '';
+    const conf = p.confirmed ? `<span class="gm-conf ok" title="Confirmed lineup">✓</span>`
+                             : `<span class="gm-conf proj" title="Projected — started here in ${Math.round((p.conf||0)*100)}% of recent games">${Math.round((p.conf||0)*100)}%</span>`;
+    const edge = be ? `<span class="edge ${be.model_edge>0?'pos':'neg'}" title="${esc(be.stat_type)} ${be.model_proj} vs ${be.line}">${be.model_edge>0?'+':''}${be.model_edge}</span>` : '';
+    return `<li class="${pl.length?'clk':''}" ${pl.length?`onclick="closeGame();openDrawer('${esc((be||pl[0]).id)}')"`:''}>`
+      + `<span class="slot">${p.slot}</span><span class="pnm">${esc(p.player)}</span>`
+      + (pos?`<span class="pos">${esc(pos)}</span>`:'') + conf + edge + `</li>`;
+  }).join('');
+  return `<div class="gm-col"><h4>${esc(side.abbr||'')} ${side.lineup&&side.lineup[0]&&!side.lineup[0].confirmed?'· projected':''}</h4>${sp}<ul class="gm-bat">${rows}</ul></div>`;
+}
+
+function openGameModal(gid){
+  const gl = _gameLines(gid);
+  const g = _gameMeta(gid, gl);
+  const scrim = document.getElementById('gm-scrim'), modal = document.getElementById('gmodal');
+  const el = document.getElementById('gmodal-content');
+
+  // Header — prefer backend meta; fall back to whatever the lines carry (WNBA/tennis have no meta)
+  let head, body;
+  const timeLbl = g ? gameTimeLabel(g.start) : '';
+  if(g){
+    const teamH = s => `<div class="gm-team-h">${s.logo?`<img src="${esc(s.logo)}" onerror="this.remove()">`:''}<span class="ab">${esc(s.abbr||'')}</span></div>`;
+    head = `<div class="gm-head">${teamH(g.away)}<div class="gm-vs"><span class="at">@</span>${timeLbl||''}</div>${teamH(g.home)}</div>`;
+    const anyProj = (g.away.lineup||[]).concat(g.home.lineup||[]).some(p=>!p.confirmed);
+    body = `<div class="gm-lineups">${_lineupCol(g.away, gl)}${_lineupCol(g.home, gl)}</div>`
+      + (anyProj ? `<div class="gm-note">Lineups marked with a % are <b>projected</b> from recent games (not yet posted); ✓ = confirmed. Edges show each hitter's biggest standard-line lean.</div>` : '');
+  } else {
+    // no lineup meta for this sport — build a minimal header from the lines
+    const teams = [...new Set(gl.map(l=>l.team).filter(Boolean))].slice(0,2);
+    const sport = gl[0]?.sport || '';
+    head = `<div class="gm-head"><div class="gm-vs"><span class="sport-pill ${sportCls(sport)}">${esc(sport)}</span><span class="tm">${teams.map(esc).join(' vs ')}</span>${timeLbl}</div></div>`;
+    body = '';
+  }
+
+  // Props — every line in the game, grouped by player, most props first
+  const byP = {};
+  for(const l of gl){ (byP[l.player] ||= []).push(l); }
+  const players = Object.entries(byP).sort((a,b)=>b[1].length-a[1].length);
+  let props = '<div class="gm-props"><h4>All projections & lines</h4>';
+  for(const [name, pls] of players){
+    props += `<div style="margin:6px 4px 2px;font-weight:700;font-size:13px;color:var(--text)">${esc(name)} <span class="muted" style="font-size:11px;font-weight:500">${esc(pls[0].team||'')}</span></div>`;
+    for(const l of pls.sort((a,b)=>(propShort?propShort(a.stat_type):a.stat_type).localeCompare(propShort?propShort(b.stat_type):b.stat_type))){
+      props += `<div class="lrow" style="cursor:pointer" onclick="closeGame();openDrawer('${esc(l.id)}')">`
+        + `<div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${esc(propShort?propShort(l.stat_type):l.stat_type)} <span class="muted">${l.line??''}</span></div>`
+        + projCell(l) + `</div>`;
+    }
+  }
+  props += '</div>';
+
+  el.innerHTML = head + body + props;
+  el.parentElement.scrollTop = 0;
+  scrim.classList.add('open'); modal.classList.add('open');
+}
+function closeGame(){ document.getElementById('gm-scrim').classList.remove('open'); document.getElementById('gmodal').classList.remove('open'); }
+
 const ISO3={PRT:'Portugal',DEU:'Germany',GBR:'England',NLD:'Netherlands',HRV:'Croatia',URY:'Uruguay',CHE:'Switzerland',DNK:'Denmark',ESP:'Spain',FRA:'France',ARG:'Argentina',BRA:'Brazil',ENG:'England',ITA:'Italy',BEL:'Belgium',USA:'USA',MEX:'Mexico',COL:'Colombia',JPN:'Japan',KOR:'South Korea',MAR:'Morocco',SEN:'Senegal',POL:'Poland',AUS:'Australia',CAN:'Canada',GHA:'Ghana',ECU:'Ecuador',SRB:'Serbia',EGY:'Egypt',NGA:'Nigeria',CMR:'Cameroon',PRY:'Paraguay',PER:'Peru',CHL:'Chile',AUT:'Austria',TUR:'Turkey',NOR:'Norway',SWE:'Sweden'};
 function prettyCountry(c){if(!c)return '';const u=String(c).toUpperCase();return ISO3[u]||c;}
 function fbAvatar(name,big){
@@ -1999,7 +2144,7 @@ setInterval(()=>updateFreshness(), 60000);   // keep the age current between pol
 function fmtDate(s){if(!s)return '';try{const d=new Date(s);return d.toLocaleDateString([],{month:'numeric',day:'numeric'});}catch{return s;}}
 function fmtImplied(p){if(p==null)return '<span style="color:var(--muted2)">—</span>';const pct=Math.round(p*100);const c=pct>=60?'var(--green)':pct>=45?'var(--yellow)':'var(--red)';return `<span style="color:${c}">${pct}%</span>`;}
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDrawer();closeGame();}});
 // Re-fetch immediately when the tab regains focus so it's fresh the moment you look.
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadLines();});
 loadLines();
