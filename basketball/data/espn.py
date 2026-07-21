@@ -335,29 +335,6 @@ class EspnBasketball(GameLogSource):
                 out[nm] = "out" if "out" in st else "questionable"
         return out
 
-    def team_vacated_minutes(self, league: str) -> dict:
-        """{team_id: sum of recent MPG of that team's OUT players} — the minutes a team must
-        redistribute tonight. Injured-out players are resolved to their id (the injury feed has
-        no id) → recent box-score MPG. Only rotation minutes count (MPG >= 8): a deep-bench DNP
-        vacates nothing real. This drives the level-2 role variant (proportional minutes bump)."""
-        out = {nm for nm, st in self.injuries(league).items() if st == "out"}
-        if not out:
-            return {}
-        players = self.players(league)          # {norm_name: PlayerRef(id, team_id)}
-        box = self._boxscore_index(league)
-        vac: dict = {}
-        for nm in out:
-            ref = players.get(nm)
-            if not ref or not ref.team_id:
-                continue
-            games = box.get(str(ref.id), [])
-            if not games:
-                continue
-            mpg = sum(g.minutes for g in games[:5]) / min(5, len(games))
-            if mpg >= 8.0:
-                vac[str(ref.team_id)] = vac.get(str(ref.team_id), 0.0) + mpg
-        return vac
-
     def upcoming_opponents(self, league: str) -> dict:
         """{team_id: opp_team_id} for the current slate — lets the board use the REAL matchup
         pace + opponent defense instead of the league baseline. Games already final are

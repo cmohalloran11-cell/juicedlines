@@ -42,6 +42,8 @@ OUT_ANALYTICS = Path(__file__).parent / "static" / "analytics.json"
 # STATELESS (fresh checkout every run) — so the published file on the `data` branch IS the
 # store: each build reads the previous one, appends today's values, and republishes it.
 OUT_HISTORY = Path(__file__).parent / "static" / "history.json"
+# Per-stat trust weights (γ) for the anchoring layer — tiny, published each full build.
+OUT_TRUST = Path(__file__).parent / "static" / "trust.json"
 _HISTORY_URL = "https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/history.json"
 _HIST_MAX_POINTS = 40          # per line; plenty for a movement chart, keeps the file small
 
@@ -212,6 +214,15 @@ def main() -> None:
         print(f"  wrote {OUT_CLV.name} [{src}]: logged {logged}, graded MLB {graded} + "
               f"BB {graded_bb}, pruned {pruned} | {n_grd} graded / {n_all} rows, "
               f"{OUT_CLV.stat().st_size/1e6:.1f} MB | +{time.time()-tc:.0f}s")
+        # Per-stat trust (γ) for the anchoring layer — computed here where the graded ledger is
+        # local, published as a TINY file that every build (incl. fast) reads so it never has to
+        # re-download the multi-MB ledger just to anchor. NEXT build's attach_projections uses it.
+        try:
+            trust = {"MLB": db.stat_gammas("MLB", min_n=120), "updated_at": updated}
+            OUT_TRUST.write_text(json.dumps(trust, separators=(",", ":")), encoding="utf-8")
+            print(f"  wrote {OUT_TRUST.name}: {len(trust['MLB'])} stats trusted")
+        except Exception as exc:
+            print(f"  trust.json SKIPPED ({exc})")
     except Exception as exc:
         print(f"  clv.db SKIPPED ({exc})")
 

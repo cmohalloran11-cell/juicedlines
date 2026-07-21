@@ -265,6 +265,47 @@ def pending_grades(today: str, sport: str = "MLB", limit: int = 400) -> list[dic
     return [dict(r) for r in rows]
 
 
+def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
+                k: float = 300.0) -> dict:
+    """Per-stat TRUST weight learned from the graded ledger — how much to trust the model over
+    the market line, PER STAT. trust = the edge-regression slope γ of (actual−line) on
+    (model−line): the optimal shrinkage of the model toward the line (proj = line + γ·(model−
+    line)). Where the model beats the line (Hits/HR) γ is high → keep the model; where it
+    doesn't (Runs/Total Bases) γ≈0 → defer to the line, so we stop surfacing noise edges.
+
+    γ is shrunk toward `prior` by sample size (pseudo-count k) so a thin/noisy stat can't swing
+    it, and read off `model_raw` (COALESCE with close_proj for pre-anchor rows) — the RAW model,
+    never the anchored projection, so trust can't feed back on itself. Validated out-of-sample
+    2026-07-21 (train 7d → test 4d): overall MAE 3.157→3.076, 18/19 stats better, ROI −11.2→−9.0%."""
+    with _lock, _conn() as c:
+        rows = c.execute(
+            """SELECT LOWER(stat_type) st, close_line L, COALESCE(model_raw, close_proj) m, actual y
+               FROM prop_clv WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL
+               AND stat_type IS NOT NULL
+               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
+            (sport,)).fetchall()
+    import statistics
+    by: dict = {}
+    for r in rows:
+        if r["m"] is None or r["L"] is None:
+            continue
+        by.setdefault(r["st"], []).append((r["m"] - r["L"], r["y"] - r["L"]))
+    out: dict = {}
+    for st, pts in by.items():
+        n = len(pts)
+        if n < min_n:
+            continue
+        xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+        vx = statistics.pvariance(xs)
+        if vx < 1e-9:                       # model never disagrees with the line here
+            continue
+        mx, my = statistics.mean(xs), statistics.mean(ys)
+        g = (sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / n) / vx
+        gsh = (n * g + k * prior) / (n + k)         # shrink toward prior by sample size
+        out[st] = round(max(0.0, min(1.0, gsh)), 3)
+    return out
+
+
 def set_actual(line_id: str, game_date: str, actual: float | None, graded_at: str) -> None:
     """Record the graded outcome. actual=None marks the prop attempted-but-void
     (player didn't play that day), so it stops showing up as pending."""

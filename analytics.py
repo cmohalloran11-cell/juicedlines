@@ -626,7 +626,9 @@ def analyze_mlb(line: dict) -> dict:
             mctx = _matchup_ctx(meta, is_pitcher, teams)
             projs = projector_bridge.project_player(pg, is_pitcher, predictive=prior, ctx=mctx)
             sc_corr = _stat_corrections().get((stat_label or "").lower(), 0.0)
-            eng = projector_bridge.for_stat(projs, stat_label, float(line_val), is_pitcher, sc_corr)
+            # anchor identically to the board (same trust map) so the drawer never disagrees
+            eng = projector_bridge.for_stat(projs, stat_label, float(line_val), is_pitcher, sc_corr,
+                                            trust=_mlb_trust().get((stat_label or "").lower()))
         if eng:
             projection, prob_over = eng["projection"], eng.get("prob_over")
             method = "engine+xBA" if prior else "engine"
@@ -1325,6 +1327,34 @@ def _stat_corrections() -> dict:
     return _cached("stat_corrections", 3600, produce)
 
 
+# Per-stat trust is COMPUTED by the full build (which has the graded ledger local) and PUBLISHED
+# as a tiny trust.json, then read by every build — including the 5-minute FAST builds, which skip
+# the multi-MB ledger download. So the anchor is live on every board without re-downloading the
+# ledger each cycle. Falls back to empty (→ raw projections, as before) until the first full build
+# publishes it.
+_TRUST_URL = "https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/trust.json"
+
+
+def _mlb_trust() -> dict:
+    """Per-stat trust weights (0–1) — how much to trust the model over the market line, by stat.
+    The MLB projection is then anchored toward the line by (1−trust): where the model beats the
+    line (Hits/HR) trust≈0.4 keeps most of the model; where it doesn't (Runs) trust≈0.1 defers to
+    the line, killing the noise edges that dragged betting ROI to −11%. Validated out-of-sample
+    2026-07-21 (MAE 3.157→3.076, 18/19 stats better). Read from the published trust.json (cached
+    1h); empty until the first full build writes it → raw projections, same as before."""
+    def produce():
+        try:
+            import urllib.request
+            url = f"{_TRUST_URL}?t={int(time.time() // 1800)}"      # 30-min cache-bust
+            with urllib.request.urlopen(url, timeout=15) as r:
+                d = json.loads(r.read())
+            m = d.get("MLB") if isinstance(d, dict) else None
+            return m if isinstance(m, dict) else {}
+        except Exception:
+            return {}
+    return _cached("mlb_trust", 3600, produce)
+
+
 def _is_allstar_mlb(l: dict) -> bool:
     """MLB All-Star props use league 'teams' (AL / NL), never a real club. The game is an
     exhibition — hitters get ~2-3 PA and pitchers ~1-2 innings — so the full-game model
@@ -1401,6 +1431,8 @@ def attach_projections(lines: list[dict]) -> None:
             pass
         teams = _team_map()
         corr = _stat_corrections()              # per-stat calibration offsets (ledger-driven)
+        trust_map = _mlb_trust()                # per-stat γ trust — anchor toward the line where
+                                                # the model doesn't beat it (ledger-driven)
         lineups = _todays_lineups()             # today's confirmed batting orders (empty until posted)
 
         engine_cache: dict[tuple, Any] = {}     # (pid,is_pitcher[,'b'/'c'/'w']) → engine projections
@@ -1467,8 +1499,10 @@ def attach_projections(lines: list[dict]) -> None:
                     engine_cache[ck] = projector_bridge.project_player(
                         pg, is_pitcher,
                         predictive=({"workload_outs": workload} if workload else None))
+                _tw = trust_map.get((l.get("stat_type") or "").lower())
                 eng = projector_bridge.for_stat(
-                    engine_cache[ck], l.get("stat_type") or "", line_val, is_pitcher, sc_corr)
+                    engine_cache[ck], l.get("stat_type") or "", line_val, is_pitcher, sc_corr,
+                    trust=_tw)
                 if eng:
                     l["model_proj"] = eng["projection"]
                     l["model_edge"] = round(eng["projection"] - line_val, 1)
@@ -1478,6 +1512,11 @@ def attach_projections(lines: list[dict]) -> None:
                     if eng.get("prob_over") is not None:
                         l["model_prob"] = eng["prob_over"]
                     l["model_n"] = len(pg)
+                    # log the PRE-anchor model + the trust applied, so the ledger keeps measuring
+                    # the RAW model's γ (never the anchored projection — that would feed back).
+                    if _tw is not None:
+                        l["model_raw"] = eng.get("model_raw")
+                        l["trust_weight"] = round(float(_tw), 3)
 
 
                     # variant B (A/B test): engine + matchup context + cached xBA prior.

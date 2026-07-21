@@ -230,11 +230,16 @@ def statcast_prior_cached(name: str, is_pitcher: bool):
 
 
 
-def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float = 0.0):
+def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float = 0.0,
+             trust: float | None = None):
     """
     Extract a plain projection dict for one prop from a project_player() result.
-    `correction` is an optional per-stat calibration offset (measured bias from the
-    ledger) that shifts the whole distribution. None for unsupported stats.
+    `correction` is an optional per-stat calibration offset (measured bias from the ledger)
+    that shifts the whole distribution. `trust` (0–1, from db.stat_gammas) anchors the
+    projection toward the market line by (1−trust): where the model beats the line trust≈1
+    (pure model), where it doesn't trust≈0 (defer to the line). The payload always carries
+    `model_raw` = the PRE-anchor mean, so the ledger keeps measuring the raw model's γ.
+    None for unsupported stats.
     """
     if not projs:
         return None
@@ -256,7 +261,7 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
         if corr is not None:
             arrs = _induce_corr(arrs, corr)
         s = np.sum(arrs, axis=0)
-        return _payload_from_samples(s, line, correction)
+        return _payload_from_samples(s, line, correction, trust)
 
     table = _PIT if is_pitcher else _BAT
     stat = table.get(key) or _best_match(table, key)
@@ -265,36 +270,46 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
     p = projs.get(stat)
     if p is None:
         return None
-    return _payload(p, line, correction)
+    return _payload(p, line, correction, trust)
 
 
-def _payload(p, line, correction: float = 0.0) -> dict:
-    # Compute from the sample distribution so a calibration `correction` shifts the
-    # projection AND prob_over together. Projection = the MEAN (continuous); the
-    # median of integer count samples is lumpy.
+def _payload(p, line, correction: float = 0.0, trust: float | None = None) -> dict:
+    # Compute from the sample distribution so a calibration `correction` and the `trust`
+    # anchor shift the projection AND prob_over together. Projection = the MEAN (continuous);
+    # the median of integer count samples is lumpy.
     s = getattr(p, "samples", None)
     if s is not None:
-        out = _payload_from_samples(s, line, correction)
+        out = _payload_from_samples(s, line, correction, trust)
     else:
         out = {"projection": round(float(p.mean), 2), "median": round(float(p.median), 1),
                "floor": round(float(p.floor), 1), "ceiling": round(float(p.ceiling), 1),
-               "p25": round(float(p.p25), 1), "p75": round(float(p.p75), 1), "method": "engine"}
+               "p25": round(float(p.p25), 1), "p75": round(float(p.p75), 1),
+               "model_raw": round(float(p.mean), 2), "method": "engine"}
         if line is not None:
             out["prob_over"] = round(float(p.prob_over(float(line))), 3)
     out["drivers"] = list(getattr(p, "drivers", []) or [])   # matchup/park factors
     return out
 
 
-def _payload_from_samples(s, line, correction: float = 0.0) -> dict:
+def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None = None) -> dict:
     import numpy as np
     if correction:
         s = np.clip(s + correction, 0, None)     # calibration shift, floored at 0
+    raw_mean = float(s.mean())                    # PRE-anchor model mean (for the ledger's γ)
+    proj = raw_mean
+    if trust is not None and line is not None:
+        t = max(0.0, min(1.0, float(trust)))
+        # Anchor toward the line: projection is EXACTLY t·model + (1−t)·line (the out-of-sample-
+        # validated blend). Shift the distribution to that mean for the percentiles + P(over);
+        # the 0-floor there only nudges those, not the reported projection.
+        proj = t * raw_mean + (1.0 - t) * float(line)
+        s = np.clip(s + (proj - raw_mean), 0.0, None)
     q = np.percentile(s, [10, 25, 50, 75, 90])
     out = {
-        "projection": round(float(s.mean()), 2), "median": round(float(q[2]), 1),
+        "projection": round(proj, 2), "median": round(float(q[2]), 1),
         "floor": round(float(q[0]), 1), "ceiling": round(float(q[4]), 1),
         "p25": round(float(q[1]), 1), "p75": round(float(q[3]), 1),
-        "method": "engine",
+        "model_raw": round(raw_mean, 2), "method": "engine",
     }
     if line is not None:
         out["prob_over"] = round(float(np.mean(s > float(line))), 3)

@@ -34,15 +34,6 @@ _FULL_TRUST_AT = 0.6
 # past this), so it only tempers the thin Summer-League opening samples.
 _GAME_RAMP_BASE, _GAME_RAMP_STEP = 0.7, 0.1
 
-# Level-2 role variant (MEASURED, not shipped): when injured teammates vacate minutes, the
-# healthy rotation scales up by 200/(200−vacated) (a team always plays 200 player-minutes),
-# capped so nobody projects an unrealistic night. Logged to model_proj_b for the WNBA A/B —
-# WNBA never used that column, so it's free, and grading (new) will settle the verdict.
-_TEAM_MINUTES = 200.0            # 5 players × 40 min
-_MAX_MINUTES = 38.0             # realistic per-player ceiling even in a short-handed game
-_MIN_VACATED = 5.0             # ignore trivial injuries (deep-bench DNPs vacate ~nothing)
-_MIN_ROTATION = 10.0           # only bump players who actually play rotation minutes
-
 
 def attach_basketball(lines: list[dict]) -> int:
     """Attach projections to live WNBA/Summer-League lines. Returns count projected."""
@@ -55,19 +46,13 @@ def attach_basketball(lines: list[dict]) -> int:
     # a confirmed DNP → suppress like an MLB scratch; 'questionable' → flag but still project.
     src = P.gamelog_source()
     inj: dict = {}
-    vac: dict = {}
     for lg in {l["sport"] for l in blines}:
         try:
             inj[lg] = src.injuries(lg) if hasattr(src, "injuries") else {}
         except Exception:
             inj[lg] = {}
-        try:
-            vac[lg] = src.team_vacated_minutes(lg) if hasattr(src, "team_vacated_minutes") else {}
-        except Exception:
-            vac[lg] = {}
 
     proj_cache: dict = {}
-    proj_b_cache: dict = {}
 
     def get_proj(league: str, player: str):
         ck = (league, P._norm(player))
@@ -77,17 +62,6 @@ def attach_basketball(lines: list[dict]) -> int:
             except Exception:
                 proj_cache[ck] = None
         return proj_cache[ck]
-
-    def get_proj_b(league: str, player: str, boosted: float):
-        """Variant projection with redistributed (boosted) minutes injected. Cached per player
-        (boosted is deterministic per build)."""
-        ck = (league, P._norm(player))
-        if ck not in proj_b_cache:
-            try:
-                proj_b_cache[ck] = P.project_player(league, player, news_minutes=boosted)
-            except Exception:
-                proj_b_cache[ck] = None
-        return proj_b_cache[ck]
 
     # group by player + market so the mean can be anchored to the market's standard line
     groups: dict = defaultdict(list)
@@ -127,25 +101,10 @@ def attach_basketball(lines: list[dict]) -> int:
         if trust < 0.2:                 # ~no reliable model info → defer fully to the
             blended = anchor            # market (edge≈0, symmetric) rather than a noisy drag
 
-        # ── level-2 role variant (measured): minutes redistribution when teammates are out ──
-        # Compute a SECOND projection at boosted minutes and blend it identically (same anchor +
-        # trust) → model_proj_b. This never touches variant A (the shipped projection); it only
-        # accrues on the ledger so WNBA grading can settle whether the redistribution helps —
-        # the same measure-before-ship discipline as MLB batting-order (variant C). Skipped when
-        # the injury is trivial, the player isn't a rotation piece, or trust is too low for the
-        # difference to survive the anchor (→ model_proj_b stays null, excluded from the A/B).
-        arr_b = mean_b = blended_b = None
-        team_vac = vac.get(league, {}).get(str(proj.get("team_id")), 0.0)
-        if team_vac >= _MIN_VACATED and proj.get("proj_minutes", 0.0) >= _MIN_ROTATION and trust >= 0.2:
-            boosted = min(_MAX_MINUTES,
-                          proj["proj_minutes"] * _TEAM_MINUTES / max(60.0, _TEAM_MINUTES - team_vac))
-            if boosted > proj["proj_minutes"] + 0.5:            # a real bump, not rounding
-                pb = get_proj_b(league, glines[0]["player"], boosted)
-                arr_b = P.market_dist(pb, glines[0].get("stat_type") or "") if pb else None
-                if arr_b is not None:
-                    mean_b = float(np.mean(arr_b))
-                    blended_b = trust * mean_b + (1.0 - trust) * anchor
-
+        # (The level-2 minutes-redistribution variant was DROPPED 2026-07-21: measured on the
+        # ledger it made WNBA projections WORSE — MAE 4.15 → 4.41 on the rows it touched — so the
+        # bump added noise without accuracy. Injury OUT-suppression + the questionable flag below
+        # are level-1, shipped and kept.)
         for l in glines:
             line = float(l["line"])
             # Use the model's blended projection directly. (The old per-line guard snapped any
@@ -171,8 +130,5 @@ def attach_basketball(lines: list[dict]) -> int:
             l["bball_confidence"] = proj["confidence"]
             if status == "questionable":     # Day-To-Day/GTD → he may play; flag, don't suppress
                 l["lineup_status"] = "questionable"
-            if blended_b is not None:        # level-2 role variant (ledger-only; A unchanged)
-                l["model_proj_b"] = round(blended_b, 1)
-                l["model_prob_b"] = round(float(((arr_b + (blended_b - mean_b)) > line).mean()), 4)
             done += 1
     return done

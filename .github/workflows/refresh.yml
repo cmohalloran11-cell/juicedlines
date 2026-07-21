@@ -91,7 +91,7 @@ jobs:
 
           publish () {
             cp static/board.json _data/board.json || return 1
-            for f in analytics.json history.json clv.db board.free.json; do
+            for f in analytics.json history.json clv.db board.free.json trust.json; do
               if [ -f "static/$f" ]; then cp "static/$f" "_data/$f"; fi
             done
             git -C _data add -A
