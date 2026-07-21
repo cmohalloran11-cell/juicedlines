@@ -96,15 +96,18 @@ body{background:radial-gradient(1100px 560px at 70% -12%,#1a2e05 0%,var(--bg) 55
 
 /* ───────── tabs ───────── */
 /* ── games ticker ─────────────────────────────────────────────────────────── */
-.gticker{position:relative;overflow:hidden;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(182,240,26,.045),rgba(8,11,5,0));padding:7px 0}
+/* A real horizontal scroll container: the wheel / trackpad / touch scroll it, and JS drifts
+   scrollLeft for the auto-scroll (see setupTicker) so the two never fight. Scrollbar hidden —
+   the edge fades signal it's scrollable. */
+.gticker{position:relative;overflow-x:auto;overflow-y:hidden;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(182,240,26,.045),rgba(8,11,5,0));padding:7px 0;scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior-x:contain}
+.gticker::-webkit-scrollbar{display:none}
 /* fade the edges so cards slide in/out instead of hard-clipping */
 .gticker::before,.gticker::after{content:"";position:absolute;top:0;bottom:0;width:56px;z-index:2;pointer-events:none}
 .gticker::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
 .gticker::after{right:0;background:linear-gradient(270deg,var(--bg),transparent)}
-.gticker-track{display:flex;width:max-content;gap:10px;animation:gticker-scroll 60s linear infinite}
-.gticker:hover .gticker-track{animation-play-state:paused}
-@keyframes gticker-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-@media (prefers-reduced-motion:reduce){.gticker-track{animation:none}.gticker{overflow-x:auto}}
+.gticker-track{display:flex;width:max-content;gap:10px}
+.gticker.grabbing{cursor:grabbing}
+.gticker.grabbing .gcard{cursor:grabbing}
 .gcard{display:flex;align-items:center;gap:8px;padding:5px 12px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02);white-space:nowrap;font-size:12px;flex:none}
 .gcard .sport-pill{font-size:9px;padding:1px 6px}
 .gcard .g-team{display:flex;align-items:center;gap:4px;font-weight:700;color:var(--text)}
@@ -2014,15 +2017,64 @@ function renderTicker(){
       + `<span class="g-props">${g.props}</span></div>`;
   };
   const html = games.map(card).join('');
-  // duplicated once so translateX(-50%) wraps seamlessly with no visible jump
+  // duplicated once so the loop wraps seamlessly (scrollLeft resets by half — see setupTicker)
   track.innerHTML = html + html;
   wrap.style.display = '';
-  // Constant PIXEL speed, not a fixed duration: the animation travels half the track, so a
-  // long slate would otherwise crawl (74 games once produced a 518s loop that looked frozen).
-  requestAnimationFrame(() => {
-    const dist = track.scrollWidth / 2;
-    track.style.animationDuration = Math.max(20, Math.round(dist / 55)) + 's';   // ~55 px/sec
-  });
+  setupTicker();
+}
+
+// Auto-scroll + manual scroll on one real scroll container. `pos` is a FLOAT mirror of
+// scrollLeft: the rAF loop drifts it at a constant pixel speed and writes it back each frame.
+// (Reading scrollLeft back would round to an integer and lose the sub-pixel increment — a ~0.9
+// px/frame drift then rounds to almost nothing, which is why a naive version crawled at ~12
+// px/s instead of 55.) Wheel/drag/native scroll all update the SAME `pos`, so manual and auto
+// never fight. Auto pauses on hover and briefly after any manual input, then resumes. The track
+// is duplicated, so wrapping is just "past the halfway copy → subtract half" (both directions),
+// invisible because the second half is identical to the first.
+let _tickerWired = false, _tickerPause = false, _tickerResumeAt = 0, _tickerPos = 0, _tickerWrote = 0;
+function setupTicker(){
+  const el = document.getElementById('gticker');
+  if(!el || _tickerWired) return;
+  _tickerWired = true;
+  const half = () => (el.firstElementChild ? el.firstElementChild.scrollWidth / 2 : 0);
+  const wrapPos = () => { const h = half(); if(h>0){ if(_tickerPos >= h) _tickerPos -= h; else if(_tickerPos < 0) _tickerPos += h; } };
+  const nudge = () => { _tickerResumeAt = performance.now() + 1500; };   // pause auto ~1.5s after manual input
+
+  el.addEventListener('mouseenter', () => _tickerPause = true);
+  el.addEventListener('mouseleave', () => _tickerPause = false);
+  // vertical wheel → horizontal scroll (standard carousel behaviour); a real horizontal
+  // wheel/trackpad scrolls natively and is picked up by the scroll handler below.
+  el.addEventListener('wheel', (e) => {
+    if(Math.abs(e.deltaY) > Math.abs(e.deltaX)){ _tickerPos += e.deltaY; wrapPos(); el.scrollLeft = _tickerPos; _tickerWrote = Math.round(_tickerPos); e.preventDefault(); }
+    nudge();
+  }, {passive:false});
+  // (native trackpad/touch horizontal scroll is picked up synchronously in the rAF loop below,
+  //  NOT via a scroll event — the scroll event fires async on our OWN writes and, lagging a few
+  //  frames, would keep tripping the manual-input pause and starve the auto-scroll.)
+  // click-and-drag to fling through the games (desktop, no visible scrollbar)
+  let down = false, sx = 0, sp = 0, moved = false;
+  el.addEventListener('pointerdown', (e) => { down = true; moved = false; sx = e.clientX; sp = _tickerPos; el.classList.add('grabbing'); });
+  el.addEventListener('pointermove', (e) => { if(!down) return; const dx = e.clientX - sx; if(Math.abs(dx) > 3) moved = true; _tickerPos = sp - dx; wrapPos(); el.scrollLeft = _tickerPos; _tickerWrote = Math.round(_tickerPos); nudge(); });
+  const up = () => { down = false; el.classList.remove('grabbing'); };
+  el.addEventListener('pointerup', up); el.addEventListener('pointerleave', up);
+  // a drag shouldn't also fire a card's click (openGameModal) — swallow it in the capture phase
+  el.addEventListener('click', (e) => { if(moved){ e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+
+  const reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+  let last = performance.now();
+  const step = (now) => {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    // native trackpad/touch scroll moved scrollLeft out from under us → adopt it (synchronous,
+    // so it can't race the way an async scroll event does).
+    if(!down && Math.abs(el.scrollLeft - _tickerWrote) > 2){ _tickerPos = el.scrollLeft; nudge(); }
+    if(!reduce && !_tickerPause && !down && now > _tickerResumeAt){
+      _tickerPos += 55 * dt;                 // ~55 px/s
+      wrapPos();
+      el.scrollLeft = _tickerPos; _tickerWrote = Math.round(_tickerPos);
+    }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 // ── game-detail modal ───────────────────────────────────────────────────────
