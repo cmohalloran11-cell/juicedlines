@@ -96,11 +96,14 @@ body{background:radial-gradient(1100px 560px at 70% -12%,#1a2e05 0%,var(--bg) 55
 
 /* ───────── tabs ───────── */
 /* ── games ticker ─────────────────────────────────────────────────────────── */
-/* A real horizontal scroll container: the wheel / trackpad / touch scroll it, and JS drifts
-   scrollLeft for the auto-scroll (see setupTicker) so the two never fight. Scrollbar hidden —
-   the edge fades signal it's scrollable. */
-.gticker{position:relative;overflow-x:auto;overflow-y:hidden;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(182,240,26,.045),rgba(8,11,5,0));padding:7px 0;scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior-x:contain}
-.gticker::-webkit-scrollbar{display:none}
+/* A real horizontal scroll container: the wheel / trackpad / touch / drag scroll it, and JS
+   drifts scrollLeft for the auto-scroll (see setupTicker) so the two never fight. A thin lime
+   scrollbar makes it obvious it's draggable. */
+.gticker{position:relative;overflow-x:auto;overflow-y:hidden;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(182,240,26,.045),rgba(8,11,5,0));padding:7px 0 4px;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:rgba(182,240,26,.45) transparent}
+.gticker::-webkit-scrollbar{height:8px}
+.gticker::-webkit-scrollbar-track{background:transparent}
+.gticker::-webkit-scrollbar-thumb{background:rgba(182,240,26,.4);border-radius:99px}
+.gticker::-webkit-scrollbar-thumb:hover{background:rgba(182,240,26,.7)}
 /* fade the edges so cards slide in/out instead of hard-clipping */
 .gticker::before,.gticker::after{content:"";position:absolute;top:0;bottom:0;width:56px;z-index:2;pointer-events:none}
 .gticker::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}

@@ -231,14 +231,17 @@ def statcast_prior_cached(name: str, is_pitcher: bool):
 
 
 def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float = 0.0,
-             trust: float | None = None):
+             trust: float | None = None, anchor: float | None = None):
     """
     Extract a plain projection dict for one prop from a project_player() result.
     `correction` is an optional per-stat calibration offset (measured bias from the ledger)
     that shifts the whole distribution. `trust` (0–1, from db.stat_gammas) anchors the
-    projection toward the market line by (1−trust): where the model beats the line trust≈1
-    (pure model), where it doesn't trust≈0 (defer to the line). The payload always carries
-    `model_raw` = the PRE-anchor mean, so the ledger keeps measuring the raw model's γ.
+    projection toward the FAIR market line by (1−trust): where the model beats the line trust≈1
+    (pure model), where it doesn't trust≈0 (defer to the line). `anchor` = the fair line to
+    shrink toward — the STANDARD line for this player+stat — so demon/goblin variants (warped
+    lines) all show the SAME model-derived projection rather than leaning toward their own
+    warped number; P(over) is still evaluated at THIS variant's `line`. Defaults to `line`.
+    The payload always carries `model_raw` = the PRE-anchor mean (ledger keeps measuring γ).
     None for unsupported stats.
     """
     if not projs:
@@ -261,7 +264,7 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
         if corr is not None:
             arrs = _induce_corr(arrs, corr)
         s = np.sum(arrs, axis=0)
-        return _payload_from_samples(s, line, correction, trust)
+        return _payload_from_samples(s, line, correction, trust, anchor)
 
     table = _PIT if is_pitcher else _BAT
     stat = table.get(key) or _best_match(table, key)
@@ -270,16 +273,17 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
     p = projs.get(stat)
     if p is None:
         return None
-    return _payload(p, line, correction, trust)
+    return _payload(p, line, correction, trust, anchor)
 
 
-def _payload(p, line, correction: float = 0.0, trust: float | None = None) -> dict:
+def _payload(p, line, correction: float = 0.0, trust: float | None = None,
+             anchor: float | None = None) -> dict:
     # Compute from the sample distribution so a calibration `correction` and the `trust`
     # anchor shift the projection AND prob_over together. Projection = the MEAN (continuous);
     # the median of integer count samples is lumpy.
     s = getattr(p, "samples", None)
     if s is not None:
-        out = _payload_from_samples(s, line, correction, trust)
+        out = _payload_from_samples(s, line, correction, trust, anchor)
     else:
         out = {"projection": round(float(p.mean), 2), "median": round(float(p.median), 1),
                "floor": round(float(p.floor), 1), "ceiling": round(float(p.ceiling), 1),
@@ -291,7 +295,8 @@ def _payload(p, line, correction: float = 0.0, trust: float | None = None) -> di
     return out
 
 
-def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None = None) -> dict:
+def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None = None,
+                          anchor: float | None = None) -> dict:
     import numpy as np
     if correction:
         s = np.clip(s + correction, 0, None)     # calibration shift, floored at 0
@@ -299,10 +304,13 @@ def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None 
     proj = raw_mean
     if trust is not None and line is not None:
         t = max(0.0, min(1.0, float(trust)))
-        # Anchor toward the line: projection is EXACTLY t·model + (1−t)·line (the out-of-sample-
-        # validated blend). Shift the distribution to that mean for the percentiles + P(over);
-        # the 0-floor there only nudges those, not the reported projection.
-        proj = t * raw_mean + (1.0 - t) * float(line)
+        # Anchor toward the FAIR line (the standard line = `anchor`; falls back to this variant's
+        # `line`). projection = EXACTLY t·model + (1−t)·fair (the out-of-sample-validated blend),
+        # so demon/goblin variants show the same model-derived number, not their warped line.
+        # Shift the distribution to that mean for the percentiles; then P(over) is taken at THIS
+        # variant's `line` below. The 0-floor only nudges the tails, not the reported projection.
+        fair = float(anchor) if anchor is not None else float(line)
+        proj = t * raw_mean + (1.0 - t) * fair
         s = np.clip(s + (proj - raw_mean), 0.0, None)
     q = np.percentile(s, [10, 25, 50, 75, 90])
     out = {

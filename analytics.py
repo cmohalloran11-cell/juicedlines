@@ -636,6 +636,16 @@ def analyze_mlb(line: dict) -> dict:
             mp = model_projection(vals, float(line_val))
             projection, prob_over, method = mp["projection"], mp["prob_over"], mp["method"]
 
+        # Consistency: the board already anchored this prop toward the FAIR (standard) line and
+        # put the result on the line dict. Prefer it verbatim so the drawer NEVER shows a
+        # different number than the board — in particular a demon/goblin drawer must not re-anchor
+        # toward its own warped line. (Absent — a pure analyze() with no board pass — keep the
+        # recomputed value.)
+        if line.get("model_proj") is not None:
+            projection = line["model_proj"]
+            if line.get("model_prob") is not None:
+                prob_over = line["model_prob"]
+
         hit = {
             "line": line_val,
             "stat": stat_label,
@@ -1500,9 +1510,16 @@ def attach_projections(lines: list[dict]) -> None:
                         pg, is_pitcher,
                         predictive=({"workload_outs": workload} if workload else None))
                 _tw = trust_map.get((l.get("stat_type") or "").lower())
+                # Anchor toward the FAIR (standard) line for this player+stat, not this variant's
+                # own line — so a demon/goblin (warped line) shows the SAME model-derived
+                # projection as the standard line instead of echoing its warped number. No
+                # standard line to anchor to (demon/goblin-only prop) → don't anchor (raw model).
+                _std = std_lines.get((pid, (l.get("stat_type") or "").lower()))
+                _anchor = _median(_std) if _std else None
+                _tw_use = _tw if _anchor is not None else None
                 eng = projector_bridge.for_stat(
                     engine_cache[ck], l.get("stat_type") or "", line_val, is_pitcher, sc_corr,
-                    trust=_tw)
+                    trust=_tw_use, anchor=_anchor)
                 if eng:
                     l["model_proj"] = eng["projection"]
                     l["model_edge"] = round(eng["projection"] - line_val, 1)
@@ -1514,9 +1531,9 @@ def attach_projections(lines: list[dict]) -> None:
                     l["model_n"] = len(pg)
                     # log the PRE-anchor model + the trust applied, so the ledger keeps measuring
                     # the RAW model's γ (never the anchored projection — that would feed back).
-                    if _tw is not None:
+                    if _tw_use is not None:
                         l["model_raw"] = eng.get("model_raw")
-                        l["trust_weight"] = round(float(_tw), 3)
+                        l["trust_weight"] = round(float(_tw_use), 3)
 
 
                     # variant B (A/B test): engine + matchup context + cached xBA prior.
