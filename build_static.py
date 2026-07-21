@@ -218,9 +218,12 @@ def main() -> None:
         # local, published as a TINY file that every build (incl. fast) reads so it never has to
         # re-download the multi-MB ledger just to anchor. NEXT build's attach_projections uses it.
         try:
-            trust = {"MLB": db.stat_gammas("MLB", min_n=120), "updated_at": updated}
+            trust = {"MLB": db.stat_gammas("MLB", min_n=120),
+                     "prob_cal": {"MLB": db.prob_calibration("MLB")},   # honest P(over)
+                     "updated_at": updated}
             OUT_TRUST.write_text(json.dumps(trust, separators=(",", ":")), encoding="utf-8")
-            print(f"  wrote {OUT_TRUST.name}: {len(trust['MLB'])} stats trusted")
+            print(f"  wrote {OUT_TRUST.name}: {len(trust['MLB'])} stats trusted, "
+                  f"prob_cal {trust['prob_cal']['MLB'] or 'none'}")
         except Exception as exc:
             print(f"  trust.json SKIPPED ({exc})")
     except Exception as exc:

@@ -306,6 +306,46 @@ def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
     return out
 
 
+def prob_calibration(sport: str = "MLB", min_n: int = 400) -> dict:
+    """Platt calibration of P(over) — {"a":…, "b":…} for p_cal = sigmoid(a·logit(p)+b). The model's
+    Monte-Carlo distributions are OVERCONFIDENT (measured 2026-07-21: a "62% over" hits ~51%), so a<1
+    shrinks confidence toward 0.5. Fit by IRLS on the graded ledger's `model_raw_prob` (the PRE-
+    calibration prob; COALESCE with close_prob for old rows) so it never feeds back on itself.
+    Validated out-of-sample (train 7d→test 4d): ECE 0.070→0.045, log-loss + Brier both down.
+    Empty {} until ≥min_n rows or a bad fit → probabilities ship uncalibrated, as before."""
+    import numpy as np
+    with _lock, _conn() as c:
+        rows = c.execute(
+            """SELECT close_line L, actual y, COALESCE(model_raw_prob, close_prob) p FROM prop_clv
+               WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL
+               AND COALESCE(model_raw_prob, close_prob) IS NOT NULL
+               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
+            (sport,)).fetchall()
+    pts = [(r["p"], 1.0 if r["y"] > r["L"] else 0.0) for r in rows
+           if r["p"] is not None and abs(r["y"] - r["L"]) > 1e-9]
+    if len(pts) < min_n:
+        return {}
+    p = np.clip(np.array([q for q, _ in pts]), 1e-3, 1 - 1e-3)
+    x = np.log(p / (1 - p))                       # logit(raw prob)
+    y = np.array([o for _, o in pts])
+    a, b = 1.0, 0.0
+    for _ in range(50):                            # Newton / IRLS for 2-param logistic
+        q = 1.0 / (1.0 + np.exp(-np.clip(a * x + b, -30, 30)))
+        g = np.array([np.sum((q - y) * x), np.sum(q - y)])
+        w = q * (1 - q)
+        H = np.array([[np.sum(w * x * x), np.sum(w * x)], [np.sum(w * x), np.sum(w)]])
+        try:
+            step = np.linalg.solve(H + 1e-6 * np.eye(2), g)
+        except Exception:
+            return {}
+        a -= float(step[0]); b -= float(step[1])
+        if np.abs(step).max() < 1e-8:
+            break
+    if not (0.2 < a < 3.0):                         # implausible fit → don't calibrate
+        return {}
+    return {"a": round(a, 4), "b": round(b, 4)}
+
+
 def set_actual(line_id: str, game_date: str, actual: float | None, graded_at: str) -> None:
     """Record the graded outcome. actual=None marks the prop attempted-but-void
     (player didn't play that day), so it stops showing up as pending."""

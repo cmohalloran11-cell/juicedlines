@@ -1345,24 +1345,45 @@ def _stat_corrections() -> dict:
 _TRUST_URL = "https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/trust.json"
 
 
-def _mlb_trust() -> dict:
-    """Per-stat trust weights (0–1) — how much to trust the model over the market line, by stat.
-    The MLB projection is then anchored toward the line by (1−trust): where the model beats the
-    line (Hits/HR) trust≈0.4 keeps most of the model; where it doesn't (Runs) trust≈0.1 defers to
-    the line, killing the noise edges that dragged betting ROI to −11%. Validated out-of-sample
-    2026-07-21 (MAE 3.157→3.076, 18/19 stats better). Read from the published trust.json (cached
-    1h); empty until the first full build writes it → raw projections, same as before."""
+def _trust_json() -> dict:
+    """The published trust.json ({"MLB": {stat→trust}, "prob_cal": {"MLB": {a,b}}, …}), fetched
+    once and cached 1h. Written by the full build; read by every build (incl. fast) so the ledger
+    stays a single small download."""
     def produce():
         try:
             import urllib.request
             url = f"{_TRUST_URL}?t={int(time.time() // 1800)}"      # 30-min cache-bust
             with urllib.request.urlopen(url, timeout=15) as r:
                 d = json.loads(r.read())
-            m = d.get("MLB") if isinstance(d, dict) else None
-            return m if isinstance(m, dict) else {}
+            return d if isinstance(d, dict) else {}
         except Exception:
             return {}
-    return _cached("mlb_trust", 3600, produce)
+    return _cached("trust_json", 3600, produce)
+
+
+def _mlb_trust() -> dict:
+    """Per-stat trust weights (0–1) — how much to trust the model over the market line, by stat.
+    The MLB projection is anchored toward the (standard) line by (1−trust): where the model beats
+    the line (Hits/HR) trust≈0.4 keeps most of the model; where it doesn't (Runs) trust≈0.1 defers
+    to the line. Validated out-of-sample 2026-07-21. Empty until the first full build writes it."""
+    m = _trust_json().get("MLB")
+    return m if isinstance(m, dict) else {}
+
+
+def _mlb_prob_cal() -> dict:
+    """Platt calibration {a,b} for P(over) — the model's distributions are overconfident, so this
+    (a<1) shrinks confidence toward 0.5 to make the probabilities honest. Empty → no calibration."""
+    pc = (_trust_json().get("prob_cal") or {}).get("MLB")
+    return pc if isinstance(pc, dict) else {}
+
+
+def _apply_prob_cal(p, cal: dict):
+    """p_cal = sigmoid(a·logit(p)+b). Identity if no calibration."""
+    if not cal or p is None:
+        return p
+    x = min(0.999, max(0.001, float(p)))
+    z = float(cal.get("a", 1.0)) * math.log(x / (1.0 - x)) + float(cal.get("b", 0.0))
+    return round(1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, z)))), 4)
 
 
 def _is_allstar_mlb(l: dict) -> bool:
@@ -1443,6 +1464,7 @@ def attach_projections(lines: list[dict]) -> None:
         corr = _stat_corrections()              # per-stat calibration offsets (ledger-driven)
         trust_map = _mlb_trust()                # per-stat γ trust — anchor toward the line where
                                                 # the model doesn't beat it (ledger-driven)
+        prob_cal = _mlb_prob_cal()              # Platt calibration → honest P(over) (ledger-driven)
         lineups = _todays_lineups()             # today's confirmed batting orders (empty until posted)
 
         engine_cache: dict[tuple, Any] = {}     # (pid,is_pitcher[,'b'/'c'/'w']) → engine projections
@@ -1527,7 +1549,12 @@ def attach_projections(lines: list[dict]) -> None:
                     l["model_ceiling"] = eng["ceiling"]
                     l["proj_kind"] = "engine"
                     if eng.get("prob_over") is not None:
-                        l["model_prob"] = eng["prob_over"]
+                        # calibrate P(over) → honest probability; log the PRE-calibration prob so
+                        # the ledger keeps measuring raw reliability (never feeds back on itself).
+                        _rp = eng["prob_over"]
+                        l["model_prob"] = _apply_prob_cal(_rp, prob_cal)
+                        if prob_cal:
+                            l["model_raw_prob"] = _rp
                     l["model_n"] = len(pg)
                     # log the PRE-anchor model + the trust applied, so the ledger keeps measuring
                     # the RAW model's γ (never the anchored projection — that would feed back).
@@ -1601,7 +1628,9 @@ def attach_projections(lines: list[dict]) -> None:
             l["proj_kind"] = "model"
             prob = mlb.empirical_prob_over(vals, line_val)
             if prob is not None:
-                l["model_prob"] = round(prob, 3)
+                l["model_prob"] = _apply_prob_cal(round(prob, 3), prob_cal)
+                if prob_cal:
+                    l["model_raw_prob"] = round(prob, 3)
             l["model_n"] = len(vals)
 
     _attach_soccer_projections(lines)
