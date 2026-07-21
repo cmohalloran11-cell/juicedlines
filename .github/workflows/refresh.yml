@@ -42,13 +42,15 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 200          # hard stop below GitHub's 6h job cap
+    timeout-minutes: 340          # hard stop below GitHub's 6h job cap
     env:
-      LOOP_HOURS: "3"             # recycle the runner after this long
+      LOOP_HOURS: "5"             # recycle the runner after this long (fewer restarts = fewer
+                                  # cron-throttle gaps, since GITHUB_TOKEN can't self-retrigger)
       CYCLE_SECONDS: "300"        # target refresh cadence
-      FULL_EVERY_SECONDS: "3600"  # how often to do a FULL build (analytics + ledger)
-      ACTIVE_START_UTC: "16"      # loop only between these UTC hours (wraps past midnight):
-      ACTIVE_END_UTC: "6"         # 16:00–06:00 UTC ≈ noon–2am ET, i.e. every game window
+      FULL_EVERY_SECONDS: "3600"  # how often to do a FULL build (analytics + ledger + trust.json)
+      ACTIVE_START_UTC: "13"      # loop only between these UTC hours (wraps past midnight):
+      ACTIVE_END_UTC: "7"         # 13:00–07:00 UTC ≈ 9am–3am ET — props post in the morning,
+                                  # late West-coast games end ~2am ET, so this covers the day
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -70,9 +72,14 @@ jobs:
             H=$(date -u +%-H)
             if [ "$ACTIVE_START_UTC" -le "$ACTIVE_END_UTC" ]; then
               [ "$H" -ge "$ACTIVE_START_UTC" ] && [ "$H" -lt "$ACTIVE_END_UTC" ]
-            else   # window wraps midnight (e.g. 16 → 6)
+            else   # window wraps midnight (e.g. 13 → 7)
               [ "$H" -ge "$ACTIVE_START_UTC" ] || [ "$H" -lt "$ACTIVE_END_UTC" ]
             fi
+          }
+          mins_until_open () {   # minutes until the window next opens; 0 if inside it
+            if in_active_window; then echo 0; return; fi
+            NM=$(( $(date -u +%-H) * 60 + $(date -u +%-M) ))
+            echo $(( (ACTIVE_START_UTC * 60 - NM + 1440) % 1440 ))
           }
 
           # Clone the data branch ONCE per job. A fresh `git init` + force-push shares no
@@ -104,47 +111,40 @@ jobs:
           }
 
           CYCLE=0
-          while :; do
+          run_cycle () {   # one build (mode chosen by the clock) + publish; updates PUBLISH_FAILS
             CYCLE=$(( CYCLE + 1 ))
-            START=$(date -u +%s)
-
-            if [ $(( START - LAST_FULL )) -ge "$FULL_EVERY_SECONDS" ]; then
-              MODE=full; LAST_FULL=$START
-            else
-              MODE=fast
-            fi
-
+            local START MODE; START=$(date -u +%s)
+            if [ $(( START - LAST_FULL )) -ge "$FULL_EVERY_SECONDS" ]; then MODE=full; LAST_FULL=$START; else MODE=fast; fi
             echo "::group::cycle $CYCLE ($MODE) $(date -u +%T)Z"
             if [ "$MODE" = full ]; then
               python build_static.py || echo "build FAILED — keeping the previous board"
             else
               FAST_REFRESH=1 python build_static.py || echo "build FAILED — keeping the previous board"
             fi
-            if publish; then
-              PUBLISH_FAILS=0
-            else
-              PUBLISH_FAILS=$(( PUBLISH_FAILS + 1 ))
-              echo "publish FAILED ($PUBLISH_FAILS in a row)"
-            fi
+            if publish; then PUBLISH_FAILS=0; else PUBLISH_FAILS=$(( PUBLISH_FAILS + 1 )); echo "publish FAILED ($PUBLISH_FAILS in a row)"; fi
             echo "::endgroup::"
+            echo "cycle $CYCLE ($MODE) took $(( $(date -u +%s) - START ))s"
+          }
 
-            NOW=$(date -u +%s)
-            echo "cycle $CYCLE ($MODE) took $(( NOW - START ))s"
-
-            # GITHUB_TOKEN can expire inside a long job. If publishing keeps failing the board
-            # is silently frozen, so bail out and let a fresh run (with a fresh token) take
-            # over rather than looping for hours writing nothing.
-            if [ "$PUBLISH_FAILS" -ge 2 ]; then
-              echo "publish failing repeatedly (token expired?) — exiting for a fresh run"; break
+          # Build every ~5 min WHILE in the game window. Outside it: if the window opens soon,
+          # IDLE (keep the job alive and roll into the window) rather than exit — otherwise a run
+          # that fires just before the window would exit and leave the board frozen until the
+          # throttled cron happens to fire again (GITHUB_TOKEN can't self-retrigger). Far from
+          # the window, do ONE refresh and exit so overnight fires don't idle a runner for hours.
+          while :; do
+            [ "$(date -u +%s)" -ge "$LOOP_UNTIL" ] && { echo "loop budget reached — exiting for a fresh run"; break; }
+            if in_active_window; then
+              CS=$(date -u +%s)
+              run_cycle
+              [ "$PUBLISH_FAILS" -ge 2 ] && { echo "publish failing repeatedly (token expired?) — exiting for a fresh run"; break; }
+              SLEEP=$(( CYCLE_SECONDS - ($(date -u +%s) - CS) ))
+              [ "$SLEEP" -gt 0 ] && { echo "sleeping ${SLEEP}s"; sleep "$SLEEP"; }
+            else
+              OPENS=$(mins_until_open)
+              if [ "$OPENS" -le 25 ]; then
+                echo "window opens in ${OPENS}m — idling to roll in"; sleep 300
+              else
+                echo "off-hours (${OPENS}m to window) — single refresh, then exit"; run_cycle; break
+              fi
             fi
-
-            if [ "$NOW" -ge "$LOOP_UNTIL" ]; then
-              echo "loop budget reached — exiting so a fresh run takes over"; break
-            fi
-            if ! in_active_window; then
-              echo "outside the active window ($ACTIVE_START_UTC:00–$ACTIVE_END_UTC:00 UTC) — exiting"; break
-            fi
-
-            SLEEP=$(( CYCLE_SECONDS - (NOW - START) ))
-            if [ "$SLEEP" -gt 0 ]; then echo "sleeping ${SLEEP}s"; sleep "$SLEEP"; fi
           done
