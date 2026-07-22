@@ -474,7 +474,7 @@ input[type=text]{min-width:190px}
 </style>
   <div style="max-width:900px;margin:0 auto">
     <h3 style="margin:18px 0 4px">Parlay Builder</h3>
-    <div class="muted-note">One entry = <b>one book, standard picks only</b> — goblins/demons have their own payouts and can't be freely mixed. Each leg uses the model's P(over); the parlay chance multiplies the legs assuming they're <b>independent</b> (correlated legs deviate). MLB probabilities are calibrated; <b>World Cup legs run overconfident</b> — treat those with caution.</div>
+    <div class="muted-note">One entry = <b>one book, standard picks only</b> — goblins/demons have their own payouts and can't be freely mixed. Each leg uses the model's P(over); the parlay chance multiplies the legs assuming they're <b>independent</b> (correlated legs deviate). MLB probabilities are calibrated from the ledger.</div>
 
     <div class="parlay-head-row">
       <h4 style="margin-bottom:0;display:flex;align-items:center;gap:7px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="none" style="color:var(--accent);flex:none"><path d="M12 2.5l2.9 6 6.6.6-5 4.4 1.5 6.5L12 16.9 6 20.5l1.5-6.5-5-4.4 6.6-.6z" fill="currentColor"/></svg> Suggested Parlays</h4>
@@ -485,10 +485,8 @@ input[type=text]{min-width:190px}
         </div>
         <div class="tchips" id="suggest-sports">
           <button class="tchip on" data-sp="MLB" onclick="toggleSuggestSport('MLB')">MLB</button>
-          <button class="tchip on" data-sp="World Cup" onclick="toggleSuggestSport('World Cup')">World Cup</button>
           <button class="tchip on" data-sp="Tennis" onclick="toggleSuggestSport('Tennis')">Tennis</button>
           <button class="tchip on" data-sp="WNBA" onclick="toggleSuggestSport('WNBA')">WNBA</button>
-          <button class="tchip on" data-sp="NBA Summer League" onclick="toggleSuggestSport('NBA Summer League')">NBA SL</button>
         </div>
       </div>
     </div>
@@ -518,10 +516,8 @@ input[type=text]{min-width:190px}
       <select id="f-sport" onchange="applyFilters()">
         <option value="all">All Sports</option>
         <option value="MLB">⚾ MLB</option>
-        <option value="World Cup">⚽ World Cup</option>
         <option value="Tennis">🎾 Tennis</option>
         <option value="WNBA">🏀 WNBA</option>
-        <option value="NBA Summer League">🏀 NBA Summer League</option>
       </select>
     </div>
     <div class="filter-group">
@@ -573,10 +569,8 @@ input[type=text]{min-width:190px}
       <label>Sport (click to toggle)</label>
       <div class="tchips" id="edge-sports">
         <button class="tchip on" data-sport="MLB" onclick="toggleEdgeSport('MLB')">MLB</button>
-        <button class="tchip on" data-sport="World Cup" onclick="toggleEdgeSport('World Cup')">World Cup</button>
         <button class="tchip on" data-sport="Tennis" onclick="toggleEdgeSport('Tennis')">Tennis</button>
         <button class="tchip on" data-sport="WNBA" onclick="toggleEdgeSport('WNBA')">WNBA</button>
-        <button class="tchip on" data-sport="NBA Summer League" onclick="toggleEdgeSport('NBA Summer League')">NBA SL</button>
       </div>
     </div>
     <div class="filter-group">
@@ -1145,12 +1139,12 @@ function toggleGroup(key){
 
 function renderStats(filtered){
   const mlb=filtered.filter(l=>l.sport==='MLB').length;
-  const wc=filtered.filter(l=>l.sport==='World Cup').length;
+  const wnba=filtered.filter(l=>l.sport==='WNBA').length;
   document.getElementById('stats-bar').innerHTML=[
     chip(groups.length.toLocaleString(),'Players / Markets','accent'),
     chip(filtered.length.toLocaleString(),'Total Lines',''),
     chip(mlb.toLocaleString(),'MLB','green'),
-    chip(wc.toLocaleString(),'World Cup','teal'),
+    chip(wnba.toLocaleString(),'WNBA','orange'),
     chip(filtered.filter(l=>l.source==='underdog').length.toLocaleString(),'Underdog','orange'),
     chip(filtered.filter(l=>l.source==='prizepicks').length.toLocaleString(),'PrizePicks','gold'),
   ].join('');
@@ -1523,7 +1517,7 @@ function toggleEdgeType(t){
 }
 // which sports the Edges tab shows (all on by default). Toggling also rebuilds the stat
 // dropdown so you can't pick a stat from a sport you've turned off.
-const edgeSports=new Set(['MLB','World Cup','Tennis','WNBA','NBA Summer League']);
+const edgeSports=new Set(['MLB','Tennis','WNBA']);
 function toggleEdgeSport(s){
   if(edgeSports.has(s)) edgeSports.delete(s); else edgeSports.add(s);
   document.querySelector(`#edge-sports button[data-sport="${s}"]`)?.classList.toggle('on');
@@ -1751,7 +1745,7 @@ let parlayBook = 'prizepicks';
 const bookLabel = b => b==='prizepicks' ? 'PrizePicks' : 'Underdog';
 const parlayPayouts = () => PAYOUTS_BY_BOOK[parlayBook] || PAYOUTS_BY_BOOK.prizepicks;
 const isStd = l => l.odds_type==='standard' || !l.odds_type;   // no goblin/demon
-const suggestSports = new Set(['MLB','World Cup','Tennis','WNBA','NBA Summer League']);
+const suggestSports = new Set(['MLB','Tennis','WNBA']);
 let parlaySlip = [];      // [{id, side}]  — all from the same book
 let parlayStake = 10;
 
