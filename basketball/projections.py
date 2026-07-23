@@ -16,7 +16,7 @@ import numpy as np
 
 from . import BASE_STATS, COMBOS
 from .config import cfg, league_cfg
-from .data import gamelog_source, background_source
+from .data import gamelog_source
 from .model import rates as R
 from .model import priors as PR
 from .model import minutes as MIN
@@ -101,9 +101,6 @@ def resolve(league: str, name: str):
 
 def _confidence(eff_games: float, sample_weight: float, league: str) -> str:
     hi, md = cfg("confidence", "high"), cfg("confidence", "medium")
-    if league == "NBA Summer League":
-        # wide by design — cap at medium; low unless a few games + real sample weight
-        return "medium" if (eff_games >= 4 and sample_weight >= 0.12) else "low"
     if eff_games >= hi:
         return "high"
     if eff_games >= md:
@@ -129,19 +126,7 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
     for g in games:                                    # gamelog omits identity fields
         g.player, g.team, g.team_id = ref.name, ref.team, ref.team_id
 
-    # prior (the league hook)
-    bg = None
-    if league == "NBA Summer League":
-        try:
-            bg = background_source().background(ref.name)
-        except Exception:
-            bg = None
-        if bg:
-            prior_poss, _ = PR.translated_prior_poss(bg, lg_pace)
-        else:
-            prior_poss = PR.positional_prior_poss(ref.position, lg_pace, league)
-    else:
-        prior_poss = PR.positional_prior_poss(ref.position, lg_pace, league)
+    prior_poss = PR.positional_prior_poss(ref.position, lg_pace, league)
 
     # rates (shrunk toward prior)
     if games:
@@ -154,7 +139,7 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
     # minutes (own component)
     proj_min, min_sd = MIN.project_minutes(
         rates.minutes_sample, league, lc.get("minutes_shrink_games", 4),
-        lc.get("min_sd_frac", 0.15), background=bg, news_minutes=news_minutes)
+        lc.get("min_sd_frac", 0.15), news_minutes=news_minutes)
 
     # ── matchup: real pace + opponent defense (was a league-baseline stub) ──────
     # Both were built as hooks but never supplied, so every projection ran at league pace
@@ -188,16 +173,14 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
 
     # Offensive-rebound share for the derived orb/drb split. WNBA's athlete gamelog carries only
     # totalRebounds, so the split comes from box scores (fewer games, but a share is a stable
-    # skill); Summer League is already box-score-sourced, so its own games carry it. Shrunk
-    # toward the positional baseline — which for an SL player is itself informed by their
-    # college split, the same translated-prior idea the rest of SL runs on.
+    # skill). Shrunk toward the positional baseline.
     split_games = [g for g in games if (getattr(g, "orb", 0) or getattr(g, "drb", 0))]
     if not split_games:
         try:
             split_games = src._boxscore_index(league).get(str(ref.id), []) or []
         except Exception:
             split_games = []
-    orb_share = PR.fit_orb_share(split_games, ref.position, bg)
+    orb_share = PR.fit_orb_share(split_games, ref.position)
 
     sim = E.simulate(rates, proj_min, min_sd, pace, lc.get("pace_sd_frac", 0.06),
                      game_len, lc.get("disp", 0.12), opp_adj=opp_adj,
@@ -211,7 +194,6 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
         "eff_games": rates.eff_games, "n_games": rates.n_games,
         "sample_weight": rates.sample_weight,
         "confidence": _confidence(rates.eff_games, rates.sample_weight, league),
-        "prior_source": ("translated" if bg else "positional"),
         "sim": sim, "rates": rates,
     }
     if news_minutes is None:

@@ -4,7 +4,7 @@ analytics.py — per-player analytics for the research drawer.
 Given one normalized Line, returns a structured analytics payload: recent form,
 hit-rate vs the posted line, vs-opponent splits, headshots/logos, and a plain
 narrative. MLB is fully wired against the free official Stats API
-(statsapi.mlb.com). World Cup gets a lighter view (matchup + our own line-movement
+(statsapi.mlb.com). Tennis and WNBA get their own models (matchup + line-movement
 history) because there is no equivalent free per-player game-log feed.
 
     ┌──────────────────────────────────────────────────────────────────┐
@@ -45,7 +45,7 @@ try:
 except Exception:
     _MLB_OK = False
 
-# History DB for line-movement based soccer analytics
+# History DB for line-movement based analytics
 import db
 
 # stat-projector engine (optional) — powers MLB projections with a real
@@ -721,96 +721,6 @@ def analyze_mlb(line: dict) -> dict:
     }
 
 
-# ────────────────────────────────────────── Soccer analyzer ──────────────────
-
-def analyze_soccer(line: dict) -> dict:
-    """
-    Lighter view: matchup + our own stored line-movement history + implied prices.
-    (No free per-player soccer game-log feed comparable to statsapi; this is the
-    honest best-effort until a real source is wired — see model hook note.)
-    """
-    hist = db.get_history(line["id"], limit=50)
-    movement = [{"ts": h["ts"], "line": h["line_value"],
-                 "over": h["over_implied"]} for h in hist]
-    country = line.get("country") or line.get("team")
-    # Honest, method-specific description of how THIS number was produced (the old blanket
-    # "Poisson from market price / no game-log feed" note was stale — the ESPN recent-form
-    # path has long been the primary projector, so the note contradicted the actual model).
-    kind = line.get("proj_kind")
-    n, stat = line.get("model_n"), (line.get("stat_type") or "this stat").lower()
-    form = line.get("model_form")
-    n_wc, n_club = line.get("model_n_wc") or 0, line.get("model_n_club") or 0
-    seen = f" (~{form} {stat}/game)" if form is not None else ""
-    if kind == "final":              # one-off hand-set projection for the World Cup final
-        note = ("Final projection: the player's role and tournament rate weighed against the "
-                "game script — Spain's ~64% possession and Argentina's deeper block — and "
-                "priced against this line.")
-    elif kind == "espn" and n_wc:    # grounded in THIS World Cup's matches + a few club games
-        club_part = (f" plus {n_club} recent club game{'' if n_club == 1 else 's'}") if n_club else ""
-        note = (f"Projected from {n_wc} World Cup match{'' if n_wc == 1 else 'es'}{seen}{club_part}, "
-                f"then blended toward the market line.")
-    elif kind == "espn" and n:      # no WC games yet → recent club form, deflated to the WC
-        note = (f"Projected from the player's last {int(n)} club matches{seen}, recency-weighted and "
-                f"adjusted for the tougher World Cup environment, then blended toward the market line.")
-    elif kind == "espn":            # committed club-season rate (e.g. tackles — no per-game log)
-        note = (f"Projected from the player's club-season rate{seen}, adjusted for the World Cup and "
-                f"blended 50/50 with the market line.")
-    elif kind == "poisson":
-        note = ("Expected count implied by the de-vigged two-sided market price (Poisson). "
-                "No club game-log covers this stat, so the market is the sharpest signal.")
-    else:  # consensus / market fallback
-        note = ("No player game-log covers this stat, so we show the market line itself — "
-                "there's no independent model edge here.")
-    return {
-        "available": True,
-        "sport": "World Cup",
-        "player": line.get("player"),
-        "player_type": line.get("position") or "Player",
-        "headshot": line.get("headshot"),
-        "team": country and {"name": country, "flag": _flag(country)},
-        "matchup": line.get("matchup"),
-        "stat": line.get("stat_type"),
-        "line": line.get("line"),
-        "over_price": line.get("over_price"),
-        "under_price": line.get("under_price"),
-        "model_proj": line.get("model_proj"),
-        "model_edge": line.get("model_edge"),
-        "model_prob": line.get("model_prob"),
-        "model_n": line.get("model_n"),
-        "model_form": form,
-        "proj_kind": kind,
-        "movement": movement,
-        "note": note,
-    }
-
-
-_FLAGS = {
-    "france": "🇫🇷", "argentina": "🇦🇷", "brazil": "🇧🇷", "england": "🏴",
-    "spain": "🇪🇸", "portugal": "🇵🇹", "germany": "🇩🇪", "usa": "🇺🇸",
-    "united states": "🇺🇸", "belgium": "🇧🇪", "netherlands": "🇳🇱",
-    "italy": "🇮🇹", "croatia": "🇭🇷", "uruguay": "🇺🇾", "mexico": "🇲🇽",
-    "senegal": "🇸🇳", "japan": "🇯🇵", "south korea": "🇰🇷", "korea": "🇰🇷",
-    "morocco": "🇲🇦", "colombia": "🇨🇴", "switzerland": "🇨🇭", "denmark": "🇩🇰",
-    "poland": "🇵🇱", "australia": "🇦🇺", "canada": "🇨🇦", "ghana": "🇬🇭",
-    "ecuador": "🇪🇨", "serbia": "🇷🇸", "egypt": "🇪🇬", "nigeria": "🇳🇬",
-    "wales": "🏴", "iran": "🇮🇷", "saudi arabia": "🇸🇦", "qatar": "🇶🇦",
-    "cameroon": "🇨🇲", "ivory coast": "🇨🇮", "paraguay": "🇵🇾", "peru": "🇵🇪",
-    "chile": "🇨🇱", "austria": "🇦🇹", "turkey": "🇹🇷", "turkiye": "🇹🇷",
-    # FIFA 3-letter codes
-    "fra": "🇫🇷", "arg": "🇦🇷", "bra": "🇧🇷", "eng": "🏴", "esp": "🇪🇸",
-    "por": "🇵🇹", "ger": "🇩🇪", "bel": "🇧🇪", "ned": "🇳🇱", "ita": "🇮🇹",
-    "usa": "🇺🇸", "uru": "🇺🇾", "mex": "🇲🇽", "sen": "🇸🇳", "cro": "🇭🇷",
-    # ISO-3 codes (Underdog `country` field)
-    "prt": "🇵🇹", "deu": "🇩🇪", "gbr": "🏴", "nld": "🇳🇱", "hrv": "🇭🇷",
-    "ury": "🇺🇾", "che": "🇨🇭", "dnk": "🇩🇰", "pol": "🇵🇱", "aus": "🇦🇺",
-    "can": "🇨🇦", "gha": "🇬🇭", "ecu": "🇪🇨", "srb": "🇷🇸", "egy": "🇪🇬",
-    "nga": "🇳🇬", "irn": "🇮🇷", "sau": "🇸🇦", "qat": "🇶🇦", "cmr": "🇨🇲",
-    "civ": "🇨🇮", "pry": "🇵🇾", "per": "🇵🇪", "chl": "🇨🇱", "aut": "🇦🇹",
-    "tur": "🇹🇷", "jpn": "🇯🇵", "kor": "🇰🇷", "mar": "🇲🇦", "col": "🇨🇴",
-    "mex_": "🇲🇽", "nor": "🇳🇴", "swe": "🇸🇪", "sco": "🏴",
-}
-
-
 def _flag(team: str | None) -> str:
     if not team:
         return ""
@@ -823,13 +733,10 @@ def _flag(team: str | None) -> str:
 def enrich_lines(lines: list[dict]) -> None:
     """
     Mutate lines in place, attaching cheap display fields the board uses:
-    MLB headshot + team logo + position; World Cup country flag. All from the
+    MLB headshot + team logo + position; tennis country flag. All from the
     cached player/team maps — one dict lookup per line, no extra HTTP.
     """
     if not _MLB_OK:
-        for l in lines:
-            if l.get("sport") == "World Cup" and l.get("team"):
-                l["flag"] = _flag(l["team"])
         return
     try:
         teams = _team_map()
@@ -851,9 +758,7 @@ def enrich_lines(lines: list[dict]) -> None:
                     l["team_logo"] = _TEAM_LOGO.format(id=tid)
                     if not l.get("team"):
                         l["team"] = (teams["_by_id"].get(tid, {}) or {}).get("abbr")
-        elif sport == "World Cup":
-            l["flag"] = _flag(l.get("country") or l.get("team"))
-        elif sport in ("WNBA", "NBA Summer League"):
+        elif sport == "WNBA":
             try:
                 from basketball.analytics import team_asset
                 from basketball import projections as _bp
@@ -1198,8 +1103,7 @@ def attach_game_ids(lines: list[dict]) -> None:
 
     Best-effort per sport (a line without one simply can't be correlation-checked):
       MLB                        → MLB's own gamePk for the team's next scheduled game
-      WNBA / Summer League       → the player's team + today's opponent (team-id pair)
-      World Cup                  → country + opposing country
+      WNBA                       → the player's team + today's opponent (team-id pair)
       Tennis                     → the two players in the match
     """
     mlb_slate: dict = {}
@@ -1229,15 +1133,13 @@ def attach_game_ids(lines: list[dict]) -> None:
                 pk = mlb_slate.get(tid) if tid else None
                 if pk:
                     gid = f"MLB:{pk}"        # MLB's own gamePk — both teams agree by definition
-            elif sport in ("WNBA", "NBA Summer League") and l.get("player"):
+            elif sport == "WNBA" and l.get("player"):
                 from basketball import projections as _bp
                 ref = _bp.resolve(sport, l["player"])
                 if ref and ref.team_id:
                     opp = _bb(sport).get(str(ref.team_id))
                     if opp:
                         gid = _pair_id(sport, ref.team_id, opp)
-            elif sport == "World Cup":
-                gid = _pair_id("WC", l.get("country") or l.get("team"), l.get("matchup"))
             elif sport == "Tennis":
                 gid = _pair_id("TN", l.get("player"), l.get("matchup"))
         except Exception:
@@ -1419,8 +1321,6 @@ def attach_projections(lines: list[dict]) -> None:
     Attach `model_proj` + `model_edge` (+ `proj_kind`) to every line so the board
     can show a projection per row.
       • MLB  → empirical recent-game average for the prop's stat ("model").
-      • World Cup → cross-book consensus of the posted lines ("consensus"),
-        since there is no free soccer game-log feed.
     MLB All-Star props (AL/NL teams) are skipped — an exhibition with unknown playing
     time can't be projected from full-game logs (see _is_allstar_mlb).
     """
@@ -1642,8 +1542,6 @@ def attach_projections(lines: list[dict]) -> None:
                     l["model_raw_prob"] = round(prob, 3)
             l["model_n"] = len(vals)
 
-    _attach_soccer_projections(lines)
-
     # tennis: serve/return + Monte-Carlo model on live ATP/WTA prop lines
     try:
         from tennis.board import attach_tennis
@@ -1651,560 +1549,12 @@ def attach_projections(lines: list[dict]) -> None:
     except Exception as exc:
         print(f"[tennis] attach failed: {exc}")
 
-    # basketball: per-possession core on live WNBA + NBA Summer League prop lines
+    # basketball: per-possession core on live WNBA prop lines
     try:
         from basketball.board import attach_basketball
         attach_basketball(lines)
     except Exception as exc:
         print(f"[basketball] attach failed: {exc}")
-
-
-# ───────────────────────────────────── soccer Poisson model ──────────────────
-
-def _poisson_sf(k: int, lam: float) -> float:
-    """P(X >= k) for a Poisson(lam) count."""
-    if k <= 0:
-        return 1.0
-    cdf = math.exp(-lam)   # P(X=0)
-    term = cdf
-    for i in range(1, k):
-        term *= lam / i
-        cdf += term
-    return max(0.0, min(1.0, 1.0 - cdf))
-
-
-def _prob_over(line: float, lam: float) -> float:
-    """
-    P(count strictly beats the line) under Poisson(lam).
-
-    Over = X >= floor(line)+1, so a WHOLE-NUMBER line correctly treats X==line as a PUSH
-    (not a win). The old `ceil(line)` counted the push as an over on integer lines — e.g. a
-    "3" shots line used P(X>=3) instead of P(X>=4) — which inflated P(over) and the shown
-    edge on exactly the integer lines the books post. For a .5 line the two agree.
-    """
-    return round(_poisson_sf(max(1, int(math.floor(line)) + 1), lam), 3)
-
-
-def _am_prob(american: Any) -> Optional[float]:
-    """American odds → implied probability (with vig)."""
-    if american in (None, ""):
-        return None
-    try:
-        n = float(str(american).strip())
-    except (TypeError, ValueError):
-        return None
-    return (-n) / ((-n) + 100) if n < 0 else 100 / (n + 100)
-
-
-def _lambda_from_over_prob(line: float, p_over: float) -> Optional[float]:
-    """
-    Solve the Poisson mean λ such that P(X >= ceil(line)) == p_over (bisection).
-    This is the market's de-vigged expected count for the stat — the sharpest
-    projection available for soccer, where there's no free per-game stat feed.
-    """
-    if p_over is None or not (0.02 < p_over < 0.98):
-        return None
-    k = max(1, math.ceil(line))
-    lo, hi = 1e-4, 150.0
-    for _ in range(50):
-        mid = (lo + hi) / 2
-        if _poisson_sf(k, mid) < p_over:
-            lo = mid
-        else:
-            hi = mid
-    return round((lo + hi) / 2, 3)
-
-
-# ─────────────────────────────── ESPN soccer per-game stats ──────────────────
-# Free, unofficial ESPN API. World Cup rosters give a clean name→athleteId map;
-# the athlete gamelog gives per-game G/A/shots/SOT/fouls/cards/offsides — enough
-# for a real recency projection (the soccer analog of MLB's statsapi logs).
-
-_ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world"
-_ESPN_GL = "https://site.web.api.espn.com/apis/common/v3/sports/soccer/all/athletes/{id}/gamelog"
-_espn_session = requests.Session()
-_espn_session.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
-
-# prop stat label (normalized) → function over one ESPN per-game stat dict.
-# EXACT match only — ESPN's gamelog only has goals/assists/shots/SOT/fouls/offsides/
-# cards. Anything else (shots ASSISTED, goals ALLOWED, saves, passes, tackles,
-# clearances, crosses, combos, keeper stats) must NOT be force-mapped to a base
-# stat — it falls back to the market model instead. Loose substring matching was
-# producing nonsense (e.g. "Shots Assisted"→shots taken, "Goals Allowed"→0).
-_ESPN_STAT: dict[str, Callable[[dict], float]] = {
-    "goals": lambda g: g.get("totalGoals", 0),
-    "assists": lambda g: g.get("goalAssists", 0),
-    "goals assists": lambda g: g.get("totalGoals", 0) + g.get("goalAssists", 0),
-    "goals + assists": lambda g: g.get("totalGoals", 0) + g.get("goalAssists", 0),
-    "goal + assist": lambda g: g.get("totalGoals", 0) + g.get("goalAssists", 0),
-    "shots": lambda g: g.get("totalShots", 0),
-    "shots attempted": lambda g: g.get("totalShots", 0),
-    "shots on target": lambda g: g.get("shotsOnTarget", 0),
-    "fouls": lambda g: g.get("foulsCommitted", 0),
-    "fouls drawn": lambda g: g.get("foulsSuffered", 0),
-    "offsides": lambda g: g.get("offsides", 0),
-    "cards": lambda g: g.get("yellowCards", 0) + g.get("redCards", 0),
-}
-
-
-def _espn_stat_fn(label: str) -> Optional[Callable[[dict], float]]:
-    n = _norm(label)
-    if "(combo)" in n or re.search(r"\binning\b|1st|first goal|period|\b1h\b|\b2h\b|half", n):
-        return None  # combos / partial-game props can't come from full-game logs
-    return _ESPN_STAT.get(n)  # exact match only — no risky substring matching
-
-
-def _espn_roster_map() -> dict:
-    """normalized player name → ESPN athleteId, from all World Cup rosters."""
-    def produce() -> dict:
-        out: dict[str, str] = {}
-        try:
-            tr = _espn_session.get(f"{_ESPN_BASE}/teams", timeout=20).json()
-            teams = tr["sports"][0]["leagues"][0]["teams"]
-        except Exception:
-            return out
-
-        def fetch(tid):
-            res = {}
-            try:
-                rr = _espn_session.get(f"{_ESPN_BASE}/teams/{tid}/roster", timeout=20).json()
-                for a in rr.get("athletes", []):
-                    for p in (a.get("items", [a]) if "items" in a else [a]):
-                        nm = mlb._norm_name(p.get("displayName", ""))
-                        if nm and p.get("id"):
-                            res[nm] = str(p["id"])
-            except Exception:
-                pass
-            return res
-
-        with ThreadPoolExecutor(max_workers=10) as ex:
-            for d in ex.map(fetch, [t["team"]["id"] for t in teams]):
-                out.update(d)
-        return out
-    return _cached("espn_roster", 12 * 3600, produce)
-
-
-def _espn_gamelog(athlete_id: str) -> list[dict]:
-    """
-    Per-game stat dicts for an ESPN athlete (current-season scoped), cached.
-
-    Each game is tagged with `_comp` = the seasonType's competition label (e.g. "2026 FIFA
-    World Cup", "2025-26 Serie A"), so the projection can tell THIS World Cup's matches apart
-    from club games and weight them differently. The `_comp` key is underscore-prefixed so it
-    never collides with ESPN's camelCase stat names (totalShots, goalAssists, …).
-    """
-    def produce() -> list[dict]:
-        try:
-            d = _espn_session.get(_ESPN_GL.format(id=athlete_id), timeout=20).json()
-        except Exception:
-            return []
-        names = d.get("names") or []
-        if not names:
-            return []
-        games = []
-        for stp in d.get("seasonTypes", []) or []:
-            comp = stp.get("displayName") or stp.get("name") or ""
-            for cat in stp.get("categories", []) or []:
-                for ev in cat.get("events", []) or []:
-                    stats = ev.get("stats") or []
-                    if len(stats) != len(names):
-                        continue
-                    g = {"_comp": comp}
-                    for k, v in zip(names, stats):
-                        try:
-                            g[k] = float(v)
-                        except (TypeError, ValueError):
-                            g[k] = 0.0
-                    games.append(g)
-        return games
-    return _cached(f"espn_gl_{athlete_id}", 6 * 3600, produce)
-
-
-def _is_wc_comp(label: str | None) -> bool:
-    """True for a FIFA World Cup competition label — but NOT the FIFA *Club* World Cup, a
-    separate tournament whose games are club form, not international."""
-    s = (label or "").lower()
-    return "world cup" in s and "club" not in s
-
-
-_ESPN_MIN_GAMES = 5
-_CLUB_WINDOW = 6   # "a few recent club games" that complement this World Cup's matches
-
-# ESPN only exposes a CLUB gamelog for World Cup players (e.g. "2025-26 Serie A"), never a
-# World-Cup one, so `form` is club-league form. The World Cup is a lower-event, tougher
-# environment (better defenders, cagier knockout games, minutes spread across a deep squad),
-# so club rates systematically over-project WC output. Deflate the club-form component per
-# stat toward WC reality before blending with the market. This is a blanket bias correction
-# — it can't capture an individual's WC role (a fringe sub whose club form is high but who
-# barely features), which needs an actual WC box-score feed.
-_WC_FORM_DEFLATE = {
-    "shots": 0.82, "shots on target": 0.78, "goals": 0.62, "assists": 0.66,
-    "goals assists": 0.63, "goal + assist": 0.63, "goal assist": 0.63,
-    "fouls": 0.85, "fouls drawn": 0.85, "offsides": 0.80, "cards": 0.90,
-}
-
-
-def _attach_soccer_espn(lines: list[dict]) -> set:
-    """
-    Real recency projection from ESPN per-game logs. Returns the set of line ids
-    that got an ESPN-backed projection (the rest fall back to the market model).
-    Safeguards: exact normalized name match against WC rosters + ≥5 games, else skip.
-    """
-    done: set = set()
-    try:
-        roster = _espn_roster_map()
-    except Exception:
-        return done
-    if not roster:
-        return done
-
-    # which athletes do we actually need logs for (players with a mappable prop)?
-    need: dict[str, bool] = {}
-    for l in lines:
-        if l.get("sport") != "World Cup" or not l.get("player") or l.get("line") is None:
-            continue
-        if not _espn_stat_fn(l.get("stat_type") or ""):
-            continue
-        aid = roster.get(mlb._norm_name(l["player"]))
-        if aid:
-            need[aid] = True
-    if not need:
-        return done
-    try:
-        with ThreadPoolExecutor(max_workers=10) as ex:
-            list(ex.map(_espn_gamelog, list(need.keys())))
-    except Exception:
-        pass
-
-    # Market anchor per (player, stat): the standard line is the market's fair
-    # estimate for the WORLD CUP game. Club form is informative but biased
-    # (different opponents/role/minutes), so we blend the two — this both
-    # improves accuracy and tames wild club-vs-line gaps. See _blend below.
-    from collections import defaultdict
-    std: dict[tuple, list[float]] = defaultdict(list)
-    allv: dict[tuple, list[float]] = defaultdict(list)
-    for l in lines:
-        if l.get("sport") == "World Cup" and l.get("player") and l.get("line") is not None:
-            k = (mlb._norm_name(l["player"]), (l.get("stat_type") or "").strip().lower())
-            allv[k].append(float(l["line"]))
-            if l.get("odds_type") in ("standard", None):
-                std[k].append(float(l["line"]))
-
-    def market_anchor(key):
-        src = std.get(key) or allv.get(key)
-        if not src:
-            return None
-        s = sorted(src)
-        return s[len(s) // 2]
-
-    for l in lines:
-        if l.get("sport") != "World Cup" or not l.get("player") or l.get("line") is None:
-            continue
-        fn = _espn_stat_fn(l.get("stat_type") or "")
-        if not fn:
-            continue
-        aid = roster.get(mlb._norm_name(l["player"]))
-        if not aid:
-            continue
-        games = _espn_gamelog(aid)
-        stat_key = (l.get("stat_type") or "").strip().lower()
-        deflate = _WC_FORM_DEFLATE.get(stat_key, 0.75)
-
-        # Split the log into THIS World Cup's matches and recent club games. The WC games are
-        # the real environment (opponents, role, minutes) — no deflation. The last few club
-        # games are deflated club→WC and fill in / stabilise a small WC sample.
-        wc_games = [g for g in games if _is_wc_comp(g.get("_comp"))]
-        club_games = [g for g in games if not _is_wc_comp(g.get("_comp"))][-_CLUB_WINDOW:]
-        n_wc, n_club = len(wc_games), len(club_games)
-        # Need either a real WC sample or enough club games to be worth projecting off.
-        if n_wc < 2 and n_club < _ESPN_MIN_GAMES:
-            continue
-
-        def _wmean(gs):
-            # recency-weighted mean of the stat over games (oldest→newest → newest weighs most)
-            vals = [fn(g) for g in gs]
-            wts = [i + 1 for i in range(len(vals))]
-            return sum(v * w for v, w in zip(vals, wts)) / sum(wts) if vals else None
-
-        wc_rate = _wmean(wc_games)
-        club_rate = _wmean(club_games)
-        if wc_rate is not None and club_rate is not None:
-            # WC form leads as its (small) sample grows; recent club form fills the rest.
-            w_wc = min(0.8, n_wc / (n_wc + 3))
-            form = w_wc * wc_rate + (1 - w_wc) * (club_rate * deflate)
-        elif wc_rate is not None:
-            form = wc_rate                           # WC games only — already the right environment
-        else:
-            form = club_rate * deflate               # no WC games → recent club form, deflated to WC
-        n = n_wc + n_club
-        key = (mlb._norm_name(l["player"]), stat_key)
-        anchor = market_anchor(key)
-        if anchor is not None:
-            # weight on our form estimate: grows with sample, capped at 0.5 — the market line
-            # already prices WC role/opponent/minutes, so it keeps at least half.
-            w = min(0.5, n / (n + 12))
-            proj = w * form + (1 - w) * anchor
-        else:
-            proj = form
-        line = float(l["line"])
-        l["model_proj"] = round(proj, 1)
-        l["model_edge"] = round(proj - line, 1)
-        l["model_prob"] = _prob_over(line, proj)
-        l["model_n"] = n
-        l["model_n_wc"] = n_wc                        # drawer note: "N World Cup matches + M club games"
-        l["model_n_club"] = n_club
-        l["model_form"] = round((wc_rate if wc_rate is not None else club_rate), 1)  # raw rate shown in the drawer
-        l["proj_kind"] = "espn"
-        done.add(l["id"])
-    return done
-
-
-# ── World Cup tackles ─────────────────────────────────────────────────────────
-# ESPN's per-game soccer log carries no tackles, so tackles used to fall to the market
-# (edge 0). Instead snapshot each WC player's CLUB-season tackles/game from ESPN's core
-# stats API into soccer_tackles.json (static — completed seasons) and project from that:
-# the club rate is the realistic baseline for what a player DOES, anchored 50/50 to the
-# WC-aware market line. No blanket deflation — a player tilts over OR under by how his
-# actual rate compares to his line (Rabiot 1.97 → over a 1.5 line; Cucurella 1.62 → under a
-# 2.0 line), rather than everything being force-pushed under.
-try:
-    _tk_raw = json.loads((Path(__file__).parent / "soccer_tackles.json").read_text(encoding="utf-8"))
-    _WC_TACKLES = {mlb._norm_name(v["name"]): float(v["tpg"]) for v in _tk_raw.values() if v.get("name")}
-except Exception:
-    _WC_TACKLES = {}
-
-
-def _attach_soccer_tackles(lines: list[dict]) -> set:
-    """Project WC 'Tackles' props from committed club tackle rates (deflated to WC +
-    market-anchored). Returns the ids projected so the market fallback skips them."""
-    done: set = set()
-    if not _WC_TACKLES:
-        return done
-    from collections import defaultdict
-    std: dict = defaultdict(list)
-    for l in lines:
-        if (l.get("sport") == "World Cup" and (l.get("stat_type") or "").strip().lower() == "tackles"
-                and l.get("player") and l.get("line") is not None
-                and (l.get("odds_type") or "standard") == "standard"):
-            std[mlb._norm_name(l["player"])].append(float(l["line"]))
-    for l in lines:
-        if (l.get("sport") != "World Cup" or (l.get("stat_type") or "").strip().lower() != "tackles"
-                or not l.get("player") or l.get("line") is None):
-            continue
-        key = mlb._norm_name(l["player"])
-        rate = _WC_TACKLES.get(key)
-        if rate is None:
-            continue
-        anchor = (sorted(std[key])[len(std[key]) // 2] if std.get(key) else float(l["line"]))
-        proj = 0.5 * rate + 0.5 * anchor            # 50% club rate (realistic baseline) / 50% WC-aware market
-        line = float(l["line"])
-        l["model_proj"] = round(proj, 1)
-        l["model_edge"] = round(proj - line, 1)
-        l["model_prob"] = _prob_over(line, proj)
-        l["model_form"] = round(rate, 1)            # club-season rate, shown in the drawer for transparency
-        l["proj_kind"] = "espn"
-        done.add(l["id"])
-    return done
-
-
-# ── World Cup FINAL projections (Spain vs Argentina, 2026-07-19) ───────────────
-# One-off, hand-set projections for the final, covering EVERY prop on the board. Each number
-# is my best estimate of the player's expected output for THIS match: the projection is
-# ANCHORED to the market line (which already prices role/opponent) and leaned off it only on
-# real evidence, in both directions — so the board isn't systematically over or under.
-# Drivers (researched, 2026-07-19):
-#   • Possession: Spain run ~64%, but Argentina control midfield (Enzo/Mac Allister) and kept
-#     88% once ahead vs England — so passing leans are MODEST: Spain's deep passers a touch
-#     over, Argentina's midfield near, attackers' passes near.
-#   • Keepers: Unai Simón made ~4 saves ALL tournament (<1/gm) → hard under a 3 line;
-#     E. Martínez ~1.5/gm but faces Spain's volume → mild under.
-#   • Shots: stars (Messi 4.8/gm, Yamal 4.18/90) near/over; Olmo is a creator (1 SOG all
-#     tournament) → under; role forwards centred on their line.
-#   • Creation/defending: Messi ~3.6 chances/gm → over on Shots Assisted; Argentina defend
-#     more → CB clearances lean over; dribble lines (Messi 5.5, Yamal 6) sit above their
-#     current rates → under. Fantasy scores are composites we don't model → anchored to line.
-# Keyed by (normalized player, canonical stat); line-agnostic (edge/P(over) vs the live line);
-# wins over the form model; self-expires after the final.
-_WC_FINAL_UNTIL = "2026-07-21"          # inert once the date reaches this
-# Each projection is the player's expected count, ANCHORED to the market's fair value — the
-# Poisson mean at which a pick'em line is a true coin-flip (which, for low counts, sits above
-# the half-line: a 1.5 line is 50/50 at mean ≈1.68, not 1.5). Neutral props sit at that fair
-# value (≈50%); real edges lean off it BOTH ways, so the board isn't systematically over/under.
-_WC_FINAL_PROJ = {mlb._norm_name(p): dict(stats) for p, stats in {
-    # ── Argentina ──────────────────────────────────────────────────────────────
-    "Lionel Messi":        {"shots": 3.5, "shots_assisted": 3.9, "goal_assist": 0.8,
-                            "dribbles": 3.5, "crosses": 4.8, "passes": 38.7, "fantasy_out": 21.7},
-    "Lautaro Martínez":    {"shots": 2.3, "sog": 0.7},
-    "Julián Alvarez":      {"passes": 28.7, "fantasy_out": 8.7},
-    "Enzo Fernández":      {"passes": 56.3, "tackles": 1.7, "fantasy_out": 10.7},
-    "Alexis Mac Allister": {"passes": 38.4, "fouls": 1.5, "fantasy_out": 8.7},
-    "Rodrigo De Paul":     {"passes": 42.5, "fantasy_out": 6.7},
-    "Cristian Romero":     {"passes": 47.7, "fantasy_out": 8.7},
-    "Lisandro Martínez":   {"clearances": 6.2, "passes": 45.7, "fantasy_out": 9.7},
-    "Nahuel Molina":       {"passes": 33.7, "fantasy_out": 6.7},
-    "Emiliano Martínez":   {"saves": 2.9, "passes": 30.7, "fantasy_gk": 9.7},
-    # ── Spain ──────────────────────────────────────────────────────────────────
-    "Lamine Yamal":        {"shots": 3.9, "dribbles": 3.9, "crosses": 3.4, "passes": 28.7,
-                            "fantasy_out": 16.7},
-    "Mikel Oyarzabal":     {"shots": 2.7, "dribbles": 0.7},
-    "Dani Olmo":           {"shots": 1.3, "shots_assisted": 1.9, "dribbles": 1.7},
-    "Álex Baena":          {"shots": 1.7},
-    "Pedri":               {"passes": 49.7, "fantasy_out": 7.7},
-    "Rodri":               {"passes": 82.6, "tackles": 3.1, "fantasy_out": 10.7},
-    "Aymeric Laporte":     {"clearances": 4.2, "tackles": 0.7, "passes": 74.5, "fantasy_out": 9.7},
-    "Pau Cubarsí":         {"passes": 73.5, "fantasy_out": 8.7},
-    "Marc Cucurella":      {"passes": 44.4, "fantasy_out": 7.7},
-    "Pedro Porro":         {"crosses": 4.7, "passes": 47.5, "fantasy_out": 10.7},
-    "Unai Simón":          {"saves": 1.9, "passes": 33.7, "fantasy_gk": 8.9},
-}.items()}
-
-
-def _final_stat_key(stat_type: str | None) -> Optional[str]:
-    """Board stat label → canonical stat in _WC_FINAL_PROJ. Order matters: compound/keeper
-    labels are matched before the generic words they contain (e.g. 'shots assisted' before
-    'shots', 'goalie saves' before any 'goal' logic). Unrecognised → None (no override)."""
-    n = _norm(stat_type)
-    if _is_partial_stat(stat_type):
-        return None
-    if "on target" in n or "on goal" in n:
-        return "sog"
-    if "assisted" in n:                              # "shots assisted" = key passes
-        return "shots_assisted"
-    if "dribble" in n:
-        return "dribbles"
-    if "cross" in n:
-        return "crosses"
-    if "clearance" in n:
-        return "clearances"
-    if "tackle" in n:
-        return "tackles"
-    if "foul" in n:
-        return "fouls"
-    if "save" in n:
-        return "saves"
-    if "goalie fantasy" in n or "keeper fantasy" in n:
-        return "fantasy_gk"
-    if "fantasy" in n:
-        return "fantasy_out"
-    if "pass" in n:
-        return "passes"
-    if "goal" in n and "assist" in n:                # "goal + assist" combo
-        return "goal_assist"
-    if n in ("assists", "assist"):
-        return "assists"
-    if n in ("shots", "shot", "shots attempted", "total shots"):
-        return "shots"
-    if n in ("goals", "goal"):
-        return "goals"
-    return None
-
-
-def _attach_soccer_final(lines: list[dict]) -> None:
-    """Apply the one-off World Cup final override. Runs last so it wins; inert after the game."""
-    if date.today().isoformat() >= _WC_FINAL_UNTIL:
-        return
-    for l in lines:
-        if l.get("sport") != "World Cup" or not l.get("player") or l.get("line") is None:
-            continue
-        stats = _WC_FINAL_PROJ.get(mlb._norm_name(l["player"]))
-        if not stats:
-            continue
-        sk = _final_stat_key(l.get("stat_type"))
-        proj = stats.get(sk) if sk else None
-        if proj is None:
-            continue
-        line = float(l["line"])
-        l["model_proj"] = round(proj, 1)
-        l["model_edge"] = round(proj - line, 1)
-        l["model_prob"] = _prob_over(line, proj)
-        l["model_form"] = proj
-        l["proj_kind"] = "final"
-        # clear any form-model fields so the drawer note doesn't mix methods
-        l.pop("model_n_wc", None); l.pop("model_n_club", None); l.pop("model_n", None)
-
-
-def _attach_soccer_projections(lines: list[dict]) -> None:
-    """
-    World Cup projections, best signal first:
-      1. ESPN per-game stats → real recency projection (proj differs from line).
-      1b. Tackles → committed club-season rate, deflated + anchored (ESPN log has no tackles).
-      2. Poisson mean from the de-vigged market price (where two-sided prices exist).
-      3. Cross-book consensus line (last resort).
-      4. FINAL override (one-off) → hand-set final projections, wins over all of the above.
-    """
-    try:
-        espn_done = _attach_soccer_espn(lines)
-    except Exception:
-        espn_done = set()
-    try:
-        tackles_done = _attach_soccer_tackles(lines)
-    except Exception:
-        tackles_done = set()
-    _attach_soccer_market(lines, skip=espn_done | tackles_done)
-    try:
-        _attach_soccer_final(lines)          # one-off final override — last word
-    except Exception:
-        pass
-
-
-# Partial-game props (tagged "(1H)"/"(2H)"/"(1Q)"/"(Half)" by the puller) describe a
-# period, not the full game — we only model full games, so they must NOT get a
-# projection, or the consensus fallback would price them and they'd resurface as phantom
-# edges. Basketball already skips them via _resolve_market; this guards soccer.
-_PARTIAL_STAT_RE = re.compile(r"\((?:1h|2h|[1-4][hqp]|ot|half|partial)\)", re.I)
-
-
-def _is_partial_stat(stat_type: str | None) -> bool:
-    return bool(_PARTIAL_STAT_RE.search(stat_type or ""))
-
-
-def _attach_soccer_market(lines: list[dict], skip: set | None = None) -> None:
-    """Poisson-from-price / consensus fallback for lines ESPN didn't cover."""
-    skip = skip or set()
-    from collections import defaultdict
-    groups: dict[tuple, list[dict]] = defaultdict(list)
-    for l in lines:
-        if l.get("sport") == "World Cup" and l.get("player") and l.get("line") is not None:
-            key = (l["player"].strip().lower(), (l.get("stat_type") or "").strip().lower())
-            groups[key].append(l)
-
-    proj: dict[tuple, tuple[float, str]] = {}
-    for key, ls in groups.items():
-        lam_est = []
-        for l in ls:
-            if l.get("odds_type") not in ("standard", None):
-                continue
-            po, pu = _am_prob(l.get("over_price")), _am_prob(l.get("under_price"))
-            if po and pu:
-                lam = _lambda_from_over_prob(float(l["line"]), po / (po + pu))
-                if lam:
-                    lam_est.append(lam)
-        if lam_est:
-            proj[key] = (round(sum(lam_est) / len(lam_est), 2), "poisson")
-        else:
-            vals = sorted(float(x["line"]) for x in ls)
-            proj[key] = (vals[len(vals) // 2], "consensus")
-
-    for l in lines:
-        if (l.get("sport") != "World Cup" or l.get("line") is None or not l.get("player")
-                or l["id"] in skip or _is_partial_stat(l.get("stat_type"))):
-            continue
-        key = (l["player"].strip().lower(), (l.get("stat_type") or "").strip().lower())
-        pk = proj.get(key)
-        if not pk:
-            continue
-        lam, kind = pk
-        line = float(l["line"])
-        if kind == "consensus":
-            # No gamelog signal for this stat — ESPN's soccer log has no tackles / passes /
-            # clearances / dribbles / saves, so there's nothing to project. Defer to THIS
-            # line (edge 0) instead of a group median that invents edges out of line
-            # dispersion (e.g. Rodri tackles proj 3.5 vs a 2.5 line). No data ⇒ no edge.
-            lam = line
-        l["model_proj"] = round(lam, 1)
-        l["model_edge"] = round(lam - line, 1)
-        l["model_prob"] = _prob_over(line, lam)
-        l["proj_kind"] = kind
 
 
 # ─────────────────────────────────────────────── dispatcher ──────────────────
@@ -2214,9 +1564,7 @@ def analyze(line: dict) -> dict:
     try:
         if sport == "MLB":
             return analyze_mlb(line)
-        if sport == "World Cup":
-            return analyze_soccer(line)
-        if sport in ("WNBA", "NBA Summer League"):
+        if sport == "WNBA":
             from basketball.analytics import analyze as _bball
             return _bball(line)
         if sport == "Tennis":
@@ -2236,7 +1584,7 @@ def grade_pending() -> dict:
     record it (db.set_actual). Props whose player didn't play (or whose stat
     isn't gradeable from a box score, e.g. fantasy/inning props) get voided once
     stale so they stop being retried. Reuses the same cached game-log lookups as
-    the board, so it's cheap. MLB only (no free per-game soccer grading feed).
+    the board, so it's cheap. MLB only.
     """
     if not _MLB_OK:
         return {"graded": 0, "voided": 0}
@@ -2282,7 +1630,7 @@ def grade_pending() -> dict:
     return {"graded": graded, "voided": voided}
 
 
-# ── basketball grading (WNBA + Summer League) ─────────────────────────────────
+# ── basketball grading (WNBA) ─────────────────────────────────────────────────
 # The MLB grader above settles props from statsapi game logs; this is the WNBA/SL analog,
 # built on ESPN box scores (the same source the projections use). It's what finally makes
 # non-MLB props MEASURABLE — until now the ledger logged WNBA every build but never graded
@@ -2336,7 +1684,7 @@ def grade_basketball() -> dict:
     stale_before = (today - timedelta(days=3)).isoformat()
     src = BP.gamelog_source()
     graded = voided = 0
-    for league in ("WNBA", "NBA Summer League"):
+    for league in ("WNBA",):
         # higher cap than MLB's (150): box-score grading is one cached index fetch + dict
         # lookups, not a per-player API call, so a day's ~3000 WNBA rows clear in a few runs
         # before the 3-day prune. The box index is fetched once regardless of the count.

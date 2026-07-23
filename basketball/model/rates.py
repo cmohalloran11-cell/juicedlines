@@ -5,7 +5,7 @@ For each base stat we estimate a per-possession rate from the player's recent
 games (recency-weighted), then regress it toward a league prior using
 pseudo-possessions. The prior and the shrinkage strength are the league hooks:
 WNBA shrinks lightly toward positional averages (healthy samples → tight); Summer
-League shrinks HEAVILY toward a translated pre-NBA prior (tiny sample barely moves it).
+Rates shrink toward a positional prior.
 """
 
 from __future__ import annotations
@@ -61,6 +61,6 @@ def fit_rates(games: list[PlayerGame], league: str, prior_poss: dict,
 
 
 def prior_only_rates(league: str, prior_poss: dict) -> PlayerRates:
-    """A player with no usable games — the prior IS the estimate (Summer League)."""
+    """A player with no usable games — the prior IS the estimate."""
     return PlayerRates(player="", league=league, per_poss=dict(prior_poss),
                        eff_games=0.0, n_games=0, sample_weight=0.0)

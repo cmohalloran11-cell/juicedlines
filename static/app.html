@@ -61,7 +61,7 @@
   --red:       #ff4d5f;   /* negative / under */
   --yellow:    #ffd21a;   /* prizepicks accent */
   --orange:    #ff9a2e;   /* prices / underdog */
-  --teal:      #2ee6c0;   /* world cup accent */
+  --teal:      #2ee6c0;   /* accent */
   --text:      #eafce0;
   --muted:     #8b9b72;
   --muted2:    #5d6b46;
@@ -182,7 +182,6 @@ input[type=text]{min-width:190px}
 .pgroup.open .chev{transform:rotate(90deg);color:var(--accent)}
 .sport-pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:10px;font-weight:700;letter-spacing:.02em}
 .sport-pill.MLB{background:rgba(155,232,20,.14);color:var(--green)}
-.sport-pill.WC{background:rgba(46,230,192,.14);color:var(--teal)}
 .sport-pill.TN{background:rgba(255,210,26,.14);color:var(--yellow)}
 .sport-pill.WNBA{background:rgba(255,154,46,.16);color:var(--orange)}
 .sport-pill.SL{background:rgba(255,120,80,.16);color:#ff7d55}
@@ -507,7 +506,6 @@ input[type=text]{min-width:190px}
   </div>
 </div>
 
-<!-- ════════════ WC MODEL ════════════ -->
 <!-- ════════════ BOARD ════════════ -->
 <div id="tab-board" class="content">
   <div class="filters">
@@ -1007,7 +1005,7 @@ function groupLines(lines){
     if(!g.flag && l.flag) g.flag=l.flag;
   }
   let arr=[...map.values()];
-  const sportRank={'MLB':0,'World Cup':1,'WNBA':2,'NBA Summer League':3,'Tennis':4,'other':5};
+  const sportRank={'MLB':0,'WNBA':1,'Tennis':2,'other':3};
   arr.sort((a,b)=>{
     if(sortMode==='name') return a.displayName.localeCompare(b.displayName);
     const sr=(sportRank[a.sport]??3)-(sportRank[b.sport]??3);
@@ -1049,9 +1047,9 @@ function groupHTML(g){
   const posBadge=g.pos?`<span class="pos-badge ${g.pos==='P'?'P':''}">${esc(g.pos)}</span>`:'';
   const sportPill=`<span class="sport-pill ${sportCls(g.sport)}">${esc(g.sport)}</span>`;
   const srcDots=[...g.sources].map(s=>`<img class="src-ic" title="${s}" src="${SRC_FAVI[s]||''}" onerror="this.style.display='none'">`).join('');
-  // Team: MLB shows the team logo + abbr; World Cup shows the country flag + name.
+  // Team: MLB/WNBA show the team logo + abbr; tennis shows the country flag + name.
   let teamPart='';
-  if(g.sport==='World Cup' && (g.flag||g.team)) teamPart=`${g.flag||''} ${esc(prettyCountry(g.team))}`.trim();
+  if(g.sport==='Tennis' && (g.flag||g.team)) teamPart=`${g.flag||''} ${esc(prettyCountry(g.team))}`.trim();
   else if(g.teamLogo) teamPart=`<img class="team-logo" src="${g.teamLogo}" onerror="this.remove()">${esc(g.team||'')}`;
   else if(g.team) teamPart=esc(g.team);
   const sub=[teamPart,posBadge,sportPill].filter(Boolean).join(' ');
@@ -1081,7 +1079,7 @@ function rowsHTML(g){
     const ou=(l.over_price||l.under_price)
       ? `<span class="o">${l.over_price||'—'}</span><span style="color:var(--muted2)">/</span><span class="u">${l.under_price||'—'}</span>`
       : (l.over_implied!=null?fmtImplied(l.over_implied):'<span style="color:var(--muted2)">—</span>');
-    // Model projection (MLB empirical / soccer consensus) + edge vs line
+    // Model projection + edge vs line
     const proj=projCell(l);
     const type=l.odds_type&&l.odds_type!=='standard'?`<span class="tag-dot ${l.odds_type}">${esc(l.odds_type)}</span>`:'';
     return `<div class="lrow" onclick="openDrawer('${esc(l.id)}')">
@@ -1115,7 +1113,7 @@ function projCell(l){
   const cls   = showEdge ? (e>0?'pos':'neg') : '';
   const arrow = showEdge ? (e>0?ic('up',9,'inherit'):ic('down',9,'inherit')) : '';
   const edge  = showEdge ? ` <span class="proj-edge">${e>0?'+':''}${e}${arrow}</span>` : '';
-  const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='espn'?'ESPN recent-form model':l.proj_kind==='final'?'World Cup final projection':l.proj_kind==='poisson'?'Market Poisson model':l.proj_kind==='consensus'?'Cross-book consensus':l.proj_kind==='market'?'Market-derived — the book’s own line, not a model call':'Model projection';
+  const kindLbl=l.proj_kind==='engine'?'Stat-projector engine (Monte-Carlo)':l.proj_kind==='consensus'?'Cross-book consensus':l.proj_kind==='market'?'Market-derived — the book’s own line, not a model call':'Model projection';
   const tip = l.workload_status==='returning'
               ? `Back from a ${l.layoff_days}-day layoff — projected at his own rates over a shortened outing (~${l.workload_outs ?? '?'} outs, from the market's outs line), not his pre-injury workload`
             : isMarket ? `${kindLbl} — ${l.model_proj} is the market's own median line for this prop, so there's no model edge to show`
@@ -1169,7 +1167,7 @@ async function openDrawer(lineId){
       document.getElementById('drawer-content').innerHTML = drawerHTML(line, a, hist);
       try{ wireVsTabs(); }catch(_){}
     } else {
-      document.getElementById('drawer-content').innerHTML = soccerDrawer(line, staticAnalytics(line), hist);
+      document.getElementById('drawer-content').innerHTML = lightDrawer(line, staticAnalytics(line), hist);
     }
     return;
   }
@@ -1197,8 +1195,8 @@ function instantDrawer(line){
 }
 
 function drawerHTML(line, a, hist){
-  const light = line.sport==='World Cup' || line.sport==='Tennis' || a.sport==='World Cup' || a.sport==='Tennis';
-  if(light) return soccerDrawer(line,a,hist);
+  const light = line.sport==='Tennis' || a.sport==='Tennis';
+  if(light) return lightDrawer(line,a,hist);
   if(!a.available) return mlbUnavailable(line,a,hist);
   return mlbDrawer(line,a,hist);   // MLB + basketball (hit-rate + recent games)
 }
@@ -1336,14 +1334,6 @@ const _PROP_ABBR=[
   ['pts+asts','PA'],['points assists','PA'],
   ['rebs+asts','RA'],['rebounds assists','RA'],
   ['blks+stls','BLK+STL'],['blocks + steals','BLK+STL'],['blocks steals','BLK+STL'],
-  // soccer combos
-  ['goal + assist','G+A'],['goals + assists','G+A'],['goals assists','G+A'],['goal assist','G+A'],
-  // soccer singles — SOT / blocked shots BEFORE plain shots
-  ['shots on target','SOT'],['shot on target','SOT'],['shots assisted','SH AST'],
-  ['blocked shots','BLK'],['shots','SH'],['shot','SH'],
-  ['goals allowed','GA'],['goalie saves','SV'],['saves','SV'],
-  ['fouls drawn','FD'],['fouls','FLS'],['offsides','OFF'],['tackles','TKL'],
-  ['clearances','CLR'],['crosses','CRS'],['interceptions','INT'],
   ['attempted dribbles','DRB'],['dribbles','DRB'],
   ['passes attempted','PASS'],['passes','PASS'],['cards','CRD'],
   // basketball / WNBA singles
@@ -1403,10 +1393,10 @@ function staticAnalytics(line){
     model_n:line.model_n, proj_kind:line.proj_kind,
     note:'Static snapshot — model projection shown. Live recent-games / hit-rate analytics are on the full server version.'};
 }
-function soccerDrawer(line,a,hist){
+function lightDrawer(line,a,hist){
   const prices=(line.over_price||line.under_price)?`Over ${line.over_price||'—'} / Under ${line.under_price||'—'}`:(line.over_implied!=null?`Yes ${Math.round(line.over_implied*100)}%`:'');
   const move=lineMoveCard(line,hist);
-  // Soccer projection card — Poisson mean calibrated to the de-vigged market price
+  // Light projection card — used by tennis
   let projCard='';
   if(a.model_proj!=null){
     const edge=a.model_edge||0;
@@ -1416,11 +1406,9 @@ function soccerDrawer(line,a,hist){
     // 80% band (p10–p90) from the simulated distribution — the realistic floor/ceiling, not the call.
     const lo=line.model_floor, hi=line.model_ceiling;
     const rangeCell=(lo!=null&&hi!=null)?`<div class="proj-cell" title="80% range: we expect the result to land between ${lo} and ${hi} in 8 of 10 games. Widened to match measured outcomes."><div class="v" style="font-size:15px">${lo}–${hi}</div><div class="l">80% Range</div></div>`:'';
-    const nCell=(kind==='espn'&&a.model_n)?`<div class="proj-cell"><div class="v">${a.model_n}</div><div class="l">Games</div></div>`:'';
-    const note=a.note||(kind==='espn'?'Blend of the player’s recent ESPN match form and the market line (club form is bias-adjusted toward the World Cup line), with a Poisson P(over).'
-              :kind==='poisson'?'Poisson expected count calibrated to the de-vigged market price.'
-              :'Cross-book consensus line (no player-stat feed or price for this prop).');
-    const title=kind==='espn'?'Form Projection (ESPN)':kind==='final'?'Final Projection':kind==='tennis'?'Serve/Return Model':'Model Projection';
+    const nCell=a.model_n?`<div class="proj-cell"><div class="v">${a.model_n}</div><div class="l">Games</div></div>`:'';
+    const note=a.note||'Cross-book consensus line (no player-stat feed or price for this prop).';
+    const title=kind==='tennis'?'Serve/Return Model':'Model Projection';
     projCard=`<div class="dr-section"><h4><span class="ic">${ic('bars',14)}</span> ${title}</h4>
       <div class="hit-card"><div class="hit-proj" style="border:none;padding:0">
         <div class="proj-cell"><div class="v">${a.model_proj}</div><div class="l">Proj</div></div>
@@ -1609,8 +1597,8 @@ function runEdges(){
 }
 
 function edgeTeamTag(l){
-  // Tennis has no team — show the opponent instead. Otherwise show the club/country with
-  // its logo (MLB/WNBA/SL) or flag (World Cup) when we have one.
+  // Tennis has no team — show the opponent instead. Otherwise show the club with
+  // its logo (MLB/WNBA) when we have one.
   if(l.sport==='Tennis') return l.matchup?`<span class="edge-team">vs ${esc(l.matchup)}</span>`:'';
   if(!l.team) return '';
   const img=l.team_logo?`<img src="${esc(l.team_logo)}" onerror="this.style.display='none'">`:'';
@@ -1884,8 +1872,8 @@ function renderParlaySummary(){
   const el=document.getElementById('parlay-summary'); if(!el) return;
   const n=parlaySlip.length;
   if(n<2){ el.innerHTML='<div class="muted-note" style="margin:0">Add at least 2 legs to see your chance, payout, and ROI.</div>'; return; }
-  let P=1, soccer=false;
-  for(const s of parlaySlip){ const l=allLines.find(x=>x.id===s.id); if(!l)continue; P*= s.side==='Over'?l.model_prob:1-l.model_prob; if(l.sport==='World Cup')soccer=true; }
+  let P=1;
+  for(const s of parlaySlip){ const l=allLines.find(x=>x.id===s.id); if(!l)continue; P*= s.side==='Over'?l.model_prob:1-l.model_prob; }
   const pay=slipPayout(parlaySlip), M=pay.M, roi=(P*M-1)*100, be=100/M, rc=roi>=0?'pos':'neg';
   el.innerHTML=`
     <div class="parlay-sum-grid">
@@ -1897,7 +1885,7 @@ function renderParlaySummary(){
       <label>Stake $<input id="parlay-stake" type="number" min="0" step="1" value="${parlayStake}" oninput="updateStake(this.value)"></label>
       <div>Return <b id="pl-return">$${(parlayStake*M).toFixed(2)}</b> · EV <b id="pl-ev" class="${rc}">${P*M-1>=0?'+':''}$${(parlayStake*(P*M-1)).toFixed(2)}</b></div>
     </div>
-    <div class="muted-note" style="margin:0">Break-even hit rate is <b>${be.toFixed(1)}%</b> — you're <b class="${P*100>=be?'pos':'neg'}">${P*100>=be?'above':'below'}</b> it. ${pay.correlated?ic('warn',12,'inherit')+` <b>Correlated legs</b> (same game) — the book reduces the payout and the exact number varies per entry, so treat ${pay.unknown?`the ${M}x above as a ceiling`:`~${M}x as typical, not a quote`}. `:''}${soccer?ic('warn',12,'inherit')+' Includes World Cup legs (model overconfident there). ':''}Assumes calibrated, independent legs.</div>
+    <div class="muted-note" style="margin:0">Break-even hit rate is <b>${be.toFixed(1)}%</b> — you're <b class="${P*100>=be?'pos':'neg'}">${P*100>=be?'above':'below'}</b> it. ${pay.correlated?ic('warn',12,'inherit')+` <b>Correlated legs</b> (same game) — the book reduces the payout and the exact number varies per entry, so treat ${pay.unknown?`the ${M}x above as a ceiling`:`~${M}x as typical, not a quote`}. `:''}Assumes calibrated, independent legs.</div>
     <button class="clearbtn" onclick="clearSlip()">Clear slip</button>`;
 }
 function updateStake(v){
@@ -1951,7 +1939,7 @@ function setStatus(state,msg,errors){
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function cssId(s){return String(s).replace(/[^a-z0-9]/gi,'_');}
 function srcShort(s){return ({underdog:'UD',prizepicks:'PP'})[s]||s;}
-function sportCls(s){return s==='MLB'?'MLB':s==='World Cup'?'WC':s==='Tennis'?'TN':s==='WNBA'?'WNBA':s==='NBA Summer League'?'SL':'other';}
+function sportCls(s){return s==='MLB'?'MLB':s==='Tennis'?'TN':s==='WNBA'?'WNBA':'other';}
 
 // ── games ticker ────────────────────────────────────────────────────────────
 // Built from the board's OWN lines (grouped by game_id) rather than a new feed — every line
@@ -1970,7 +1958,7 @@ function buildGames(){
     if(t && !g.teams.has(t)) g.teams.set(t, l.team_logo || null);
     if(l.matchup && !g.teams.has(l.matchup) && g.teams.size < 2) g.teams.set(l.matchup, null);
   }
-  const rank={'MLB':0,'WNBA':1,'NBA Summer League':2,'World Cup':3,'Tennis':4};
+  const rank={'MLB':0,'WNBA':1,'Tennis':2};
   const now = Date.now();
   let games = [...by.values()].filter(g => g.teams.size >= 2);   // need both sides to be worth showing
   // Today's slate only. Books post tennis days ahead (66 matches vs 15 MLB games), so without
@@ -2011,7 +1999,7 @@ function renderTicker(){
       // the right would never load and every card would render logo-less.
       `<span class="g-team">${logo?`<img src="${esc(logo)}" alt="" onerror="this.remove()">`:''}${esc(name)}</span>`);
     return `<div class="gcard" onclick="openGameModal('${esc(g.gid)}')" style="cursor:pointer" title="${esc(g.sport)} · ${g.props} props — click for lineups & projections">`
-      + `<span class="sport-pill ${sportCls(g.sport)}">${esc(g.sport==='NBA Summer League'?'SL':g.sport)}</span>`
+      + `<span class="sport-pill ${sportCls(g.sport)}">${esc(g.sport)}</span>`
       + sides.join('<span class="g-at">vs</span>')
       + gameTimeLabel(g.start)
       + `<span class="g-props">${g.props}</span></div>`;

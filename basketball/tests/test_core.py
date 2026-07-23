@@ -9,7 +9,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from basketball import BASE_STATS, COMBOS
-from basketball.data.base import PlayerGame, PlayerBackground
+from basketball.data.base import PlayerGame
 from basketball.model import rates as R, priors as PR, minutes as MIN
 from basketball.model.pace import matchup_pace
 from basketball.sim import engine as E
@@ -39,26 +39,10 @@ def test_sample_weight_and_eff_games():
     assert 3.0 < r.eff_games < 10.0                         # recency-weighted < raw count
 
 
-def test_translated_prior_differentiates():
-    pace = 102.0
-    star = PlayerBackground("A", draft_pick=2, pre_league="NCAA",
-                            rates40={s: v for s, v in zip(BASE_STATS, [24, 8, 4, 1.5, 1, 2.5, 3])})
-    fringe = PlayerBackground("B", draft_pick=None, pre_league="International",
-                              rates40={s: v for s, v in zip(BASE_STATS, [12, 4, 2, .8, .4, 1, 2.5])})
-    sp, _ = PR.translated_prior_poss(star, pace)
-    fp, _ = PR.translated_prior_poss(fringe, pace)
-    assert sp["pts"] > fp["pts"]                            # better prospect → higher prior
-    assert PR.draft_minutes_prior(2) > PR.draft_minutes_prior(None)
-
-
 def test_minutes_news_and_baseline():
     # injected news wins outright
     m, sd = MIN.project_minutes([28, 30, 26], "WNBA", 1, 0.13, news_minutes=34)
     assert m == 34 and sd > 0
-    # SL with no games → draft-slot baseline dominates
-    bg = PlayerBackground("A", draft_pick=1)
-    m2, _ = MIN.project_minutes([], "NBA Summer League", 3, 0.32, background=bg)
-    assert 28 <= m2 <= 32                                   # top pick ~30
     # minutes track RECENT role: a player who ramped up projects near recent minutes
     m3, _ = MIN.project_minutes([34, 33, 32, 20, 18, 16], "WNBA", 0, 0.13)
     assert m3 > 28                                          # recent (33ish) outweighs old (17ish)
@@ -126,18 +110,11 @@ def test_derived_rebound_split():
     assert E.market_array(sim3, "orb") is None
 
 
-def test_orb_share_prior_shrinks_and_uses_college():
+def test_orb_share_prior_shrinks():
     base = PR.orb_share_prior("C")
     assert 0.0 < base < 1.0
     # no split data → prior exactly
     assert PR.fit_orb_share([], "C") == base
-    # an extreme college split pulls the SL baseline toward it, but not all the way
-    bg = PlayerBackground(player="X", pre_league="NCAA", rates40={"orb": 9.0, "drb": 1.0})
-    pulled = PR.orb_share_prior("C", bg)
-    assert base < pulled < 0.90
-    # translation-invariance: scaling orb and drb alike must not move the share
-    bg2 = PlayerBackground(player="X", pre_league="NCAA", rates40={"orb": 9.0 * 0.93, "drb": 0.93})
-    assert abs(PR.orb_share_prior("C", bg2) - pulled) < 1e-9
 
 
 def test_value_math():

@@ -1,6 +1,6 @@
 """
 Live ESPN adapter — free, no key. Real rosters + per-game logs + team pace for
-WNBA and NBA Summer League (Las Vegas), the same public API the soccer/tennis
+WNBA, the same public API the tennis
 adapters already use. Select paths come from config (`basketball/wnba`,
 `basketball/nba-summer-las-vegas`).
 

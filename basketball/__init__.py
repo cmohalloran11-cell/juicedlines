@@ -1,12 +1,9 @@
 """
-Basketball projection system — WNBA + NBA Summer League.
+Basketball projection system — WNBA.
 
 One shared projection CORE (per-possession rates × projected minutes × projected
-pace, opponent-adjusted → a simulated distribution per stat), plugged in as two
-separate league CONFIGS. WNBA is a re-baselining job on stable, well-sampled data
-(tight intervals). Summer League leans on translated pre-NBA priors + explicit
-minutes modelling because players have little/no usable history (wide intervals,
-low confidence by design).
+pace, opponent-adjusted → a simulated distribution per stat), driven by a league
+CONFIG. WNBA is a re-baselining job on stable, well-sampled data (tight intervals).
 
 Layout mirrors the tennis package:
   data/        swappable source adapters (ESPN live) behind ABC interfaces
@@ -20,7 +17,7 @@ Layout mirrors the tennis package:
 
 from __future__ import annotations
 
-LEAGUES = ("WNBA", "NBA Summer League")
+LEAGUES = ("WNBA",)
 
 # Canonical base box stats the core projects (everything else is a combo of these).
 BASE_STATS = ("pts", "reb", "ast", "stl", "blk", "3pm", "to")

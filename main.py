@@ -3,7 +3,7 @@ main.py — FastAPI backend for the Sports Edge dashboard.
 
 Endpoints:
   GET /              → serves index.html
-  GET /api/lines     → current normalized lines (MLB + World Cup)
+  GET /api/lines     → current normalized lines (MLB + Tennis + WNBA)
   GET /api/lines/history?id=<line_id>  → SQLite movement history
   GET /api/status    → connector health
   POST /api/snapshot → manual snapshot trigger (dev)
@@ -100,7 +100,7 @@ def refresh_lines(sport: str = "all") -> dict[str, Any]:
     except Exception as exc:
         log.warning("enrich_lines failed: %s", exc)
 
-    # Attach per-row model projections (MLB empirical + soccer consensus). This
+    # Attach per-row model projections. This
     # also pre-warms the game-log cache, so the research drawer opens fast.
     try:
         analytics.attach_projections(lines)
@@ -173,7 +173,7 @@ def root():
 
 @app.get("/api/lines")
 def api_lines(
-    sport: str = Query("all", description="MLB | World Cup | all"),
+    sport: str = Query("all", description="MLB | Tennis | WNBA | all"),
     source: str = Query("all", description="underdog | prizepicks | all"),
     stat_type: str = Query("", description="filter by stat type substring"),
     player: str = Query("", description="filter by player name substring"),
@@ -241,7 +241,7 @@ def api_status():
 
 
 @app.get("/api/scorecard")
-def api_scorecard(sport: str = Query("", description="MLB | World Cup | empty = all")):
+def api_scorecard(sport: str = Query("", description="MLB | Tennis | WNBA | empty = all")):
     """Running model-vs-market scorecard: hit-rate vs the close, plays, and CLV.
     Builds up over time as the CLV ledger logs lines and grades outcomes."""
     return db.scorecard(sport or None)

@@ -1,5 +1,5 @@
 """
-Board analytics for WNBA + NBA Summer League — team logos, recent-game log, and
+Board analytics for WNBA — team logos, recent-game log, and
 hit-rate vs the line — returned in the SAME schema the MLB drawer renders, so the
 frontend needs no special-casing (drawerHTML routes available non-WC analytics to
 the MLB drawer).

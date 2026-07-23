@@ -5,7 +5,6 @@ using ONLY the games before it (no leakage), and score bias / MAE / calibration.
 Reported per league. WNBA is the core validator (healthy samples). For Summer
 League the honest check is whether low-confidence projections actually miss more
 and whether the translation priors are biased by source league — both gated on the
-background feed being wired, so `translation_bias` reports that until it is.
 
     from basketball.backtest import calibration as c
     c.run("WNBA", stat="pts")
@@ -81,28 +80,3 @@ def run(league: str = "WNBA", stat: str = "pts", min_prior: int = 6,
     return {"league": league, "stat": stat, "players": used, "n": n,
             "bias": round(bias, 3), "mae": round(mae, 3), "ece": round(ece, 3),
             "calibration": rows}
-
-
-def translation_bias(league: str = "NBA Summer League") -> dict:
-    """Check whether SL translation priors are biased by source league.
-
-    Requires the background feed (draft slot + pre-NBA league + rates) to be wired;
-    until then there are no source labels to group by, so this reports that state
-    rather than a misleading zero.
-    """
-    from ..data import background_source
-    src = gamelog_source()
-    bg = background_source()
-    labelled = 0
-    for nm, ref in src.players(league).items():
-        try:
-            if bg.background(ref.name):
-                labelled += 1
-        except Exception:
-            pass
-    if labelled == 0:
-        return {"league": league, "note": "no player backgrounds wired yet — seed "
-                "sl_background.json or wire Torvik/RealGM to run the source-bias check",
-                "labelled_players": 0}
-    return {"league": league, "labelled_players": labelled,
-            "note": "backgrounds present — extend with realized-vs-translated by source"}

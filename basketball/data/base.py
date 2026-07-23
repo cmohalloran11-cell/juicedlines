@@ -4,8 +4,6 @@ Basketball data types + adapter interfaces.
 The model only ever sees these dataclasses, so any source (ESPN live, stats.wnba.com,
 nba_api, or a paid feed) just maps into them. Minimum per-game fields the core needs:
 player id, team, opponent, minutes, and the raw box counts for every projected stat.
-Summer League additionally needs a PlayerBackground (draft slot + pre-NBA league +
-translated rates) keyed to each player.
 """
 
 from __future__ import annotations
@@ -75,18 +73,6 @@ class PlayerGame:
 
 
 @dataclass
-class PlayerBackground:
-    """Pre-NBA translation prior for a Summer League player (thin/no pro history)."""
-    player: str
-    draft_pick: int | None = None       # overall pick; None = undrafted
-    pre_league: str = ""                # NCAA | G-League | International | ""
-    archetype: str = ""                 # e.g. rim-runner, ball-handler, 3-and-D wing
-    # translated per-40 base rates (already run through the source→SL translation)
-    rates40: dict = field(default_factory=dict)   # {"pts": .., "reb": .., ...}
-    minutes_prior: float | None = None  # expected minutes from draft slot / role
-
-
-@dataclass
 class TeamPace:
     team_id: str
     team: str
@@ -120,10 +106,3 @@ class GameLogSource(ABC):
     @abstractmethod
     def league_pace(self, league: str) -> float:
         """League-average possessions per game."""
-
-
-class BackgroundSource(ABC):
-    """Summer League only — draft slot + pre-NBA league + translated rates."""
-
-    @abstractmethod
-    def background(self, player: str) -> PlayerBackground | None: ...

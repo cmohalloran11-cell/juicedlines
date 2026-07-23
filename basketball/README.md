@@ -1,11 +1,9 @@
-# Basketball Projection System (WNBA + NBA Summer League) — inside JUICED
+# Basketball Projection System (WNBA) — inside JUICED
 
 One shared projection **core** — per-possession rates × projected minutes ×
-projected pace, opponent-adjusted, simulated to a **distribution per stat** — plugged
-in as **two league configs**. WNBA is a re-baselining job on stable data (tight
-intervals, validated). Summer League leans on translated pre-NBA priors + explicit
-minutes modelling because players have little/no usable history (wide intervals, low
-confidence by design). Attaches projections to the live PrizePicks/Underdog board.
+projected pace, opponent-adjusted, simulated to a **distribution per stat** — driven by
+a league config. WNBA is a re-baselining job on stable data (tight intervals,
+validated). Attaches projections to the live PrizePicks/Underdog board.
 
 ## The shared core
 
@@ -13,8 +11,7 @@ confidence by design). Attaches projections to the live PrizePicks/Underdog boar
    stl, blk, 3pm, to) a per-possession rate, recency-weighted, then **regressed toward
    a league prior** with pseudo-possessions (shrinkage). The prior + shrinkage strength
    are the league hooks.
-2. **Prior** (`model/priors.py`) — WNBA: positional per-40 averages. Summer League: a
-   **translated** prior from draft slot + source-league translation factor + archetype.
+2. **Prior** (`model/priors.py`) — positional per-40 averages.
 3. **Minutes** (`model/minutes.py`) — modelled as its **own** component (news-injectable),
    because it swings counting stats most.
 4. **Pace** (`model/pace.py`) — possessions/48-equiv for the matchup (league baseline on
@@ -41,23 +38,6 @@ positional priors, healthy samples → light shrinkage → tight intervals.
 
 Essentially unbiased and well-calibrated (predicted P(over) ≈ realized) — this is the
 league that validates the shared core.
-
-## Config B — NBA Summer League (the hard one)
-
-Can lean on neither the SL sample nor a pro history, so:
-
-- **Translated priors dominate** (heavy shrinkage — `shrink_poss` 1400): draft slot →
-  minutes + showcase bump; pre-NBA per-40 × source-league translation factor (NCAA /
-  G-League / International, see `priors._TRANSLATION`); archetype/position fallback.
-- **Minutes respond to revealed rotations** — before games, the draft-slot prior holds;
-  after game 1–2 the observed minutes take over (light minutes shrink), and a `news` hook
-  injects showcase/rest/two-way signings.
-- **SL-specific pace** (higher, more variable) + **wide variance** → **low confidence by
-  design**, so the app posts fewer SL markets, later, and gates the shakiest.
-
-Verified end-to-end on live SL box scores (ESPN has no SL gamelog → derived from game
-box scores). The translated-prior machinery differentiates strongly (a lottery NCAA pick
-projects far above an undrafted intl player) — it just needs the **background feed**.
 
 ## Data — swappable adapters (`data/`)
 
@@ -90,7 +70,4 @@ blocks, turnovers, PRA/PR/PA/RA, stocks, fantasy). Period/quarter markets are sk
 - **Opponent defense is a neutral hook on the board** (positional rate-allowed needs a
   richer feed than free ESPN); pace uses the league baseline on the board (team/matchup
   pace is used by the backtest). Both are documented refinement hooks, not silent guesses.
-- **Summer League needs the background feed to differentiate** — without draft/translated
-  data every SL player regresses to a generic rookie line (honest: low confidence, wide).
-  The machinery is built and tested; wiring Torvik/RealGM (or seeding) turns it on.
 - No live in-game / injury modelling; pre-game only.

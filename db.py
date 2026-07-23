@@ -78,7 +78,7 @@ def init_db() -> None:
         #  * odds_type: demon/goblin lines are deliberately warped, so (m−L) vs (y−L) on them
         #    manufactures correlation and inflates the edge regression. Must be filterable.
         #  * model_raw / trust_weight: MLB doesn't anchor (close_proj IS the raw model), but
-        #    WNBA/SL/tennis/soccer blend toward the line, so their close_proj is NOT the model.
+        #    WNBA/tennis blend toward the line, so their close_proj is NOT the model.
         #    The edge regression (y−L)=a+γ(m−L) needs the PRE-anchor m. Recovering it later via
         #    m=L+(final−L)/t is impossible at t=0 (snap-to-line) and numerically unstable at
         #    small t (tennis ~0.05 → 20× any rounding), so log it directly.

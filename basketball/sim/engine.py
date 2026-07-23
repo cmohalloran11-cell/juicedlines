@@ -6,7 +6,7 @@ price over/unders and carry variance.
 Per sim we draw minutes and pace ONCE, then each base stat as an overdispersed
 count (Negative-Binomial: var = μ·(1 + disp·μ)). Because minutes and pace are shared
 across the stats within a sim, combos (PRA, stocks, …) come out correctly correlated.
-The variance width is a league knob — WNBA tight, Summer League wide.
+The variance width is a league knob.
 """
 
 from __future__ import annotations

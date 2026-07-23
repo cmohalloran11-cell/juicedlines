@@ -72,7 +72,7 @@ class UnderdogProp:
     match_id: Optional[str]
     status: Optional[str]
     image_url: Optional[str] = None     # player headshot (Underdog CDN)
-    country: Optional[str] = None       # ISO-3 country code (soccer)
+    country: Optional[str] = None       # ISO-3 country code
     position: Optional[str] = None      # position display name
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
 

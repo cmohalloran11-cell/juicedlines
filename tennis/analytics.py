@@ -2,7 +2,7 @@
 Light board analytics for tennis — the model's serve/return rates + Elo + the
 projection + line movement. There's no live per-match feed for current players
 (the historical sample is ~2016–22), so this is the honest lighter view, rendered
-by the soccer-style drawer.
+by the drawer.
 """
 
 from __future__ import annotations

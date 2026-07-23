@@ -6,7 +6,7 @@ Unified Line schema:
 {
   "id":            str,          # unique key: "ud_{over_under_id}", "pp_{id}"
   "source":        str,          # "underdog" | "prizepicks"
-  "sport":         str,          # "MLB" | "World Cup" | "other"
+  "sport":         str,          # "MLB" | "Tennis" | "WNBA" | "other"
   "player":        str | None,
   "team":          str | None,
   "position":      str | None,
@@ -64,7 +64,7 @@ except ImportError:
 
 _UD_SPORT_MAP: dict[str, str] = {
     "MLB": "MLB",
-    "FIFA": "World Cup",
+    "FIFA": "other",
     "KBO": "other",
     "WNBA": "WNBA",
     "PGA": "other",
@@ -80,7 +80,6 @@ _UD_SPORT_MAP: dict[str, str] = {
 }
 
 _PP_LEAGUE_MLB = {"mlb", "baseball"}
-_PP_LEAGUE_WC  = {"fifa", "world cup", "soccer", "copa", "euro 2024", "euro"}
 _PP_LEAGUE_TENNIS = {"tennis", "atp", "wta"}
 
 
@@ -102,8 +101,6 @@ def _sport_from_pp_league(league: str | None) -> str:
     _period = ("1h", "2h", "1q", "2q", "3q", "4q", "szn")
     if "wnba" in l:
         return "other" if any(t in l for t in _period) else "WNBA"
-    if "nbasl" in l or "summer league" in l:
-        return "other" if any(t in l for t in _period) else "NBA Summer League"
     if any(x in l for x in _PP_LEAGUE_TENNIS):
         return "Tennis"
     # Guard against leagues that share a token (e.g. "EUROGOLF", regular-season NBA).
@@ -114,12 +111,6 @@ def _sport_from_pp_league(league: str | None) -> str:
         # Exclude season-long / period sub-leagues (MLBSZN2 = rest-of-season futures, whose
         # "Home Runs" line is 15.5+ over the remaining games — nonsense as a game prop).
         return "other" if any(t in l for t in _period) else "MLB"
-    # ONLY the actual World Cup — not club soccer. PrizePicks' "SOCCER" league is club
-    # ball (friendlies / Leagues Cup / MLS), whose players aren't in the tournament
-    # (e.g. Santiago Rodriguez), so it must not land on the World Cup board. Exclude the
-    # 1st-half sub-league ("WORLD CUP 1H") too — the full-game model over-projects a half.
-    if "world cup" in l:
-        return "other" if any(t in l for t in _period) else "World Cup"
     return "other"
 
 
@@ -189,9 +180,8 @@ def _ud_dedup(props: list["UnderdogProp"]) -> list[dict[str, Any]]:
                 "source": "underdog",
                 "sport": sport,
                 "player": player,
-                # Underdog gives no team name (team_id is a UUID); for soccer the
-                # country is the meaningful "team".
-                "team": p.country if sport == "World Cup" else None,
+                # Underdog gives no team name (team_id is a UUID).
+                "team": None,
                 "position": p.position,
                 "stat_type": stat,
                 "line": p.line,
@@ -235,7 +225,7 @@ def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | N
         props = ud.get_props()
 
         # Filter to wanted sports
-        wanted = ({"MLB", "World Cup", "Tennis", "WNBA", "NBA Summer League"}
+        wanted = ({"MLB", "Tennis", "WNBA"}
                   if not sport_filter or sport_filter == "all" else {sport_filter})
         filtered = [p for p in props
                     if _UD_SPORT_MAP.get(p.sport or "", "other") in wanted]
@@ -252,7 +242,7 @@ def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | N
 # fingerprints the browser. The PARTNER API host serves the identical JSON:API feed
 # with NO bot wall and NO auth, so we read straight from it. No cookie, no library.
 _PP_PARTNER = "https://partner-api.prizepicks.com"
-_PP_WANTED = ("MLB", "World Cup", "Tennis", "WNBA", "NBA Summer League")
+_PP_WANTED = ("MLB", "Tennis", "WNBA")
 
 # PrizePicks is a flat pick'em — no per-pick moneyline. A STANDARD leg's implied
 # price is the break-even of a 2-pick Power play (pays 3x → each leg needs a
@@ -366,7 +356,7 @@ def _pp_line(proj: dict, idx: dict) -> dict[str, Any]:
         # feed doesn't expose demon/goblin multipliers, so those stay unpriced.
         "pickem_price": _PP_PICKEM_AMERICAN if (attr.get("odds_type") or "standard") == "standard" else None,
         "headshot": pa.get("image_url"),      # PrizePicks ships a player headshot
-        "country": pa.get("team") if sport == "World Cup" else None,
+        "country": None,
         "meta": {
             "player_id": pl.get("id"),
             "league": league_name,
@@ -424,5 +414,5 @@ def mock_lines() -> list[dict]:
         {**_base, "id":"pp_mock_2","source":"prizepicks","sport":"MLB","player":"Shohei Ohtani","team":"LAD","stat_type":"Hits+Runs+RBI","line":2.5,"odds_type":"standard","meta":{}},
         {**_base, "id":"pp_mock_3","source":"prizepicks","sport":"MLB","player":"Corbin Carroll","team":"ARI","stat_type":"Stolen Bases","line":0.5,"odds_type":"demon","meta":{}},
         {**_base, "id":"ud_mock_1","source":"underdog","sport":"MLB","player":"Paul Skenes","team":"PIT","stat_type":"Strikeouts","line":7.5,"odds_type":"standard","over_price":"-139","under_price":"+105","over_implied":0.582,"under_implied":0.488,"meta":{}},
-        {**_base, "id":"ud_mock_2","source":"underdog","sport":"World Cup","player":"Kylian Mbappé","team":"FRA","stat_type":"Shots On Target","line":1.5,"odds_type":"standard","over_price":"-110","under_price":"-110","over_implied":0.524,"under_implied":0.524,"meta":{}},
+        {**_base, "id":"ud_mock_2","source":"underdog","sport":"MLB","player":"Mookie Betts","team":"LAD","stat_type":"Hits","line":0.5,"odds_type":"standard","over_price":"-110","under_price":"-110","over_implied":0.524,"under_implied":0.524,"meta":{}},
     ]

@@ -138,12 +138,6 @@ def main() -> None:
         errors["prizepicks"] = perr
 
     lines = ud + pp
-    # Sports removed from the site (2026-07-21): World Cup (tournament over / ESPN-projected only)
-    # and NBA Summer League (season over, thin data). Filtered here so they never reach board.json
-    # → gone from the board, edges, parlay, ticker and game modal in one place. Re-enable by
-    # dropping a sport from this set. (The soccer/SL code stays; it just isn't published.)
-    _REMOVED_SPORTS = {"World Cup", "NBA Summer League"}
-    lines = [l for l in lines if l.get("sport") not in _REMOVED_SPORTS]
     try:
         analytics.enrich_lines(lines)
     except Exception as exc:

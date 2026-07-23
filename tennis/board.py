@@ -9,7 +9,7 @@ Market anchoring: the mirror history is stale (~2016–22), so current players a
 thin and the raw model over-projects. The projected mean is blended toward the
 market's standard line by a `trust` from the projection's confidence — a
 well-covered player is ~pure model, a thin/unknown one defers to the market line
-(the same fallback the soccer/basketball models use). The model's distribution
+(the same fallback the basketball model uses). The model's distribution
 still prices the over/under (and demon/goblin variants) around that mean.
 
 Heuristics (flagged refinements): tour is picked by which fitted model (ATP/WTA) has
