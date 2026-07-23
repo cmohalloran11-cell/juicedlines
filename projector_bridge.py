@@ -231,7 +231,8 @@ def statcast_prior_cached(name: str, is_pitcher: bool):
 
 
 def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float = 0.0,
-             trust: float | None = None, anchor: float | None = None):
+             trust: float | None = None, anchor: float | None = None,
+             width: float | None = None):
     """
     Extract a plain projection dict for one prop from a project_player() result.
     `correction` is an optional per-stat calibration offset (measured bias from the ledger)
@@ -242,6 +243,8 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
     lines) all show the SAME model-derived projection rather than leaning toward their own
     warped number; P(over) is still evaluated at THIS variant's `line`. Defaults to `line`.
     The payload always carries `model_raw` = the PRE-anchor mean (ledger keeps measuring γ).
+    `width` stretches the reported floor/ceiling band (our p10–p90 only covered 56% of real
+    outcomes, not 80% — the sims are too narrow); it never moves the projection.
     None for unsupported stats.
     """
     if not projs:
@@ -264,7 +267,7 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
         if corr is not None:
             arrs = _induce_corr(arrs, corr)
         s = np.sum(arrs, axis=0)
-        return _payload_from_samples(s, line, correction, trust, anchor)
+        return _payload_from_samples(s, line, correction, trust, anchor, width)
 
     table = _PIT if is_pitcher else _BAT
     stat = table.get(key) or _best_match(table, key)
@@ -273,22 +276,26 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
     p = projs.get(stat)
     if p is None:
         return None
-    return _payload(p, line, correction, trust, anchor)
+    return _payload(p, line, correction, trust, anchor, width)
 
 
 def _payload(p, line, correction: float = 0.0, trust: float | None = None,
-             anchor: float | None = None) -> dict:
+             anchor: float | None = None, width: float | None = None) -> dict:
     # Compute from the sample distribution so a calibration `correction` and the `trust`
     # anchor shift the projection AND prob_over together. Projection = the MEAN (continuous);
     # the median of integer count samples is lumpy.
     s = getattr(p, "samples", None)
     if s is not None:
-        out = _payload_from_samples(s, line, correction, trust, anchor)
+        out = _payload_from_samples(s, line, correction, trust, anchor, width)
     else:
-        out = {"projection": round(float(p.mean), 2), "median": round(float(p.median), 1),
-               "floor": round(float(p.floor), 1), "ceiling": round(float(p.ceiling), 1),
-               "p25": round(float(p.p25), 1), "p75": round(float(p.p75), 1),
-               "model_raw": round(float(p.mean), 2), "method": "engine"}
+        mu = float(p.mean)
+        w = min(3.0, float(width)) if width and float(width) > 1.0 else 1.0
+        def _st(v):                                  # stretch around the mean, never below 0
+            return max(0.0, mu + w * (float(v) - mu))
+        out = {"projection": round(mu, 2), "median": round(float(p.median), 1),
+               "floor": round(_st(p.floor), 1), "ceiling": round(_st(p.ceiling), 1),
+               "p25": round(_st(p.p25), 1), "p75": round(_st(p.p75), 1),
+               "model_raw": round(mu, 2), "method": "engine"}
         if line is not None:
             out["prob_over"] = round(float(p.prob_over(float(line))), 3)
     out["drivers"] = list(getattr(p, "drivers", []) or [])   # matchup/park factors
@@ -296,7 +303,13 @@ def _payload(p, line, correction: float = 0.0, trust: float | None = None,
 
 
 def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None = None,
-                          anchor: float | None = None) -> dict:
+                          anchor: float | None = None, width: float | None = None) -> dict:
+    """`width` inflates the spread used for the reported INTERVALS (floor/p25/median/p75/ceiling).
+    Measured 2026-07-21: only 56% of outcomes landed inside our p10–p90 band (should be 80%) —
+    the Monte-Carlo distributions are too narrow, so the floor/ceiling we showed were far tighter
+    than reality. Widening is applied around the mean, so the PROJECTION is unchanged; P(over)
+    keeps its own (separately calibrated) path so the validated probability isn't double-corrected.
+    """
     import numpy as np
     if correction:
         s = np.clip(s + correction, 0, None)     # calibration shift, floored at 0
@@ -313,10 +326,18 @@ def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None 
         proj = t * raw_mean + (1.0 - t) * fair
         s = np.clip(s + (proj - raw_mean), 0.0, None)
     q = np.percentile(s, [10, 25, 50, 75, 90])
+    lo10, lo25, med, hi75, hi90 = (float(x) for x in q)
+    if width and float(width) > 1.0:
+        # Stretch the spread around the projection, then re-read the quantiles. Central estimates
+        # (projection, median) are deliberately left on the un-stretched distribution — this widens
+        # the INTERVAL, it does not move the call.
+        w = min(3.0, float(width))
+        qw = np.percentile(np.clip(proj + w * (s - proj), 0.0, None), [10, 25, 75, 90])
+        lo10, lo25, hi75, hi90 = (float(x) for x in qw)
     out = {
-        "projection": round(proj, 2), "median": round(float(q[2]), 1),
-        "floor": round(float(q[0]), 1), "ceiling": round(float(q[4]), 1),
-        "p25": round(float(q[1]), 1), "p75": round(float(q[3]), 1),
+        "projection": round(proj, 2), "median": round(med, 1),
+        "floor": round(lo10, 1), "ceiling": round(hi90, 1),
+        "p25": round(lo25, 1), "p75": round(hi75, 1),
         "model_raw": round(raw_mean, 2), "method": "engine",
     }
     if line is not None:

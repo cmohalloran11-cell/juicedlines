@@ -1413,6 +1413,9 @@ function soccerDrawer(line,a,hist){
     const cls=edge>0.05?'pos':edge<-0.05?'neg':'';
     const kind=a.proj_kind;
     const probCell=a.model_prob!=null?`<div class="proj-cell"><div class="v">${Math.round(a.model_prob*100)}%</div><div class="l">P(over)</div></div>`:'';
+    // 80% band (p10–p90) from the simulated distribution — the realistic floor/ceiling, not the call.
+    const lo=line.model_floor, hi=line.model_ceiling;
+    const rangeCell=(lo!=null&&hi!=null)?`<div class="proj-cell" title="80% range: we expect the result to land between ${lo} and ${hi} in 8 of 10 games. Widened to match measured outcomes."><div class="v" style="font-size:15px">${lo}–${hi}</div><div class="l">80% Range</div></div>`:'';
     const nCell=(kind==='espn'&&a.model_n)?`<div class="proj-cell"><div class="v">${a.model_n}</div><div class="l">Games</div></div>`:'';
     const note=a.note||(kind==='espn'?'Blend of the player’s recent ESPN match form and the market line (club form is bias-adjusted toward the World Cup line), with a Poisson P(over).'
               :kind==='poisson'?'Poisson expected count calibrated to the de-vigged market price.'
@@ -1423,7 +1426,7 @@ function soccerDrawer(line,a,hist){
         <div class="proj-cell"><div class="v">${a.model_proj}</div><div class="l">Proj</div></div>
         <div class="proj-cell"><div class="v">${a.line??line.line}</div><div class="l">This Line</div></div>
         <div class="proj-cell edge"><div class="v ${cls}">${edge>0?'+':''}${edge}</div><div class="l">Edge</div></div>
-        ${probCell}${nCell}
+        ${probCell}${rangeCell}${nCell}
       </div><div style="font-size:11px;color:var(--muted2);margin-top:10px">${note}</div></div></div>`;
   }
   // Tennis: serve/return + Elo splits from the model.

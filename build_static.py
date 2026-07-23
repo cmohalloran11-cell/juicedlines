@@ -101,6 +101,7 @@ _KEEP = (
     "over_price", "under_price", "over_implied", "under_implied", "pickem_price",
     "headshot", "team_logo", "flag", "country",
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
+    "model_floor", "model_ceiling",     # the p10-p90 range shown under the projection
     "bball_confidence", "tennis_confidence",
     "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
@@ -226,10 +227,13 @@ def main() -> None:
         try:
             trust = {"MLB": db.stat_gammas("MLB", min_n=120),
                      "prob_cal": {"MLB": db.prob_calibration("MLB")},   # honest P(over)
+                     # honest floor/ceiling: our p10-p90 band only held 56% of outcomes, not 80%
+                     "width": {"MLB": db.interval_width("MLB")},
                      "updated_at": updated}
             OUT_TRUST.write_text(json.dumps(trust, separators=(",", ":")), encoding="utf-8")
             print(f"  wrote {OUT_TRUST.name}: {len(trust['MLB'])} stats trusted, "
-                  f"prob_cal {trust['prob_cal']['MLB'] or 'none'}")
+                  f"prob_cal {trust['prob_cal']['MLB'] or 'none'}, "
+                  f"interval width x{trust['width']['MLB']}")
         except Exception as exc:
             print(f"  trust.json SKIPPED ({exc})")
     except Exception as exc:

@@ -1370,6 +1370,14 @@ def _mlb_trust() -> dict:
     return m if isinstance(m, dict) else {}
 
 
+def _mlb_width() -> float:
+    """Stretch factor for the reported floor/ceiling band (1.0 = none). See db.interval_width."""
+    try:
+        return float(_trust_json().get("width", {}).get("MLB") or 1.0)
+    except Exception:
+        return 1.0
+
+
 def _mlb_prob_cal() -> dict:
     """Platt calibration {a,b} for P(over) — the model's distributions are overconfident, so this
     (a<1) shrinks confidence toward 0.5 to make the probabilities honest. Empty → no calibration."""
@@ -1465,6 +1473,7 @@ def attach_projections(lines: list[dict]) -> None:
         trust_map = _mlb_trust()                # per-stat γ trust — anchor toward the line where
                                                 # the model doesn't beat it (ledger-driven)
         prob_cal = _mlb_prob_cal()              # Platt calibration → honest P(over) (ledger-driven)
+        width = _mlb_width()                    # stretch floor/ceiling → an honest p10-p90 band
         lineups = _todays_lineups()             # today's confirmed batting orders (empty until posted)
 
         engine_cache: dict[tuple, Any] = {}     # (pid,is_pitcher[,'b'/'c'/'w']) → engine projections
@@ -1541,7 +1550,7 @@ def attach_projections(lines: list[dict]) -> None:
                 _tw_use = _tw if _anchor is not None else None
                 eng = projector_bridge.for_stat(
                     engine_cache[ck], l.get("stat_type") or "", line_val, is_pitcher, sc_corr,
-                    trust=_tw_use, anchor=_anchor)
+                    trust=_tw_use, anchor=_anchor, width=width)
                 if eng:
                     l["model_proj"] = eng["projection"]
                     l["model_edge"] = round(eng["projection"] - line_val, 1)

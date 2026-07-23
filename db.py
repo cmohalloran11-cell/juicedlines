@@ -88,6 +88,10 @@ def init_db() -> None:
                          ("model_raw", "REAL"),        # pre-anchor projection m
                          ("model_raw_prob", "REAL"),   # pre-anchor P(over) at close_line
                          ("trust_weight", "REAL"),     # anchor weight actually applied
+                         # the SHIPPED p10/p90 band. Without these, interval coverage can only be
+                         # inferred from P(over) via a normal approx, which blows up on low-count
+                         # discrete stats (runs vs a 0.5 line). Logged → coverage is a direct count.
+                         ("model_floor", "REAL"), ("model_ceiling", "REAL"),
                          ("game_id", "TEXT")):
             if col not in have:
                 c.execute(f"ALTER TABLE prop_clv ADD COLUMN {col} {typ}")
@@ -207,6 +211,7 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
             l.get("over_price"), l.get("under_price"),
             l.get("over_implied"), l.get("under_implied"),
             l.get("model_raw"), l.get("model_raw_prob"), l.get("trust_weight"),
+            l.get("model_floor"), l.get("model_ceiling"),
             l.get("game_id"),
         ))
     if not rows:
@@ -219,8 +224,9 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
                 close_proj_b, close_prob_b, close_proj_c, close_prob_c,
                 odds_type, close_over_price, close_under_price,
                 close_over_implied, close_under_implied,
-                model_raw, model_raw_prob, trust_weight, game_id)
-            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?,?)
+                model_raw, model_raw_prob, trust_weight,
+                model_floor, model_ceiling, game_id)
+            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?)
             ON CONFLICT(line_id, game_date) DO UPDATE SET
                 close_ts=excluded.close_ts, close_line=excluded.close_line,
                 close_prob=excluded.close_prob, close_proj=excluded.close_proj,
@@ -233,7 +239,9 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
                 close_over_implied=excluded.close_over_implied,
                 close_under_implied=excluded.close_under_implied,
                 model_raw=excluded.model_raw, model_raw_prob=excluded.model_raw_prob,
-                trust_weight=excluded.trust_weight, game_id=excluded.game_id
+                trust_weight=excluded.trust_weight,
+                model_floor=excluded.model_floor, model_ceiling=excluded.model_ceiling,
+                game_id=excluded.game_id
         """, rows)
         c.commit()
     return len(rows)
@@ -344,6 +352,47 @@ def prob_calibration(sport: str = "MLB", min_n: int = 400) -> dict:
     if not (0.2 < a < 3.0):                         # implausible fit → don't calibrate
         return {}
     return {"a": round(a, 4), "b": round(b, 4)}
+
+
+def interval_width(sport: str = "MLB", min_n: int = 300) -> float:
+    """How much to STRETCH the reported floor–ceiling band so it means what it says.
+
+    Our p10–p90 band should contain 80% of outcomes. Measured 2026-07-21 on MLB it contained
+    ~56% — the Monte-Carlo distributions are too narrow, so every floor/ceiling we showed was
+    tighter than reality.
+
+    Two ways to size the fix, in preference order:
+      1. DIRECT — once `model_floor`/`model_ceiling` have accrued, just count how often the
+         outcome landed inside the shipped band and scale the half-width by the ratio of the
+         normal z-scores for target vs actual coverage. No distributional assumption at all.
+      2. IMPLIED — before that data exists, borrow the Platt slope: shrinking the logit by `a`
+         is algebraically the same correction as widening the SD by 1/a, so w = 1/a. (The
+         standalone-SD estimate is NOT used: backing an SD out of a probability explodes on
+         low-count discrete stats — runs against a 0.5 line — and read 4.3x against this 1.85x.)
+
+    Returns 1.0 (no stretch) when there's nothing trustworthy to go on.
+    """
+    from statistics import NormalDist
+    with _lock, _conn() as c:
+        rows = c.execute(
+            """SELECT actual y, model_floor lo, model_ceiling hi FROM prop_clv
+               WHERE sport=? AND actual IS NOT NULL AND model_floor IS NOT NULL
+               AND model_ceiling IS NOT NULL AND model_ceiling > model_floor
+               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
+            (sport,)).fetchall()
+    if len(rows) >= min_n:
+        hit = sum(1 for r in rows if r["lo"] <= r["y"] <= r["hi"]) / len(rows)
+        hit = min(0.98, max(0.30, hit))
+        # band is ±z_actual sigma but should be ±z_target sigma → stretch by the ratio
+        z_act = NormalDist().inv_cdf(0.5 + hit / 2.0)
+        z_tgt = NormalDist().inv_cdf(0.90)            # p10–p90
+        if z_act > 1e-6:
+            return round(min(3.0, max(1.0, z_tgt / z_act)), 2)
+    cal = prob_calibration(sport)
+    a = float(cal.get("a") or 0)
+    if 0.2 < a < 1.0:
+        return round(min(3.0, 1.0 / a), 2)
+    return 1.0
 
 
 def set_actual(line_id: str, game_date: str, actual: float | None, graded_at: str) -> None:
