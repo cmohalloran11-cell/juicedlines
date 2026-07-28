@@ -85,6 +85,14 @@ class EspnBasketball(GameLogSource):
             pass
         return out
 
+    def _valid_team_ids(self, league: str) -> set[str]:
+        """Real franchise team ids for the league — used to drop non-league exhibitions
+        (the All-Star Game, e.g. WNBA's "Team Coop" vs "Team Spoon") from game logs and
+        completed-game listings. ESPN doesn't tag these with a distinct season/game type;
+        the only reliable signal is that the competing "teams" aren't real franchises."""
+        ids = set(self.teams(league).values())
+        return ids  # empty on a fetch failure → callers must treat empty as "don't filter"
+
     def team_assets(self, league: str) -> dict:
         """normalized team name/abbr → {id, abbr, logo, name} for board logos + drawer."""
         key = f"assets::{league}"
@@ -148,11 +156,19 @@ class EspnBasketball(GameLogSource):
         today = date.today()
         span = f"{today - timedelta(days=25):%Y%m%d}-{today + timedelta(days=2):%Y%m%d}"
         d = _get(_SITE.format(path=self._path(league)) + f"/scoreboard?dates={span}", 1800)
+        valid_ids = self._valid_team_ids(league)
         out = []
         for ev in (d or {}).get("events", []):
             comp = ev.get("competitions", [{}])[0]
-            if comp.get("status", {}).get("type", {}).get("state") == "post":
-                out.append(ev.get("id"))
+            if comp.get("status", {}).get("type", {}).get("state") != "post":
+                continue
+            # Same exhibition leak as _athlete_gamelog (e.g. the All-Star Game's "Team Coop" vs
+            # "Team Spoon") — both competitors are fake teams, so require BOTH to be real.
+            competitors = comp.get("competitors", []) or []
+            ids = {str(c.get("team", {}).get("id")) for c in competitors if c.get("team")}
+            if valid_ids and ids and not ids.issubset(valid_ids):
+                continue
+            out.append(ev.get("id"))
         return out
 
     def _parse_box(self, league: str, summ: dict) -> list[tuple]:
@@ -229,6 +245,7 @@ class EspnBasketball(GameLogSource):
             return []
         ix = {n: i for i, n in enumerate(names)}
         ev_meta = (d or {}).get("events") or {}          # {eventId: {gameDate, opponent, ...}}
+        valid_ids = self._valid_team_ids(league)
         games: list[PlayerGame] = []
         for stp in d.get("seasonTypes", []) or []:
             for cat in stp.get("categories", []) or []:
@@ -242,14 +259,22 @@ class EspnBasketball(GameLogSource):
                     mins = _num(g("minutes"))
                     if mins <= 0:
                         continue
-                    fgm, fga = _made_att(g("fieldGoalsMade-fieldGoalsAttempted"))
-                    tpm, tpa = _made_att(g("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
-                    ftm, fta = _made_att(g("freeThrowsMade-freeThrowsAttempted"))
                     meta = ev_meta.get(str(ev.get("eventId")), {}) if ev_meta else {}
                     opp = ""
                     o = meta.get("opponent") or {}
                     if isinstance(o, dict):
                         opp = o.get("displayName") or o.get("abbreviation") or ""
+                        # Exhibitions (the All-Star Game) pit fake "teams" against real ones —
+                        # ESPN gives them no distinct season/game type, so this is the only
+                        # reliable filter. A player's most-recent game being the All-Star Game
+                        # (reduced/atypical minutes, no real defense) would otherwise corrupt
+                        # every recency-weighted projection for everyone who played in it.
+                        opp_id = o.get("id")
+                        if valid_ids and opp_id is not None and str(opp_id) not in valid_ids:
+                            continue
+                    fgm, fga = _made_att(g("fieldGoalsMade-fieldGoalsAttempted"))
+                    tpm, tpa = _made_att(g("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
+                    ftm, fta = _made_att(g("freeThrowsMade-freeThrowsAttempted"))
                     games.append(PlayerGame(
                         date=(meta.get("gameDate") or "")[:10], league=league,
                         player_id=str(player_id), player="",
