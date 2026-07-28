@@ -244,7 +244,7 @@ const signedIn=()=>!!AUTH.token && !STATIC;
 // static site is served locally for testing, the JSON sits next to this file, so read relative.
 const _LOCAL=location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:';
 const DATA_BASE=_LOCAL?'./':'https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/';
-async function detectMode(){try{const r=await fetch('/api/status',{cache:'no-store'});STATIC=!r.ok;}catch(e){STATIC=true;}}
+async function detectMode(){try{const r=await fetch('./api/status',{cache:'no-store'});STATIC=!r.ok;}catch(e){STATIC=true;}}
 async function staticApi(path){
   const [base,qs]=path.split('?'); const q=new URLSearchParams(qs||'');
   const J=f=>fetch(DATA_BASE+f+'?t='+Math.floor(Date.now()/60000)).then(r=>r.json()).catch(()=>({}));
