@@ -64,10 +64,29 @@ calls, ephemeral disk, and the ~40 s cold pull exceeds function timeouts).
 
 ---
 
+## Environment variables (Juiced 2.0)
+
+All optional — the app runs with none set. Configure on the host (Render/Railway env vars).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HISTORY_RETENTION_DAYS` | `14` | Rolling window for the line-movement snapshot table. `0` disables pruning. Keeps `history.db` bounded (it reached 1.77 GB unbounded). |
+| `DATABASE_URL` | *(unset → SQLite)* | Point at Postgres (`postgres://…`) to move the users/watchlists/portfolio store off SQLite. Requires `psycopg` (see requirements.txt). |
+| `SUPABASE_URL` | *(unset)* | Supabase project URL (e.g. `https://<ref>.supabase.co`). Enables **ES256/JWKS** verification of Supabase JWTs — the current default. Unset + no secret ⇒ per-user endpoints fail closed (401). |
+| `SUPABASE_JWT_SECRET` | *(unset)* | Legacy HS256 symmetric secret (only if not using JWKS). |
+| `SUPABASE_JWT_AUD` | `authenticated` | JWT audience claim to verify. |
+| `JUICED_AUTH_DEV` | *(off)* | Local-only escape hatch: with auth unconfigured, trust an `X-Dev-User` header. **Never set in production.** |
+| `AI_PROVIDER` | `gemini` | `gemini` or `anthropic`. |
+| `GEMINI_API_KEY` | *(unset)* | Google Gemini key — enables AI Juice (`/api/ai/*`) when `AI_PROVIDER=gemini`. |
+| `ANTHROPIC_API_KEY` / `AI_API_KEY` | *(unset)* | Anthropic key — used when `AI_PROVIDER=anthropic`. |
+| `AI_MODEL` | `gemini-2.5-flash` | Model for AI Juice (provider-appropriate default). |
+
+New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/ai/explain?id=`, and the authenticated `/api/me`, `/api/watchlists*`, `/api/portfolio*`.
+
 ## Notes
 
-- **No secrets/keys required.** PrizePicks reads the cookie-free partner API; MLB/ESPN
-  need no keys. `config.json` is gitignored and optional.
+- **No secrets/keys required to run.** PrizePicks reads the cookie-free partner API;
+  MLB/ESPN need no keys. Auth and AI features activate only when their env vars are set.
 - The `betting_dashboard` clients (Underdog, Kalshi, MLB) are **vendored** here
   (`underdog.py`, `kalshi.py`, `mlb_model.py`) so the repo is self-contained. Local dev
   still prefers the sibling `../betting_dashboard` if present. Re-copy if you update them.

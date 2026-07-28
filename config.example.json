@@ -1,4 +1,3 @@
 {
-  "_comment": "Copy this file to config.json and paste your real PrizePicks cookie. config.json is gitignored so your cookie never gets committed. The _px3 PerimeterX token rotates ~every 30 min — re-paste a fresh cookie string from your browser DevTools (Network tab → any prizepicks.com request → Cookie header) when PrizePicks starts returning 403.",
-  "prizepicks_cookie": "PASTE_FULL_COOKIE_STRING_HERE_INCLUDING__px3"
+  "_comment": "No config file is required anymore. PrizePicks is read cookie-free from the partner API (see fetch_prizepicks in pullers.py), so the old prizepicks_cookie / _px3 PerimeterX token is no longer used. Any real secrets should go in environment variables (or a gitignored .env), never in a committed file. If a legacy config.json with a cookie still exists locally, it is dead and safe to delete."
 }

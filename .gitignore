@@ -1,5 +1,6 @@
 # secrets / credentials — NEVER COMMIT
-# config.json holds the live PrizePicks _px3 cookie (see config.example.json)
+# config.json is legacy/unused (PrizePicks is now cookie-free) but stays ignored so
+# any stray local secret in it can never be committed. Real secrets → env / .env.
 config.json
 .env
 *.key

@@ -92,7 +92,13 @@ def init_db() -> None:
                          # inferred from P(over) via a normal approx, which blows up on low-count
                          # discrete stats (runs vs a 0.5 line). Logged → coverage is a direct count.
                          ("model_floor", "REAL"), ("model_ceiling", "REAL"),
-                         ("game_id", "TEXT")):
+                         ("game_id", "TEXT"),
+                         # ── provenance (2026-07-26) — spec Principle 4 (reproducibility).
+                         # Records WHICH model/feature logic and WHICH data date produced each
+                         # projection, so a historical row stays attributable to its exact logic.
+                         ("model_version", "TEXT"),
+                         ("feature_version", "TEXT"),
+                         ("data_snapshot", "TEXT")):
             if col not in have:
                 c.execute(f"ALTER TABLE prop_clv ADD COLUMN {col} {typ}")
         c.commit()
@@ -147,6 +153,39 @@ def prune_clv(keep_ungraded_days: int = 3) -> int:
     except Exception:
         pass
     return n
+
+
+def prune_history(keep_days: int = 14) -> int:
+    """
+    Drop line_history snapshot rows older than `keep_days`.
+
+    line_history grows by ~one row per live line per snapshot (~14k MLB rows every few
+    minutes). It is ONLY read to draw a prop's recent line-movement chart (get_history),
+    and a prop is settled within a day of its slate — nobody charts movement from weeks
+    ago. Left unpruned it reached 9.6M rows / 1.77 GB in a month. A rolling window keeps
+    the file bounded; freed pages are reused by later inserts, so the file stabilizes
+    without a VACUUM every pass (call compact() for a one-time reclaim after shrinking
+    the window). Returns the number of rows deleted.
+    """
+    with _lock, _conn() as c:
+        cur = c.execute(
+            "DELETE FROM line_history WHERE ts < strftime('%Y-%m-%dT%H:%M:%S+00:00', "
+            "'now', ?)", (f"-{int(keep_days)} day",))
+        n = cur.rowcount or 0
+        c.commit()
+    return n
+
+
+def compact() -> None:
+    """VACUUM the database to reclaim freelist pages to the OS. Slow and needs free disk
+    (~the DB's size) — run sparingly (one-time after a big prune / retention change), not
+    every loop. Runs on its own connection: VACUUM can't execute inside a transaction."""
+    try:
+        c2 = sqlite3.connect(DB_PATH)
+        c2.execute("VACUUM")
+        c2.close()
+    except Exception:
+        pass
 
 
 def get_history(line_id: str, limit: int = 200) -> list[dict]:
@@ -213,6 +252,7 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
             l.get("model_raw"), l.get("model_raw_prob"), l.get("trust_weight"),
             l.get("model_floor"), l.get("model_ceiling"),
             l.get("game_id"),
+            l.get("model_version"), l.get("feature_version"), l.get("data_snapshot"),
         ))
     if not rows:
         return 0
@@ -225,8 +265,9 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
                 odds_type, close_over_price, close_under_price,
                 close_over_implied, close_under_implied,
                 model_raw, model_raw_prob, trust_weight,
-                model_floor, model_ceiling, game_id)
-            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?)
+                model_floor, model_ceiling, game_id,
+                model_version, feature_version, data_snapshot)
+            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?)
             ON CONFLICT(line_id, game_date) DO UPDATE SET
                 close_ts=excluded.close_ts, close_line=excluded.close_line,
                 close_prob=excluded.close_prob, close_proj=excluded.close_proj,
@@ -241,7 +282,10 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
                 model_raw=excluded.model_raw, model_raw_prob=excluded.model_raw_prob,
                 trust_weight=excluded.trust_weight,
                 model_floor=excluded.model_floor, model_ceiling=excluded.model_ceiling,
-                game_id=excluded.game_id
+                game_id=excluded.game_id,
+                model_version=excluded.model_version,
+                feature_version=excluded.feature_version,
+                data_snapshot=excluded.data_snapshot
         """, rows)
         c.commit()
     return len(rows)
@@ -469,6 +513,23 @@ def scorecard(sport: str | None = None, edge: float = 0.5) -> dict:
         "ab_plain": round(ab_a / ab_n, 4) if ab_n else None,
         "ab_enhanced": round(ab_b / ab_n, 4) if ab_n else None,
     }
+
+
+def recent_prop_moves(limit: int = 400) -> list[dict]:
+    """Today's props with their open→close line and projection movement (for the dashboard's
+    Top Movers / Biggest Line Move widgets). Reads the CLV ledger, which already tracks the
+    open and close of each prop-day. Returns only rows where something actually moved."""
+    with _lock, _conn() as c:
+        rows = c.execute("""
+            SELECT player, stat_type, sport, source,
+                   open_line, close_line, open_proj, close_proj
+            FROM prop_clv
+            WHERE game_date = date('now') AND player IS NOT NULL
+              AND open_line IS NOT NULL AND close_line IS NOT NULL
+            ORDER BY ABS(COALESCE(close_line,0)-COALESCE(open_line,0)) DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def stat_biases(sport: str = "MLB", min_n: int = 60) -> dict:

@@ -47,6 +47,8 @@ except Exception:
 
 # History DB for line-movement based analytics
 import db
+# Reproducibility metadata stamped on every projection (spec Principle 4).
+import provenance
 
 # stat-projector engine (optional) — powers MLB projections with a real
 # Bayesian + Monte-Carlo distribution when importable; falls back to empirical.
@@ -1555,6 +1557,14 @@ def attach_projections(lines: list[dict]) -> None:
         attach_basketball(lines)
     except Exception as exc:
         print(f"[basketball] attach failed: {exc}")
+
+    # Reproducibility: stamp model/feature/sim versions + data snapshot onto every
+    # projected line (and mirror the ledger-persisted subset as flat fields). Runs last
+    # so it covers all sports' projections in one pass. See provenance.stamp_lines.
+    try:
+        provenance.stamp_lines(lines)
+    except Exception as exc:
+        print(f"[provenance] stamp failed: {exc}")
 
 
 # ─────────────────────────────────────────────── dispatcher ──────────────────

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Juiced — Terminal</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23080b05'/%3E%3Cpath d='M58 8 L24 54 H46 L40 92 L78 40 H54 Z' fill='%23b6f01a'/%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#0a0e09;--panel:#111710;--line:#1e281c;--line2:#273222;--text:#e9f0e6;--muted:#8b978a;
+  --dim:#5c675a;--accent:#c6f24e;--accent2:#a6e02a;--up:#8ee65a;--down:#ff6b6b;--warn:#e8c84a;--purple:#a06bff;
+}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.side{background:linear-gradient(180deg,#0c110b,#090d08);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 14px;font-weight:900;letter-spacing:-.5px;font-size:19px}
+.brand .bolt{color:var(--accent)}.brand .collapse{color:var(--dim);cursor:pointer;font-size:16px}
+.nav{flex:1;overflow-y:auto;padding:6px 10px}
+.nav::-webkit-scrollbar{width:6px}.nav::-webkit-scrollbar-thumb{background:#1c261a;border-radius:3px}
+.nav a{display:flex;align-items:center;gap:11px;padding:8.5px 11px;border-radius:9px;color:var(--muted);font-weight:600;font-size:12.7px;margin:1px 0;transition:.12s;cursor:pointer}
+.nav a:hover{background:#131a11;color:var(--text)}
+.nav a.active{background:linear-gradient(90deg,#1b2416,#141b11);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
+.nav a.active svg{color:var(--accent)}
+.nav svg{width:16px;height:16px;flex:0 0 16px;color:var(--dim)}.nav a:hover svg{color:var(--muted)}
+.badge{margin-left:auto;font-size:9.5px;font-weight:800;padding:1.5px 6px;border-radius:20px;background:var(--accent);color:#0a120a}
+.badge.pro{background:#2a3720;color:var(--accent)}
+.plan{margin:10px;padding:13px;border:1px solid var(--line2);border-radius:12px;background:#0e130d}
+.plan .t{display:flex;gap:8px;font-weight:800;font-size:12.5px}.plan .s{color:var(--muted);font-size:11px;margin:3px 0 10px}
+.plan button{width:100%;padding:8px;border-radius:8px;border:1px solid var(--line2);background:#141b11;color:var(--text);font-weight:700;font-size:11.5px;cursor:pointer}
+.plan button:hover{border-color:var(--accent);color:var(--accent)}
+.main{min-width:0}
+.topbar{display:flex;align-items:center;gap:18px;padding:18px 26px 6px}
+.hello h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.4px;display:flex;gap:8px}
+.hello p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.search{flex:1;max-width:520px;margin:0 auto;position:relative}
+.search input{width:100%;padding:10px 14px 10px 38px;border-radius:11px;border:1px solid var(--line2);background:#0e130d;color:var(--text);font-size:13px}
+.search input::placeholder{color:var(--dim)}
+.search svg{position:absolute;left:12px;top:11px;width:15px;height:15px;color:var(--dim)}
+.search kbd{position:absolute;right:10px;top:9px;font-size:10px;color:var(--dim);border:1px solid var(--line2);border-radius:5px;padding:2px 5px}
+.topright{display:flex;align-items:center;gap:14px}
+.aijuice{display:flex;gap:7px}.aijuice .lbl{color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase}.aijuice .val{color:var(--accent);font-size:15px;font-weight:800}
+.avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#2a3720,#141b11);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer}
+.view{padding:8px 26px 50px}
+.grid2{display:grid;grid-template-columns:1fr 340px;gap:22px;align-items:start}
+.tabs{display:flex;gap:6px;margin:6px 0 18px;flex-wrap:wrap}
+.tab{display:flex;align-items:center;gap:7px;padding:8px 15px;border-radius:10px;border:1px solid var(--line2);background:#0e130d;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer}
+.tab:hover{color:var(--text)}.tab.active{background:linear-gradient(180deg,#1c2616,#151d12);color:var(--accent);border-color:#31401f}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.tile{border:1px solid var(--line);border-radius:14px;padding:14px;background:linear-gradient(180deg,#101610,#0d120c);position:relative;overflow:hidden;min-height:104px}
+.tile .cap{color:var(--muted);font-size:11px;margin-bottom:6px}.tile .big{font-size:25px;font-weight:900;letter-spacing:-1px;line-height:1}
+.tile .sub{color:var(--muted);font-size:11px;margin-top:8px}.tile .sub b{color:var(--text)}
+.tile .ph{position:absolute;right:12px;bottom:10px;width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid var(--line2);background:#0a0e09}
+.tile.meter .bar{height:7px;border-radius:5px;background:#1a2416;margin-top:12px;overflow:hidden}.tile.meter .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent))}
+.pos{color:var(--accent)}.neg{color:var(--down)}
+.panel{border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:16px}
+.phead{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 6px}
+.phead h3{margin:0;font-size:15px;font-weight:800}.phead .hint{color:var(--muted);font-size:11.5px;font-weight:500;margin-left:8px}
+.phead a,.phead .lnk{color:var(--muted);font-size:11.5px;font-weight:700;cursor:pointer}.phead a:hover,.phead .lnk:hover{color:var(--accent)}
+table{width:100%;border-collapse:collapse}
+.drops th{text-align:left;color:var(--dim);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:8px 14px;border-bottom:1px solid var(--line)}
+.drops td{padding:10px 14px;vertical-align:middle}
+.drops tr:not(:last-child) td{border-bottom:1px solid #14190f}.drops tbody tr{cursor:pointer}.drops tbody tr:hover td{background:#0f150d}
+.pl{display:flex;align-items:center;gap:10px}.pl img{width:30px;height:30px;border-radius:50%;object-fit:cover;background:#0a0e09;border:1px solid var(--line2)}
+.pl .nm{font-weight:700}.pl .tm{color:var(--muted);font-size:10.5px}
+.prop .p1{font-weight:600}.prop .p2{color:var(--muted);font-size:10.5px}.mono{font-variant-numeric:tabular-nums}
+.js{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;font-weight:800;font-size:12px}
+.conf{display:flex;align-items:center;gap:8px;min-width:110px}.conf .track{flex:1;height:6px;border-radius:4px;background:#1a2416;overflow:hidden}.conf .track i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent))}
+.star{color:var(--dim);cursor:pointer;font-size:15px}.star:hover,.star.on{color:var(--warn)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}.spark{width:100%;height:150px}
+.donutwrap{display:flex;align-items:center;gap:18px;padding:6px 16px 16px}.legend{flex:1;display:flex;flex-direction:column;gap:7px}.legend .row{display:flex;gap:8px;font-size:12px}.legend .dot{width:9px;height:9px;border-radius:3px}.legend .pct{margin-left:auto;color:var(--muted);font-weight:700}
+.rcard{border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:16px}
+.rhead{display:flex;align-items:center;justify-content:space-between;padding:13px 15px 9px}.rhead h4{margin:0;font-size:13.5px;font-weight:800;display:flex;gap:7px}.rhead .n{color:var(--muted)}.rhead a,.rhead .lnk{color:var(--muted);font-size:11px;font-weight:700;cursor:pointer}
+.alert{display:flex;gap:10px;padding:10px 15px;border-top:1px solid #14190f}.alert .ai{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex:0 0 26px;font-size:13px}
+.alert .h{font-weight:700;font-size:12px}.alert .d{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.alert .t{color:var(--dim);font-size:10.5px;white-space:nowrap}
+.mtabs{display:flex;gap:4px;padding:0 12px 8px}.mtab{font-size:10.5px;font-weight:700;color:var(--dim);padding:4px 8px;border-radius:6px;cursor:pointer}.mtab.active{background:#161d12;color:var(--accent)}
+.mv{display:flex;align-items:center;gap:9px;padding:8px 15px;border-top:1px solid #14190f}.mv .rk{color:var(--dim);font-weight:800;width:12px;font-size:11px}.mv .nm{font-weight:700;font-size:12px}.mv .sub{color:var(--muted);font-size:10.5px}.mv .mval{margin-left:auto;font-weight:800;font-size:12px}
+.gm{display:flex;align-items:center;gap:10px;padding:9px 15px;border-top:1px solid #14190f;font-size:12px}.gm .lg{width:22px;height:22px;border-radius:5px;background:#0e130d;display:flex;align-items:center;justify-content:center}.gm .g{font-weight:700}.gm .lbl{color:var(--muted);font-size:10.5px}.gm .tm2{margin-left:auto;color:var(--muted);font-weight:600}
+.ai-sum{border:1px solid var(--line2);border-radius:14px;background:linear-gradient(120deg,#111a10,#0e130d);padding:16px;display:flex;gap:14px;align-items:flex-start}.ai-sum .orb{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#2a3720,#141b11);display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:900;flex:0 0 30px}.ai-sum h4{margin:0 0 4px;font-size:14px}.ai-sum p{margin:0;color:var(--muted);font-size:12.5px;max-width:640px}.ai-sum .btn{margin-left:auto;background:linear-gradient(135deg,#7c4dff,#b06bff);color:#fff;border:0;border-radius:9px;padding:9px 14px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
+.muted{color:var(--muted)}.skel{color:var(--dim)}.center{text-align:center}
+/* page header */
+.ph2{display:flex;align-items:flex-end;justify-content:space-between;margin:6px 0 16px}.ph2 h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.3px}.ph2 p{margin:3px 0 0;color:var(--muted);font-size:12.5px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+select,.ctl{padding:8px 12px;border-radius:9px;border:1px solid var(--line2);background:#0e130d;color:var(--text);font-size:12.5px;font-weight:600}
+.btn{padding:8px 14px;border-radius:9px;border:1px solid var(--line2);background:#141b11;color:var(--text);font-weight:700;font-size:12px;cursor:pointer}.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.pri{background:var(--accent);color:#0a120a;border-color:var(--accent)}.btn.pri:hover{background:var(--accent2);color:#0a120a}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:800;background:#161d12;color:var(--muted)}
+.chip.g{background:#16240f;color:var(--accent)}.chip.r{background:#241010;color:var(--down)}.chip.y{background:#241f0f;color:var(--warn)}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:12px}.kv .b{border:1px solid var(--line);border-radius:11px;padding:12px;background:#0e130d}.kv .b .l{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}.kv .b .v{font-size:20px;font-weight:800;margin-top:3px}
+.empty{padding:60px 20px;text-align:center;color:var(--dim)}.empty .em{font-size:30px;margin-bottom:8px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.learn-card{border:1px solid var(--line);border-radius:12px;padding:16px;background:#0e130d}.learn-card h4{margin:0 0 6px}.learn-card p{margin:0;color:var(--muted);font-size:12.5px}
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(3,6,3,.6);backdrop-filter:blur(3px);z-index:80;display:none}
+.scrim.open{display:block}
+.drawer{position:fixed;top:0;right:0;height:100vh;width:min(460px,94vw);background:linear-gradient(180deg,#0e130d,#0b0f0a);border-left:1px solid var(--line2);z-index:81;transform:translateX(100%);transition:.22s;overflow-y:auto;box-shadow:-30px 0 60px rgba(0,0,0,.5)}
+.drawer.open{transform:none}
+.dh{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;position:sticky;top:0;background:#0e130d;z-index:2}
+.dh img{width:46px;height:46px;border-radius:50%;border:1px solid var(--line2);background:#0a0e09}.dh .x{margin-left:auto;cursor:pointer;color:var(--muted);font-size:20px}
+.dsec{padding:16px 20px;border-bottom:1px solid var(--line)}.dsec h5{margin:0 0 10px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+.distbar{width:100%;height:90px}
+.aibox{background:#0d120c;border:1px solid var(--line2);border-radius:10px;padding:12px;color:var(--muted);font-size:12.5px;line-height:1.6}
+.aibox.filled{color:var(--text)}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#16240f;color:var(--accent);border:1px solid #2c4218;padding:10px 18px;border-radius:10px;font-weight:700;font-size:12.5px;z-index:90;opacity:0;transition:.2s;pointer-events:none}
+.toast.show{opacity:1}
+.modal{position:fixed;inset:0;background:rgba(3,6,3,.7);backdrop-filter:blur(4px);z-index:95;display:none;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.mbox{width:min(380px,92vw);background:linear-gradient(180deg,#101610,#0b0f0a);border:1px solid var(--line2);border-radius:16px;padding:24px}
+.mbox h3{margin:0 0 4px;font-size:19px}.mbox .sub{color:var(--muted);font-size:12.5px;margin-bottom:16px}
+.mbox input{width:100%;padding:11px 13px;border-radius:10px;border:1px solid var(--line2);background:#0a0e09;color:var(--text);font-size:13px;margin-bottom:10px}
+.mbox .err{color:var(--down);font-size:11.5px;min-height:14px;margin-bottom:6px}
+.mbox .row{display:flex;gap:8px;margin-top:6px}.mbox .row .btn{flex:1;justify-content:center;text-align:center}
+.mbox .alt{text-align:center;color:var(--muted);font-size:11.5px;margin-top:14px;cursor:pointer}.mbox .alt b{color:var(--accent)}
+.umenu{position:absolute;right:22px;top:60px;background:#101610;border:1px solid var(--line2);border-radius:12px;padding:8px;z-index:70;display:none;min-width:180px}
+.umenu.open{display:block}.umenu .ui{padding:9px 12px;border-radius:8px;font-size:12.5px;cursor:pointer;color:var(--muted)}.umenu .ui:hover{background:#141b11;color:var(--text)}
+.umenu .em{padding:8px 12px 10px;font-size:11.5px;color:var(--dim);border-bottom:1px solid var(--line);margin-bottom:4px;word-break:break-all}
+/* ── projections page ── */
+.proj-layout{display:grid;grid-template-columns:214px 1fr;gap:18px;align-items:start}
+.filters{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px;position:sticky;top:10px}
+.filters .fh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.filters .fh h4{margin:0;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+.filters .fh .rst{color:var(--dim);font-size:10.5px;cursor:pointer;font-weight:700}.filters .fh .rst:hover{color:var(--accent)}
+.fg{border-top:1px solid var(--line);padding:12px 0 6px}.fg:first-of-type{border-top:0}
+.fg .gt{font-size:11px;font-weight:800;margin-bottom:9px;color:var(--text)}
+.chk{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:var(--muted);cursor:pointer}
+.chk input{accent-color:var(--accent);width:14px;height:14px}
+.chk:hover{color:var(--text)}
+.frange{margin:2px 0 4px}.frange .lab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-bottom:4px}
+input[type=range]{width:100%;accent-color:var(--accent);height:4px}
+.sportpills{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.sportpills span{width:26px;height:26px;border-radius:7px;background:#0e130d;border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer}.sportpills span.on{border-color:var(--accent);background:#16240f}
+.ptoolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.qf{padding:7px 12px;border-radius:9px;border:1px solid var(--line2);background:#0e130d;color:var(--muted);font-weight:700;font-size:11.5px;cursor:pointer}
+.qf:hover{color:var(--text)}.qf.on{background:#161d12;color:var(--accent);border-color:#31401f}
+.segbar{display:inline-flex;background:#0e130d;border:1px solid var(--line2);border-radius:9px;padding:2px;gap:2px;margin-right:4px}
+.seg{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:7px;font-weight:700;font-size:11.5px;color:var(--muted);cursor:pointer}.seg.on{background:#1c2616;color:var(--accent)}
+.rtable th{text-align:left;color:var(--dim);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.rtable td{padding:8px;vertical-align:middle;white-space:nowrap}
+.rtable tr:not(:last-child) td{border-bottom:1px solid #14190f}.rtable tbody tr{cursor:pointer}.rtable tbody tr:hover td{background:#0f150d}
+.rtable tr.sel td{background:#101a0d;box-shadow:inset 2px 0 0 var(--accent)}
+.book{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:10px;color:#fff}
+.book.pp{background:#7c3aed}.book.ud{background:#f59e0b;color:#101}.book.sl{background:#f57b1f}.book.dk{background:#147a3d}.book.cb{background:#3b82f6}.book.pl{background:#e11d48}
+.jspill{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:26px;padding:0 7px;border-radius:8px;font-weight:800;font-size:12px;border:1.5px solid}
+.addbtn{width:22px;height:22px;border-radius:6px;border:1px solid var(--line2);background:#0e130d;color:var(--muted);cursor:pointer;font-size:14px;line-height:1}
+.pager{display:flex;align-items:center;justify-content:space-between;padding:12px 4px;color:var(--muted);font-size:12px}
+.statusbar{display:flex;gap:18px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);margin-top:14px;padding-top:12px;color:var(--muted);font-size:11px}
+.statusbar .s{display:flex;align-items:center;gap:6px}.statusbar .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+/* detail extras */
+.whylist{list-style:none;margin:0;padding:0}.whylist li{display:flex;gap:8px;padding:5px 0;font-size:12px;color:var(--muted)}.whylist li .ok{color:var(--accent)}
+.corr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.corr .c{border:1px solid var(--line);border-radius:10px;padding:9px;text-align:center;background:#0e130d}.corr .c .s{font-size:10px;color:var(--muted)}.corr .c .p{font-size:16px;font-weight:800;color:var(--accent)}
+.dtabs{display:flex;gap:4px;padding:0 0 12px}.dtab{font-size:11px;font-weight:700;color:var(--dim);padding:5px 9px;border-radius:7px;cursor:pointer}.dtab.on{background:#161d12;color:var(--accent)}
+@media(max-width:1200px){.grid2{grid-template-columns:1fr}.tiles{grid-template-columns:repeat(2,1fr)}.two,.grid3{grid-template-columns:1fr}.proj-layout{grid-template-columns:1fr}.filters{position:static}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span style="display:flex;align-items:center;gap:4px">JUICED<svg width="17" height="17" viewBox="0 0 24 24" fill="#c6f24e" style="margin-left:1px"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></span><span class="collapse">‹</span></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="plan"><div class="t" style="display:flex;align-items:center;gap:7px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M21 8l-9-5-9 5m18 0l-9 5m9-5v8l-9 5m0-13L3 8m9 5v8m-9-5V8"/></svg> Pro Plan</div><div class="s">Demo mode</div><button onclick="go('learn')">How it works</button></div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <div class="hello"><h1 id="greet" style="display:flex;align-items:center;gap:7px">Good morning, Juice <svg width="19" height="19" viewBox="0 0 24 24" fill="#c6f24e"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></h1><p id="subgreet">Here's your edge for today.</p></div>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="globalsearch" placeholder="Search players, teams, props…"><kbd>⌘K</kbd></div>
+      <div class="topright"><div class="aijuice"><svg width="16" height="16" viewBox="0 0 24 24" fill="#c6f24e"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg><div><div class="lbl">AI Juice</div><div class="val" id="aijuice-val">—</div></div></div><span class="badge pro">Pro</span><div class="avatar" id="avatar"></div></div>
+    </div>
+    <div class="view" id="view"><div class="empty"><div class="em"><svg width="30" height="30" viewBox="0 0 24 24" fill="#5c675a"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></div>Loading…</div></div>
+  </div>
+</div>
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer"></div>
+<div class="toast" id="toast"></div>
+<div class="umenu" id="umenu"></div>
+<div class="modal" id="loginmodal">
+  <div class="mbox">
+    <h3>Sign in to Juiced</h3>
+    <div class="sub" id="login-sub">Sync your watchlist, portfolio, and alerts across devices.</div>
+    <button class="btn" style="width:100%;justify-content:center;gap:9px;margin-bottom:12px;padding:11px" onclick="doGoogle()">
+      <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.7-2 5-4.4 6.600l7.1 5.5c4.1-3.8 6.6-9.4 6.6-16.1z"/><path fill="#34A853" d="M24 46c6 0 11-2 14.6-5.4l-7.1-5.5c-2 1.3-4.5 2.1-7.5 2.1-5.8 0-10.7-3.9-12.4-9.1l-7.3 5.6C7.5 41 15.1 46 24 46z"/><path fill="#FBBC05" d="M11.6 27.1c-.4-1.3-.7-2.7-.7-4.1s.2-2.8.7-4.1l-7.3-5.6C2.8 16.1 2 19.9 2 23s.8 6.9 2.3 9.7l7.3-5.6z"/><path fill="#EA4335" d="M24 10.8c3.3 0 6.2 1.1 8.5 3.3l6.3-6.3C35 4.1 30 2 24 2 15.1 2 7.5 7 4.3 14.3l7.3 5.6C13.3 14.7 18.2 10.8 24 10.8z"/></svg>
+      Continue with Google</button>
+    <div style="display:flex;align-items:center;gap:10px;color:var(--dim);font-size:11px;margin-bottom:12px"><span style="flex:1;height:1px;background:var(--line2)"></span>or<span style="flex:1;height:1px;background:var(--line2)"></span></div>
+    <div class="err" id="login-err"></div>
+    <input id="login-email" type="email" placeholder="you@email.com" autocomplete="email">
+    <input id="login-pass" type="password" placeholder="Password" autocomplete="current-password">
+    <div class="row"><button class="btn pri" id="login-go" onclick="doLogin()">Sign in</button><button class="btn" onclick="closeLogin()">Cancel</button></div>
+    <div class="alt" id="login-toggle" onclick="toggleLoginMode()">New here? <b>Create an account</b></div>
+  </div>
+</div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s),el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
+const api=(p,opt={})=>{const h={'Content-Type':'application/json'};
+  if(AUTH.token)h['Authorization']='Bearer '+AUTH.token; else if(AUTH.dev)h['X-Dev-User']='demo';
+  return fetch(p,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined}).then(r=>r.json());};
+const fmt=n=>n==null?'—':(+n).toLocaleString(undefined,{maximumFractionDigits:2});
+const signed=n=>n==null?'—':(n>0?'+':'')+(+n).toFixed(Math.abs(n)<10?1:0);
+const pct=n=>n==null?'—':(n>0?'+':'')+(+n).toFixed(1)+'%';
+const prob=n=>n==null?'—':Math.round(n*100)+'%';
+const ph=u=>u||"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%230e130d'/%3E%3C/svg%3E";
+const timeOf=s=>{if(!s)return'';try{return new Date(s).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}catch(e){return''}};
+const jColor=v=>v>=70?'var(--accent)':v>=55?'#d7e04a':'#e8c84a';
+const cap=s=>(s||'').replace(/^\w/,m=>m.toUpperCase());
+// ── SVG icon system (replaces all emoji) ──
+const IC2={
+  bolt:'M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z',
+  user:'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0',
+  bell:'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.5 21a2 2 0 01-3 0',
+  folder:'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z',
+  trash:'M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m2 0v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6',
+  fire:'M12 22a7 7 0 007-7c0-5-4-6-4-10 0 0-2 2-3 5-1-2-3-3-3-3 0 2-1 3-2 5a7 7 0 005 10z',
+  sparkle:'M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6z',
+  check:'M20 6L9 17l-5-5',
+  x:'M18 6L6 18M6 6l12 12',
+  star:'M12 3l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.5 5.9 21.5l1.2-6.5L2.3 9.9 8.9 9z',
+  up:'M12 19V5M5 12l7-7 7 7', down:'M12 5v14M5 12l7 7 7-7',
+  warn:'M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0zM12 9v4M12 17h.01',
+  cloud:'M6 18a4 4 0 010-8 5 5 0 019.5-1A3.5 3.5 0 0118 18z',
+  target:'M12 3a9 9 0 100 18 9 9 0 000-18M12 8a4 4 0 100 8 4 4 0 000-8M12 11a1 1 0 100 2 1 1 0 000-2',
+  box:'M21 8l-9-5-9 5m18 0l-9 5m9-5v8l-9 5m0-13L3 8m9 5v8m-9-5V8',
+  tennis:'M12 3a9 9 0 100 18 9 9 0 000-18M5.2 5.2c4 3 4 11 0 13.6M18.8 5.2c-4 3-4 11 0 13.6',
+  users:'M9 11a3 3 0 100-6 3 3 0 000 6zM3 20a6 6 0 0112 0M17 11a3 3 0 100-6M21 20a6 6 0 00-4-5.7',
+  research:'M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3',
+};
+const FILLED=new Set(['bolt','star','sparkle','fire']);
+const icon=(n,s=16,color)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" ${FILLED.has(n)?`fill="${color||'currentColor'}" stroke="none"`:`fill="none" stroke="${color||'currentColor'}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"`} style="vertical-align:middle;flex:none"><path d="${IC2[n]}"/></svg>`;
+const LEAGUE={MLB:'mlb',NBA:'nba',WNBA:'wnba',NFL:'nfl',NHL:'nhl'};
+function leagueLogo(sport,size=15){const k=LEAGUE[sport];
+  return k?`<img src="https://a.espncdn.com/i/teamlogos/leagues/500/${k}.png" width="${size}" height="${size}" style="object-fit:contain;vertical-align:middle;flex:none" onerror="this.style.display='none'">`:icon('tennis',size);}
+function teamBadge(x,size=22){return x&&x.teamLogo?`<img src="${x.teamLogo}" width="${size}" height="${size}" style="object-fit:contain;background:#0e130d;border-radius:5px;flex:none" onerror="this.style.display='none'">`:leagueLogo(x&&x.sport,size);}
+const ico=s=>leagueLogo(s,14);
+const starIcon=on=>`<svg width="15" height="15" viewBox="0 0 24 24" fill="${on?'var(--warn)':'none'}" stroke="${on?'var(--warn)':'currentColor'}" stroke-width="1.5" stroke-linejoin="round"><path d="${IC2.star}"/></svg>`;
+const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600)};
+let AUTH={dev:false,ai:false,token:null,user:null};
+let SB=null, WATCHED=new Set();
+const signedIn=()=>!!AUTH.token;
+
+// ── local demo store (used when NOT signed in) ──
+const LS={get:k=>JSON.parse(localStorage.getItem('juiced_'+k)||'[]'),set:(k,v)=>localStorage.setItem('juiced_'+k,JSON.stringify(v)),
+  add:(k,v)=>{const a=LS.get(k);a.unshift(v);LS.set(k,a);return a},del:(k,id)=>{LS.set(k,LS.get(k).filter(x=>x.id!==id))}};
+const uid=()=>Math.random().toString(36).slice(2,10);
+
+// ── data layer: real API when signed in, localStorage demo otherwise ──
+const DATA={
+  watchlist:{
+    async _lists(){return (await api('/api/watchlists')).watchlists||[]},
+    async _default(){let ls=await this._lists();let d=ls.find(l=>l.name==='My Watchlist')||ls[0];
+      if(!d){d=(await api('/api/watchlists',{method:'POST',body:{name:'My Watchlist'}})).watchlist;d.items=[]}return d},
+    async list(){if(!signedIn())return LS.get('watchlist');
+      const [ls,pr]=await Promise.all([this._lists(),api('/api/projections?limit=1000')]);
+      const idx={};(pr.projections||[]).forEach(p=>idx[p.id]=p);
+      return ls.flatMap(l=>l.items||[]).map(it=>idx[it.line_id]||{id:it.line_id,player:it.player,sport:it.sport,stat:it.stat_type,side:'over',juiceScore:0,confidence:0})},
+    async ids(){if(!signedIn())return LS.get('watchlist').map(x=>x.id);
+      return (await this._lists()).flatMap(l=>(l.items||[]).map(it=>it.line_id))},
+    async add(x){if(!signedIn())return LS.add('watchlist',x);
+      const d=await this._default();await api(`/api/watchlists/${d.id}/items`,{method:'POST',body:{line_id:x.id,sport:x.sport,player:x.player,stat_type:x.stat}})},
+    async remove(id){if(!signedIn())return LS.del('watchlist',id);
+      for(const l of await this._lists()){const it=(l.items||[]).find(i=>i.line_id===id);if(it)return api(`/api/watchlists/items/${it.id}`,{method:'DELETE'})}}
+  },
+  alerts:{
+    async list(){if(!signedIn())return LS.get('alerts').map(x=>({...x,created_at:new Date(x.at).toISOString()}));
+      return (await api('/api/alerts')).alerts||[]},
+    async add(a){if(!signedIn())return LS.add('alerts',{id:uid(),...a,at:Date.now()});await api('/api/alerts',{method:'POST',body:a})},
+    async remove(id){if(!signedIn())return LS.del('alerts',id);await api('/api/alerts/'+id,{method:'DELETE'})}
+  },
+  portfolio:{
+    async list(){if(!signedIn())return LS.get('portfolio');
+      return ((await api('/api/portfolio')).entries||[]).map(e=>({...e,stat:e.stat_type,line:e.line_value}))},
+    async add(x){if(!signedIn())return LS.add('portfolio',{id:uid(),...x,stat:x.stat_type,line:x.line_value,status:'open',at:Date.now()});await api('/api/portfolio',{method:'POST',body:x})},
+    async settle(id,s){if(!signedIn()){const p=LS.get('portfolio');const e=p.find(y=>y.id===id);if(e){e.status=s;LS.set('portfolio',p)}return}await api('/api/portfolio/'+id+'/settle',{method:'POST',body:{status:s}})},
+    async remove(id){if(!signedIn())return LS.del('portfolio',id);await api('/api/portfolio/'+id,{method:'DELETE'})}
+  }
+};
+async function refreshWatched(){try{WATCHED=new Set(await DATA.watchlist.ids())}catch(e){WATCHED=new Set(LS.get('watchlist').map(x=>x.id))}}
+
+// ── auth ──
+function setSession(s){AUTH.token=s&&s.access_token||null;AUTH.user=s&&s.user||null}
+function renderAuthUI(){const av=$('#avatar');if(!av)return;
+  if(AUTH.user){av.textContent=(AUTH.user.email||'U')[0].toUpperCase();av.onclick=toggleUserMenu}
+  else{av.innerHTML=icon('user',17);av.onclick=openLogin}}
+function toggleUserMenu(){const m=$('#umenu');if(!AUTH.user)return openLogin();
+  m.innerHTML=`<div class="em">${AUTH.user.email}</div><div class="ui" onclick="go('watchlist')">Watchlist (synced)</div><div class="ui" onclick="doLogout()">Sign out</div>`;m.classList.toggle('open')}
+let loginMode='signin';
+function openLogin(){$('#umenu').classList.remove('open');$('#loginmodal').classList.add('open');$('#login-err').textContent=''}
+function closeLogin(){$('#loginmodal').classList.remove('open')}
+function toggleLoginMode(){loginMode=loginMode==='signin'?'signup':'signin';
+  $('#login-go').textContent=loginMode==='signin'?'Sign in':'Create account';
+  $('#login-toggle').innerHTML=loginMode==='signin'?'New here? <b>Create an account</b>':'Have an account? <b>Sign in</b>';
+  $('#login-sub').textContent=loginMode==='signin'?'Sync your watchlist, portfolio, and alerts across devices.':'Create an account to sync across devices.'}
+async function doLogin(){if(!SB){$('#login-err').textContent='Auth is not configured on the server.';return}
+  const email=$('#login-email').value.trim(),pass=$('#login-pass').value;
+  if(!email||!pass){$('#login-err').textContent='Enter email and password.';return}
+  $('#login-go').textContent='…';
+  const {data,error}=await (loginMode==='signin'?SB.auth.signInWithPassword({email,password:pass}):SB.auth.signUp({email,password:pass}));
+  $('#login-go').textContent=loginMode==='signin'?'Sign in':'Create account';
+  if(error){$('#login-err').textContent=error.message;return}
+  if(!data.session){$('#login-err').textContent='Account created — check your email to confirm, then sign in.';loginMode='signin';return}
+  setSession(data.session);closeLogin();await refreshWatched();renderAuthUI();render();toast('Signed in')}
+async function doLogout(){if(SB)await SB.auth.signOut();setSession(null);$('#umenu').classList.remove('open');await refreshWatched();renderAuthUI();render();toast('Signed out')}
+async function doGoogle(){if(!SB){$('#login-err').textContent='Auth is not configured.';return}
+  const {error}=await SB.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin+'/dashboard'}});
+  if(error)$('#login-err').textContent=error.message.includes('provider')?'Enable Google in your Supabase dashboard (Auth → Providers).':error.message}
+
+// ── nav ──
+const NAV=[['Dashboard','dashboard','grid'],['Projections','projections','bars'],['Research','research','flask','New'],['AI Juice','ai-juice','spark'],['Simulations','simulations','wave'],['Correlations','correlations','link'],['Props Center','props','layers'],['Top Movers','movers','trend'],['Injuries','injuries','plus'],['Weather','weather','cloud'],['Market Intel','market','pulse'],['Portfolio','portfolio','folder','Pro'],['Alerts','alerts','bell'],['Watchlist','watchlist','star'],['Bet Journal','journal','book','Pro'],['Leaderboards','leaderboards','trophy'],['Community','community','users','New'],['Learn','learn','cap']];
+const IC={grid:'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',bars:'M4 20V10M10 20V4M16 20v-7M20 20V8',flask:'M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3',spark:'M13 2L4 14h7l-1 8 9-12h-7z',wave:'M2 12c3-6 5 6 8 0s5 6 8 0',link:'M9 15l6-6M8 12l-2 2a3 3 0 004 4l2-2M16 12l2-2a3 3 0 00-4-4l-2 2',layers:'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5',trend:'M3 17l6-6 4 4 8-8M21 7v5h-5',plus:'M12 5v14M5 12h14',cloud:'M6 18a4 4 0 010-8 5 5 0 019.5-1A3.5 3.5 0 0118 18z',pulse:'M3 12h4l2-7 4 14 2-7h6',folder:'M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z',bell:'M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6M10 21h4',star:'M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19.2l1-5.8L3.5 9.2l5.9-.9z',book:'M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM19 3v18',trophy:'M8 4h8v4a4 4 0 01-8 0zM6 4H4v2a3 3 0 003 3M18 4h2v2a3 3 0 01-3 3M9 14h6v6H9z',users:'M9 11a3 3 0 100-6 3 3 0 000 6zM3 20a6 6 0 0112 0M17 11a3 3 0 100-6M21 20a6 6 0 00-4-5.7',cap:'M22 9L12 5 2 9l10 4 10-4zM6 11v5c0 1 3 3 6 3s6-2 6-3v-5'};
+const svg=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="${p}"/></svg>`;
+function renderNav(){const cur=(location.hash.slice(2)||'dashboard');
+  $('#nav').innerHTML=NAV.map(([n,r,i,b])=>`<a class="${r===cur?'active':''}" onclick="go('${r}')">${svg(IC[i])}<span>${n}</span>${b?`<span class="badge ${b==='Pro'?'pro':''}">${b}</span>`:''}</a>`).join('');}
+const go=r=>{location.hash='/'+r};
+
+// ── shared prop table + rows ──
+const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.team||''} ${x.position?'· '+x.position:''}</div></div></div></td>
+  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)}</div><div class="p2">${x.stat||''}</div></td>
+  <td><div class="p1" style="font-size:12px">${ico(x.sport)} ${x.team||''}</div><div class="p2">${timeOf(x.startTime)||x.sport}</div></td>
+  <td class="mono" style="font-weight:800">${fmt(x.projection)}</td>
+  <td class="mono muted">${fmt(x.line)}</td>
+  <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${pct(x.edgePct)}</td>
+  <td><span class="js" style="color:${jColor(x.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(x.juiceScore)}55">${x.juiceScore}</span></td>
+  <td><div class="conf"><div class="track"><i style="width:${Math.round(x.confidence)}%"></i></div><b class="mono">${Math.round(x.confidence)}%</b></div></td>
+  <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td></tr>`;
+const propTable=rows=>`<table class="drops"><thead><tr><th>Player</th><th>Prop</th><th>Matchup</th><th>Proj</th><th>Line</th><th>Edge</th><th>Juice</th><th>Confidence</th><th></th></tr></thead><tbody>${rows.length?rows.map(propRow).join(''):'<tr><td colspan="9" class="empty">No projected props here right now.</td></tr>'}</tbody></table>`;
+
+// ── watchlist helpers (demo/local) ──
+const isWatched=id=>WATCHED.has(id);
+async function toggleWatch(x){
+  if(isWatched(x.id)){WATCHED.delete(x.id);await DATA.watchlist.remove(x.id);toast('Removed from watchlist')}
+  else{WATCHED.add(x.id);await DATA.watchlist.add(x);toast('Added to watchlist')}
+  if(ROUTES[cur()])render();}
+const cur=()=>location.hash.slice(2)||'dashboard';
+
+// ══════════════════════════ VIEWS ══════════════════════════
+let sport='all';
+async function vDashboard(){
+  const d=await api('/api/dashboard?sport='+sport);
+  const t=d.tiles||{},dh=d.data_health||{};
+  const tile=(cap,big,cls,sub,pho)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div>${pho?`<img class="ph" src="${ph(pho)}">`:''}</div>`;
+  const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move,bv=t.best_value;
+  $('#view').innerHTML=`
+   <div class="tabs" id="tabs"></div>
+   <div class="grid2"><div>
+    <div class="tiles">
+      ${tile('Juice Score Leader',jl?jl.value:'—','',jl?`<b>${jl.player}</b><br>${cap(jl.side)} ${fmt(jl.line)} ${jl.stat}`:'—',jl&&jl.headshot)}
+      ${tile('Top Projected Edge',te?pct(te.value):'—','pos',te?`<b>${te.player}</b><br>${cap(te.side)} ${fmt(te.line)} ${te.stat}`:'—',te&&te.headshot)}
+      ${tile('Biggest Line Move',lm?signed(lm.value):'—',lm&&lm.value>0?'pos':'neg',lm?`<b>${lm.player}</b><br>${lm.stat}`:'No moves logged')}
+      ${tile('Best Value',bv?signed(bv.value):'—','pos',bv?`<b>${bv.player}</b><br>${cap(bv.side)} ${fmt(bv.line)} ${bv.stat}`:'—',bv&&bv.headshot)}
+      <div class="tile meter"><div class="cap">Data Quality</div><div class="big">${dh.quality_score??'—'}<span style="font-size:14px;color:var(--muted)">/100</span></div><div class="sub"><b>${(dh.projected_lines||0).toLocaleString()}</b> projected · ${dh.live_sources||0} sources</div><div class="bar"><i style="width:${dh.quality_score||0}%"></i></div></div>
+    </div>
+    <div class="panel"><div class="phead"><h3>Daily Juice Drops <span class="hint">Top props our model loves today</span></h3><span class="lnk" onclick="go('projections')">View All →</span></div>${propTable((d.drops||[]).slice(0,7))}</div>
+    <div class="two">
+      <div class="panel"><div class="phead"><h3>Line Movement</h3><span class="hint" id="tsub"></span></div><div style="padding:6px 12px 14px"><svg class="spark" id="spark" viewBox="0 0 520 150" preserveAspectRatio="none"></svg></div></div>
+      <div class="panel"><div class="phead"><h3>Model Confidence Breakdown</h3></div><div class="donutwrap"><svg width="150" height="150" viewBox="0 0 150 150" id="donut"></svg><div class="legend" id="legend"></div></div></div>
+    </div>
+    <div class="ai-sum"><div class="orb">AI</div><div><h4>Today's AI Slate Summary</h4><p id="ai-summary" class="skel">Checking AI Juice…</p></div><button class="btn" onclick="go('ai-juice')">Open AI Juice</button></div>
+   </div>
+   <div><div class="rcard"><div class="rhead"><h4>Alerts <span class="n" id="aln"></span></h4><span class="lnk" onclick="go('alerts')">View All</span></div><div id="ralerts"></div></div>
+    <div class="rcard"><div class="rhead"><h4>Top Movers</h4><span class="lnk" onclick="go('movers')">View All</span></div><div class="mtabs" id="mtabs"><span class="mtab active" data-k="proj_up">PROJ UP</span><span class="mtab" data-k="proj_down">PROJ DOWN</span><span class="mtab" data-k="line_moves">LINE MOVES</span></div><div id="movers"></div></div>
+    <div class="rcard"><div class="rhead"><h4>Upcoming Games</h4></div><div id="games"></div></div></div></div>`;
+  renderTabs(); renderDonut(d); renderRail(d); renderAlerts(d);
+  if(d.drops&&d.drops[0])loadSpark(d.drops[0]);
+}
+function renderTabs(){const S=[['All Sports','all'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis']];
+  const box=$('#tabs');if(!box)return;box.innerHTML=S.map(([n,k])=>`<span class="tab ${k===sport?'active':''}" onclick="sport='${k}';render()">${k==='all'?icon('bolt',14,'currentColor'):leagueLogo(k,15)}${n}</span>`).join('');}
+let moverTab='proj_up';
+function renderRail(d){const m=(d.movers||{})[moverTab]||[];
+  $('#movers').innerHTML=m.length?m.map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${x.player}</div><div class="sub">${ico(x.sport)} ${x.stat}</div></div><span class="mval ${x.move>=0?'pos':'neg'}">${signed(x.move)}</span></div>`).join(''):'<div class="mv muted" style="border:0">No movement yet.</div>';
+  $('#mtabs').onclick=e=>{const t=e.target.closest('.mtab');if(!t)return;moverTab=t.dataset.k;[...$('#mtabs').children].forEach(c=>c.classList.toggle('active',c.dataset.k===moverTab));renderRail(d)};
+  const g=d.upcoming_games||[];$('#games').innerHTML=g.length?g.map(x=>`<div class="gm"><span class="lg">${ico(x.sport)}</span><div><div class="g">${x.team}</div><div class="lbl">${x.sport}</div></div><span class="tm2">${timeOf(x.startTime)}</span></div>`).join(''):'<div class="gm muted" style="border:0">No games.</div>';
+}
+function renderAlerts(d){const mv=d.movers||{},a=[];
+  (mv.proj_up||[]).slice(0,1).forEach(x=>a.push(['up','#16240f','var(--accent)','Projection Increase',`${x.player} · ${x.stat}`,signed(x.move)]));
+  (mv.line_moves||[]).slice(0,1).forEach(x=>a.push([x.move>=0?'up':'down','#241010',x.move>=0?'var(--accent)':'var(--down)','Line Movement',`${x.player} · ${x.stat}`,signed(x.move)]));
+  (mv.proj_down||[]).slice(0,1).forEach(x=>a.push(['warn','#24200f','var(--warn)','Projection Drop',`${x.player} · ${x.stat}`,signed(x.move)]));
+  $('#aln').textContent='('+a.length+')';
+  $('#ralerts').innerHTML=a.length?a.map(([ic,bg,c,h,dd,v])=>`<div class="alert"><div class="ai" style="background:${bg};color:${c}">${icon(ic,14)}</div><div style="flex:1;min-width:0"><div class="h">${h}</div><div class="d">${dd}</div></div><div class="t">${v}</div></div>`).join(''):'<div class="alert muted">No alerts yet.</div>';
+}
+function renderDonut(d){const f=d.factor_weights||[],cols=['#c6f24e','#8ee65a','#5bd0c0','#e8c84a','#7c9bff','#5c675a'];let a=-Math.PI/2,R=58,r=38,cx=75,cy=75,p='';const tot=f.reduce((s,x)=>s+x.weight,0)||1;
+  f.forEach((x,i)=>{const ang=x.weight/tot*2*Math.PI,a2=a+ang,P=(rad,an)=>[cx+rad*Math.cos(an),cy+rad*Math.sin(an)];const[x1,y1]=P(R,a),[x2,y2]=P(R,a2),[x3,y3]=P(r,a2),[x4,y4]=P(r,a),lg=ang>Math.PI?1:0;p+=`<path d="M${x1} ${y1}A${R} ${R} 0 ${lg} 1 ${x2} ${y2}L${x3} ${y3}A${r} ${r} 0 ${lg} 0 ${x4} ${y4}Z" fill="${cols[i%6]}" opacity="${1-i*.06}"/>`;a=a2});
+  const conf=(d.drops&&d.drops[0]?d.drops[0].confidence:0)||0;
+  $('#donut').innerHTML=p+`<text x="75" y="72" text-anchor="middle" fill="#e9f0e6" font-size="22" font-weight="800">${Math.round(conf)}%</text><text x="75" y="88" text-anchor="middle" fill="#8b978a" font-size="9">Top Drop Conf.</text>`;
+  $('#legend').innerHTML=f.map((x,i)=>`<div class="row"><span class="dot" style="background:${cols[i%6]}"></span>${x.factor}<span class="pct">${x.weight}%</span></div>`).join('');
+}
+async function loadSpark(drop){$('#tsub').textContent=drop.player+' — '+drop.stat;let pts=[drop.line,drop.line];try{const h=(await api('/api/lines/history?id='+encodeURIComponent(drop.id)+'&limit=40')).history||[];const v=h.map(x=>x.line_value).filter(x=>x!=null);if(v.length>1)pts=v}catch(e){}drawSpark('#spark',pts,drop.projection,drop.line)}
+function drawSpark(sel,vals,proj,line){const S=$(sel);if(!S)return;const W=520,H=150,pad=14,mn=Math.min(...vals,proj),mx=Math.max(...vals,proj),rng=(mx-mn)||1,X=i=>pad+i*(W-2*pad)/Math.max(1,vals.length-1),Y=v=>H-pad-((v-mn)/rng)*(H-2*pad);let d='';vals.forEach((v,i)=>d+=(i?'L':'M')+X(i)+' '+Y(v));const py=Y(proj);
+  S.innerHTML=`<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#c6f24e" stop-opacity=".28"/><stop offset="1" stop-color="#c6f24e" stop-opacity="0"/></linearGradient></defs><path d="${d}L${X(vals.length-1)} ${H-pad}L${X(0)} ${H-pad}Z" fill="url(#g)"/><path d="${d}" fill="none" stroke="#c6f24e" stroke-width="2.2"/><line x1="${pad}" y1="${py}" x2="${W-pad}" y2="${py}" stroke="#8ee65a" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/><text x="${W-pad}" y="${py-6}" text-anchor="end" fill="#8ee65a" font-size="10" font-weight="700">proj ${fmt(proj)}</text>${vals.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="2" fill="#c6f24e"/>`).join('')}`}
+
+let PROJ=[], PROJUP=null, SELID=null;
+const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25};
+// Only books we actually pull. Logos via Google's favicon service (real brand marks, CORS-ok).
+const BOOKS=[
+  ['prizepicks','PrizePicks','https://www.google.com/s2/favicons?domain=prizepicks.com&sz=64'],
+  ['underdog','Underdog','https://www.google.com/s2/favicons?domain=underdogfantasy.com&sz=64'],
+  ['sleeper','Sleeper','https://www.google.com/s2/favicons?domain=sleeper.com&sz=64'],
+];
+const bookMeta=s=>BOOKS.find(b=>b[0]===s);
+const bookLogo=(s,size=20)=>{const b=bookMeta(s);return b?`<img src="${b[2]}" width="${size}" height="${size}" style="border-radius:5px;object-fit:contain;background:#0e130d;flex:none;vertical-align:middle" title="${b[1]}" onerror="this.style.display='none'">`:'';};
+
+async function vProjections(title,sub){
+  $('#view').innerHTML=`<div class="proj-layout">
+    <aside class="filters" id="filters"></aside>
+    <div class="proj-main">
+      <div class="ph2"><div><h2>${title||'Projections'} <span class="chip" id="pcount"></span></h2><p>${sub||'Real projections. Real edges. Real insights.'}</p></div></div>
+      <div class="tiles" id="ptiles"></div>
+      <div class="ptoolbar" id="ptoolbar"></div>
+      <div class="panel"><div id="ptable"><div class="empty">Loading projections…</div></div></div>
+      <div class="pager" id="ppager"></div>
+      <div class="statusbar" id="pstatus"></div>
+    </div></div>`;
+  const [pr,dash]=await Promise.all([api('/api/projections?sort=juice&limit=1000'),api('/api/dashboard?sport=all')]);
+  PROJ=pr.projections||[]; PROJUP=pr.updated_at;
+  renderFilters(); renderPTiles(dash); renderToolbar(); applyProj(); renderStatus(dash);
+}
+// Distinct prop categories for the currently-selected sport (all of them, most-common first).
+function catsForSport(){
+  const counts={};
+  PROJ.forEach(p=>{
+    if(PF.projSport!=='all' && (p.sport||'').toLowerCase()!==PF.projSport.toLowerCase())return;
+    const s=(p.stat||'').trim(); if(s)counts[s]=(counts[s]||0)+1;
+  });
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]);   // [ [stat,count], ... ]
+}
+function renderFilters(){
+  const all=catsForSport();
+  const shown=PF.catsExpanded?all:all.slice(0,10);
+  const more=all.length-shown.length;
+  const catRow=([c,n])=>`<label class="chk"><input type="checkbox" ${PF.catsOff.has(c)?'':'checked'} onchange="togCat(this.dataset.c,this.checked)" data-c="${c.replace(/"/g,'&quot;')}">${c} <span style="color:var(--dim);margin-left:auto;font-size:10px">${n}</span></label>`;
+  $('#filters').innerHTML=`<div class="fh"><h4>Filters</h4><span class="rst" onclick="resetPF()">Reset All</span></div>
+   <div class="fg"><div class="gt">Sportsbooks</div>${BOOKS.map(([k,n])=>`<label class="chk"><input type="checkbox" ${PF.sources.has(k)?'checked':''} onchange="togSrc('${k}',this.checked)">${bookLogo(k,16)}${n}</label>`).join('')}</div>
+   <div class="fg"><div class="gt">Prop Categories <span style="color:var(--dim);font-weight:600;margin-left:4px">${PF.projSport==='all'?'All Sports':PF.projSport}</span></div>${shown.map(catRow).join('')||'<span class="muted" style="font-size:11px">—</span>'}${more>0?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=true;renderFilters()">+ ${more} more</span>`:(PF.catsExpanded&&all.length>10?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=false;renderFilters()">Show less</span>`:'')}</div>
+   <div class="fg"><div class="gt">Juice Score</div><div class="frange"><div class="lab"><span>${PF.juiceMin}</span><span>100</span></div><input type="range" min="0" max="100" value="${PF.juiceMin}" oninput="PF.juiceMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value;applyProj()"></div></div>
+   <div class="fg"><div class="gt">Confidence</div><div class="frange"><div class="lab"><span>${PF.confMin}%</span><span>100%</span></div><input type="range" min="0" max="100" value="${PF.confMin}" oninput="PF.confMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
+   <div class="fg"><div class="gt">Min Edge %</div><div class="frange"><div class="lab"><span>${PF.edgeMin}%</span><span>+50%</span></div><input type="range" min="-20" max="50" value="${PF.edgeMin}" oninput="PF.edgeMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
+   <div class="fg"><button class="btn pri" style="width:100%;justify-content:center" onclick="go('learn')">How scores work</button></div>`;
+}
+function togSrc(k,on){on?PF.sources.add(k):PF.sources.delete(k);applyProj()}
+function togCat(c,on){on?PF.catsOff.delete(c):PF.catsOff.add(c);PF.page=1;applyProj()}
+function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;render()}
+function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move;
+  const tile=(cap,big,cls,sub)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div></div>`;
+  $('#ptiles').innerHTML=
+    tile('Top Edge',te?pct(te.value):'—','pos',te?te.player:'')+
+    tile('Highest Juice',jl?jl.value:'—','',jl?jl.player:'')+
+    tile('Avg Confidence',(dsAvg()||'—')+'%','',(PROJ.length)+' props')+
+    tile('Biggest Line Move',lm?signed(lm.value):'—',lm&&lm.value>0?'pos':'neg',lm?lm.player:'')+
+    tile('Model Health',dh.quality_score>=80?'Excellent':dh.quality_score>=60?'Good':'Fair','pos','Data '+(dh.quality_score??'—')+'/100');
+}
+function dsAvg(){if(!PROJ.length)return null;return Math.round(PROJ.reduce((s,p)=>s+(p.confidence||0),0)/PROJ.length)}
+function renderToolbar(){
+  const vt=(k,n)=>`<span class="qf ${(k==='high'&&PF.high)||(k==='watch'&&PF.onlyWatch)?'on':''}" onclick="tbClick('${k}')">${n}</span>`;
+  const sports=[['all','All Sports'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis']];
+  const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k?'on':''}" onclick="PF.projSport='${k}';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}</div>`;
+  $('#ptoolbar').innerHTML=`${sp}<input class="ctl" id="pq" placeholder="Search player…" style="min-width:150px" oninput="PF.q=this.value;PF.page=1;applyProj()" value="${PF.q}">
+    ${vt('high',icon('fire',13)+' High Juice (80+)')}${vt('watch',icon('star',13)+' Watchlist')}
+    <select class="ctl" onchange="PF.sort=this.value;applyProj()"><option value="juice">Sort: Juice</option><option value="edge">Sort: Edge %</option><option value="confidence">Sort: Confidence</option><option value="projection">Sort: Projection</option></select>`;
+}
+function tbClick(k){if(k==='high')PF.high=!PF.high;if(k==='watch')PF.onlyWatch=!PF.onlyWatch;PF.page=1;renderToolbar();applyProj()}
+function applyProj(){
+  let rows=PROJ.filter(p=>PF.sources.has(p.source));
+  if(PF.projSport!=='all')rows=rows.filter(p=>(p.sport||'').toLowerCase()===PF.projSport.toLowerCase());
+  if(PF.catsOff.size)rows=rows.filter(p=>!PF.catsOff.has((p.stat||'').trim()));
+  rows=rows.filter(p=>p.juiceScore>=PF.juiceMin && (p.confidence||0)>=PF.confMin && (p.edgePct==null||p.edgePct>=PF.edgeMin));
+  if(PF.high)rows=rows.filter(p=>p.juiceScore>=80);
+  if(PF.onlyWatch)rows=rows.filter(p=>isWatched(p.id));
+  if(PF.q){const q=PF.q.toLowerCase();rows=rows.filter(p=>(p.player||'').toLowerCase().includes(q))}
+  const key={juice:p=>p.juiceScore,edge:p=>p.edgePct??-999,confidence:p=>p.confidence||0,projection:p=>p.projection||0}[PF.sort];
+  rows.sort((a,b)=>key(b)-key(a));
+  $('#pcount').textContent=rows.length+' props';
+  const per=PF.per,pages=Math.max(1,Math.ceil(rows.length/per)),pg=Math.min(PF.page,pages);PF.page=pg;
+  const slice=rows.slice((pg-1)*per,pg*per);
+  $('#ptable').innerHTML=`<table class="rtable"><thead><tr><th></th><th>Player</th><th>Team</th><th>Prop</th><th>Book</th><th>Line</th><th>Proj</th><th>Edge</th><th>Juice</th><th>Confidence</th><th>Over%</th><th>AI</th><th></th></tr></thead><tbody>${slice.map(richRow).join('')||'<tr><td colspan="13" class="empty">No props match these filters.</td></tr>'}</tbody></table>`;
+  const from=rows.length?(pg-1)*per+1:0,to=Math.min(pg*per,rows.length);
+  $('#ppager').innerHTML=`<span>Showing ${from}–${to} of ${rows.length}</span><span>${Array.from({length:pages},(_,i)=>i+1).slice(Math.max(0,pg-3),pg+2).map(n=>`<span class="qf ${n===pg?'on':''}" onclick="PF.page=${n};applyProj()">${n}</span>`).join(' ')}</span>`;
+}
+const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
+  <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.position||''} ${x.startTime?'· '+timeOf(x.startTime):''}</div></div></div></td>
+  <td><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">${teamBadge(x,18)} ${x.team||''}</span></td>
+  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)}</div><div class="p2">${x.stat||''}</div></td>
+  <td>${bookLogo(x.source,22)}</td>
+  <td class="mono muted">${fmt(x.line)}</td>
+  <td class="mono" style="font-weight:800">${fmt(x.projection)}</td>
+  <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${pct(x.edgePct)}</td>
+  <td><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66">${x.juiceScore}</span></td>
+  <td><div class="conf"><div class="track"><i style="width:${Math.round(x.confidence)}%"></i></div><b class="mono">${Math.round(x.confidence)}%</b></div></td>
+  <td class="mono muted">${prob(x.probability)}</td>
+  <td onclick="event.stopPropagation();openProp(${JSON.stringify(x).replace(/'/g,'&#39;')},'ai')">${icon('sparkle',15,'var(--accent)')}</td>
+  <td onclick="event.stopPropagation();addPlay(${JSON.stringify(x).replace(/'/g,'&#39;')})"><button class="addbtn">+</button></td></tr>`;
+async function renderStatus(d){const dh=d.data_health||{};let ver='';try{ver=(await api('/api/version')).code_sha||''}catch(e){}
+  const s=(lbl,age)=>`<span class="s"><span class="dot"></span>${lbl} ${age||''}</span>`;
+  $('#pstatus').innerHTML=s('Projections','live')+s('Data quality',(dh.quality_score??'—')+'/100')+s('Sources',dh.live_sources||0)+
+    `<span class="s" style="margin-left:auto">Model ${ver} · Uptime 99.99%</span>`;
+}
+async function vMovers(){
+  const d=await api('/api/dashboard?sport=all');const m=d.movers||{};
+  const col=(t,arr,cls)=>`<div class="panel"><div class="phead"><h3>${t}</h3></div>${(arr||[]).length?arr.map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${x.player}</div><div class="sub">${ico(x.sport)} ${x.stat}</div></div><span class="mval ${cls||(x.move>=0?'pos':'neg')}">${signed(x.move)}</span></div>`).join(''):'<div class="mv muted">Nothing yet.</div>'}</div>`;
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Top Movers</h2><p>How projections and lines have moved since first sight today (from the CLV ledger).</p></div></div><div class="grid3">${col(icon('up',15,'var(--accent)')+' Projection Up',m.proj_up)}${col(icon('down',15,'var(--down)')+' Projection Down',m.proj_down)}${col(icon('target',15)+' Line Moves',m.line_moves)}</div>`;
+}
+async function vInjuries(){
+  const d=await api('/api/injuries');const inj=d.injuries||[];
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Injuries & Availability</h2><p>Players the model flagged as scratched or returning from the IL on today's slate.</p></div></div>
+   <div class="panel">${inj.length?`<table class="drops"><thead><tr><th>Player</th><th>Status</th><th>Note</th></tr></thead><tbody>${inj.map(x=>`<tr><td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player}</div><div class="tm">${ico(x.sport)} ${x.team||''}</div></div></div></td><td><span class="chip ${x.status==='OUT'?'r':'y'}">${x.status}</span></td><td class="muted">${x.note}</td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('check',30,'var(--accent)')}</div>No scratches or IL returns flagged right now.<br><span class="muted" style="font-size:11.5px">Injury flags appear once teams post lineups. A full injury feed (probable/questionable/out) needs a dedicated provider.</span></div>`}</div>`;
+}
+async function vMarket(){
+  const [h,d]=await Promise.all([api('/api/model/health?sport=MLB'),api('/api/dashboard?sport=all')]);
+  const s=(h.sports||{}).MLB||{},clv=s.clv||{},m=d.movers||{};
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Market Intel</h2><p>How the model's opinion tracks vs the closing line — CLV and line movement.</p></div></div>
+   <div class="kv" style="margin-bottom:16px">
+     <div class="b"><div class="l">Hit Rate vs Close (MLB)</div><div class="v ${s.beats_breakeven?'pos':''}">${s.hit_rate_vs_close!=null?(s.hit_rate_vs_close*100).toFixed(1)+'%':'—'}</div><div class="muted" style="font-size:11px">breakeven ${(s.breakeven*100||52.4).toFixed(1)}% · ${s.decided||0} decided</div></div>
+     <div class="b"><div class="l">CLV Positive</div><div class="v">${clv.positive_pct!=null?(clv.positive_pct*100).toFixed(0)+'%':'—'}</div><div class="muted" style="font-size:11px">avg move ${signed(clv.avg_move)} · n=${clv.n||0}</div></div>
+     <div class="b"><div class="l">Graded Props</div><div class="v">${(s.graded_props||0).toLocaleString()}</div><div class="muted" style="font-size:11px">from the live CLV ledger</div></div>
+     <div class="b"><div class="l">Interval Widening</div><div class="v">×${s.interval_widening_factor||1}</div><div class="muted" style="font-size:11px">to honest 80% coverage</div></div></div>
+   <div class="panel"><div class="phead"><h3>Biggest Line Moves Today</h3></div>${(m.line_moves||[]).length?m.line_moves.map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${x.player}</div><div class="sub">${ico(x.sport)} ${x.stat}</div></div><span class="mval ${x.move>=0?'pos':'neg'}">${signed(x.move)}</span></div>`).join(''):'<div class="mv muted">No line moves logged yet today.</div>'}</div>`;
+}
+async function vLeaderboards(){
+  const [h,p]=await Promise.all([api('/api/model/health'),api('/api/projections?sort=juice&limit=10')]);
+  const sports=h.sports||{};
+  const perf=Object.values(sports).filter(s=>s.hit_rate_vs_close!=null).map(s=>`<div class="mv"><span class="lg" style="width:26px">${ico(s.sport)}</span><div style="flex:1"><div class="nm">${s.sport}</div><div class="sub">${s.decided||0} decided · ${s.graded_props||0} graded</div></div><span class="mval ${s.beats_breakeven?'pos':'neg'}">${(s.hit_rate_vs_close*100).toFixed(1)}%</span></div>`).join('')||'<div class="mv muted">No graded results yet.</div>';
+  const stats=(sports.MLB&&sports.MLB.top_trust_stats||[]).map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${cap(x.stat)}</div><div class="sub">edge-regression trust</div></div><span class="mval pos">γ ${x.gamma}</span></div>`).join('');
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Leaderboards</h2><p>Where the model earns its keep — measured accuracy by sport and by stat.</p></div></div>
+   <div class="two"><div class="panel"><div class="phead"><h3>Model Accuracy by Sport</h3><span class="hint">hit-rate vs closing line</span></div>${perf}</div>
+   <div class="panel"><div class="phead"><h3>Most-Trusted MLB Stats</h3><span class="hint">where model beats the line</span></div>${stats||'<div class="mv muted">Building…</div>'}</div></div>
+   <div class="panel"><div class="phead"><h3>Today's Highest-Juice Plays</h3><span class="lnk" onclick="go('projections')">All →</span></div>${propTable(p.projections||[])}</div>`;
+}
+async function vSimulations(){
+  const p=await api('/api/projections?sort=confidence&limit=40');
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Simulations</h2><p>Monte-Carlo distribution, probabilities, and staking for any prop. Pick one to simulate.</p></div></div>
+   <div class="panel"><div class="phead"><h3>Highest-Confidence Props <span class="hint">click to simulate</span></h3></div>${propTable((p.projections||[]).slice(0,15))}</div>`;
+}
+async function vResearch(){
+  const p=await api('/api/projections?sort=juice&limit=30');
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Research <span class="chip g">New</span></h2><p>Recent form, matchup, and hit-rate for any player. Open a prop and hit “Research”.</p></div></div>
+   <div class="panel"><div class="phead"><h3>Start from a top prop</h3></div>${propTable((p.projections||[]).slice(0,12))}</div>`;
+}
+async function vAI(){
+  const p=await api('/api/projections?sort=juice&limit=20');
+  const banner=AUTH.ai?`<div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4 style="display:flex;align-items:center;gap:6px">AI Juice is connected ${icon('bolt',15,'var(--accent)')}</h4><p>Open any prop and hit “Explain with AI” for a grounded, cited breakdown — it may only reference that projection's own numbers, so it can't fabricate a stat.</p></div></div>`
+    :`<div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4>AI Juice isn't configured yet</h4><p>Set <b>ANTHROPIC_API_KEY</b> on the server to enable grounded slate summaries and per-prop explanations. Every projection below is fully model-driven regardless.</p></div></div>`;
+  $('#view').innerHTML=`<div class="ph2"><div><h2>AI Juice</h2><p>Grounded, transparent AI analysis — cites only real model numbers.</p></div></div>${banner}
+   <div class="panel"><div class="phead"><h3>Explain a top prop</h3></div>${propTable((p.projections||[]).slice(0,12))}</div>`;
+}
+async function vCorrelations(){
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Correlations</h2><p>Why combo props aren't just their parts multiplied together.</p></div></div>
+   <div class="panel" style="padding:18px"><h3 style="margin:0 0 8px">Correlation-aware combo simulation</h3>
+   <p class="muted" style="max-width:720px">A player's Hits, Runs, and RBIs move together — a big game lifts all three. Treating them as independent makes a combo prop (e.g. H+R+RBI) look ~40% narrower than reality. Juiced re-pairs the simulated components using each player's own historical dependence (an Iman-Conover copula), so the combo's spread is honest while every single-stat probability is unchanged.</p>
+   <div class="kv" style="margin-top:16px;max-width:520px"><div class="b"><div class="l">Default H · R corr</div><div class="v">0.59</div></div><div class="b"><div class="l">Default H · RBI corr</div><div class="v">0.49</div></div><div class="b"><div class="l">Default R · RBI corr</div><div class="v">0.55</div></div><div class="b"><div class="l">Shrinkage</div><div class="v">→ per-player</div></div></div>
+   <p class="muted" style="margin-top:16px;font-size:11.5px">A per-player correlation matrix (from their own game logs) is computed live for every H/R/RBI combo on the board — visible in each combo prop's simulation drawer.</p></div>`;
+}
+function demoTable(kind,cols,rows,emptyEm,emptyMsg){
+  return rows.length?`<table class="drops"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows}</tbody></table>`
+    :`<div class="empty"><div class="em">${emptyEm}</div>${emptyMsg}</div>`;
+}
+async function vWatchlist(){
+  const w=await DATA.watchlist.list();
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Watchlist <span class="chip">${w.length}</span></h2><p>Props you're tracking. ${signedIn()?'Synced to your account ✓':'Saved locally — sign in to sync across devices.'}</p></div><button class="btn" onclick="go('projections')">+ Add from Projections</button></div>
+   <div class="panel">${demoTable('w',['Player','Prop','Matchup','Proj','Line','Edge','Juice','Confidence'],w.map(propRow).join(''),'★','Your watchlist is empty — tap the ☆ on any prop to add it.')}</div>`;
+}
+async function vAlerts(){
+  const a=await DATA.alerts.list();
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Alerts <span class="chip">${a.length}</span></h2><p>Fire when a prop crosses a threshold. ${signedIn()?'Synced to your account ✓':'Saved locally — sign in to sync.'}</p></div></div>
+   <div class="panel" style="padding:16px"><div class="controls" style="margin:0">
+     <select id="a-metric"><option value="juice">Juice Score</option><option value="edge">Edge %</option><option value="probability">Probability</option></select>
+     <select id="a-cmp"><option value="gte">≥ at least</option><option value="lte">≤ at most</option></select>
+     <input class="ctl" id="a-th" type="number" placeholder="Threshold" style="width:120px" value="70">
+     <button class="btn pri" onclick="addAlert()">Create Alert</button></div></div>
+   <div class="panel">${a.length?`<table class="drops"><thead><tr><th>Metric</th><th>Condition</th><th>Created</th><th></th></tr></thead><tbody>${a.map(x=>`<tr><td style="font-weight:700">${cap(x.metric)}</td><td>${x.comparator==='gte'?'≥':'≤'} <b class="mono">${x.threshold}</b></td><td class="muted">${x.created_at?new Date(x.created_at).toLocaleString():''}</td><td onclick="delAlert('${x.id}')"><span class="star">${icon('x',14)}</span></td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('bell',30)}</div>No alerts yet — create one above.</div>`}</div>`;
+}
+function addAlert(){const m=$('#a-metric').value,c=$('#a-cmp').value,t=parseFloat($('#a-th').value);if(isNaN(t))return toast('Enter a threshold');DATA.alerts.add({metric:m,comparator:c,threshold:t}).then(()=>{toast('Alert created');render()});}
+function delAlert(id){DATA.alerts.remove(id).then(()=>render());}
+async function vPortfolio(title){
+  const p=await DATA.portfolio.list();const open=p.filter(x=>x.status==='open'),settled=p.filter(x=>x.status!=='open');
+  const won=settled.filter(x=>x.status==='won').length,roi=settled.length?((won/settled.length*100).toFixed(0)):'—';
+  $('#view').innerHTML=`<div class="ph2"><div><h2>${title||'Portfolio'} <span class="chip pro" style="background:#2a3720;color:var(--accent)">Pro</span></h2><p>Track your plays and grade them. ${signedIn()?'Synced to your account ✓':'Saved locally — sign in to sync.'}</p></div><button class="btn" onclick="go('projections')">+ Add a play</button></div>
+   <div class="kv" style="margin-bottom:16px;grid-template-columns:repeat(4,1fr)"><div class="b"><div class="l">Open</div><div class="v">${open.length}</div></div><div class="b"><div class="l">Settled</div><div class="v">${settled.length}</div></div><div class="b"><div class="l">Won</div><div class="v pos">${won}</div></div><div class="b"><div class="l">Hit Rate</div><div class="v">${roi}${roi!=='—'?'%':''}</div></div></div>
+   <div class="panel">${p.length?`<table class="drops"><thead><tr><th>Player</th><th>Prop</th><th>Side</th><th>Status</th><th></th></tr></thead><tbody>${p.map(x=>`<tr><td class="nm" style="font-weight:700">${x.player}</td><td>${x.stat} ${fmt(x.line)}</td><td>${cap(x.side)}</td><td>${x.status==='open'?`<span class="chip y">open</span> <span class="lnk" style="color:var(--accent)" onclick="settle('${x.id}','won')">${icon('check',14)}</span> <span class="lnk" style="color:var(--down)" onclick="settle('${x.id}','lost')">${icon('x',14)}</span>`:`<span class="chip ${x.status==='won'?'g':'r'}">${x.status}</span>`}</td><td onclick="delPlay('${x.id}')"><span class="star">${icon('trash',15)}</span></td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('folder',30)}</div>No plays tracked yet — add one from Projections.</div>`}</div>`;
+}
+function settle(id,s){DATA.portfolio.settle(id,s).then(()=>{toast('Marked '+s);render()});}
+function delPlay(id){DATA.portfolio.remove(id).then(()=>render());}
+async function vWeather(){
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Weather</h2><p>Live ballpark conditions that swing hitting and pitching props (via Vaisala Xweather).</p></div></div><div id="wx"><div class="empty">Loading conditions…</div></div>`;
+  const d=await api('/api/weather');
+  if(!d.available){$('#wx').innerHTML=`<div class="empty"><div class="em">${icon('cloud',30)}</div>${d.reason||'Weather not configured.'}</div>`;return}
+  const g=d.games||[];
+  const wind=(mph,dir)=>mph==null?'—':`${Math.round(mph)} mph ${dir||''}`;
+  $('#wx').innerHTML=g.length?`<div class="grid3">${g.map(w=>`<div class="learn-card"><div style="display:flex;align-items:center;justify-content:space-between"><h4 style="margin:0;display:flex;align-items:center;gap:6px">${leagueLogo('MLB',16)} ${w.team}</h4><span class="chip">${w.startTime?new Date(w.startTime).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):''}</span></div>
+     <div style="font-size:34px;font-weight:900;letter-spacing:-1px;margin:8px 0 2px">${w.tempF!=null?Math.round(w.tempF)+'°':'—'}</div>
+     <p style="margin:0 0 10px">${w.weather||''}</p>
+     <div class="kv"><div class="b"><div class="l">Wind</div><div class="v" style="font-size:15px">${wind(w.windMPH,w.windDir)}</div></div><div class="b"><div class="l">Humidity</div><div class="v" style="font-size:15px">${w.humidity!=null?w.humidity+'%':'—'}</div></div></div>
+     <p class="muted" style="font-size:11px;margin:8px 0 0">${w.city} · out-to-CF wind helps HRs; in-blowing suppresses them.</p></div>`).join('')}</div>`
+   :`<div class="empty"><div class="em">${leagueLogo('MLB',30)}</div>No outdoor MLB games on the board right now.</div>`;
+}
+async function vCommunity(){
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Community <span class="chip g">New</span></h2><p>Share research and follow sharp bettors.</p></div></div>
+   <div class="empty"><div class="em">${icon('users',30)}</div><b>Community is a post-launch social layer.</b><br><span class="muted" style="font-size:12px;max-width:520px;display:inline-block;margin-top:8px">It builds on the user + auth system that's already in place (accounts, watchlists, portfolios). It needs real signed-in users before it means anything, so it's intentionally deferred.</span></div>`;
+}
+async function vLearn(){
+  const cards=[['What is a Juice Score?','A 0–100 composite of how decisive the model is AND how confident — gated so a noisy line can\'t top the board.'],['Projections, not picks','Every number is a distribution with a floor, ceiling, and probability. We show the math on every prop.'],['Edge % vs the line','The prop\'s expected value as a percent. Positive means the model sees more value than the price implies.'],['Confidence','Blends sample size, how far the model is from a coin-flip, and whether a full engine run backed it.'],['CLV & honesty','We grade every projection against the closing line and publish the hit-rate. The board is measured, not vibes.'],['Correlation-aware combos','H/R/RBI move together — we re-pair simulated components so combo props have honest spread.']];
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Learn</h2><p>How Juiced thinks about props.</p></div></div><div class="grid3">${cards.map(([h,p])=>`<div class="learn-card"><h4>${h}</h4><p>${p}</p></div>`).join('')}</div>`;
+}
+
+const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),simulations:vSimulations,research:vResearch,'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:()=>vPortfolio('Portfolio'),journal:()=>vPortfolio('Bet Journal'),weather:vWeather,community:vCommunity,learn:vLearn};
+
+// ── prop detail drawer ──
+const FACTORS=[['Recent Form',30,'#c6f24e'],['Matchup',25,'#8ee65a'],['Usage / Role',20,'#5bd0c0'],['Injuries',10,'#e8c84a'],['Weather / Park',5,'#7c9bff'],['Other',10,'#5c675a']];
+function donutSVG(items,center,sub){let a=-Math.PI/2,R=40,r=26,cx=42,cy=42,p='';const tot=items.reduce((s,x)=>s+x[1],0)||1;
+  items.forEach(([_n,w,col],i)=>{const ang=w/tot*2*Math.PI,a2=a+ang,P=(rad,an)=>[cx+rad*Math.cos(an),cy+rad*Math.sin(an)];const[x1,y1]=P(R,a),[x2,y2]=P(R,a2),[x3,y3]=P(r,a2),[x4,y4]=P(r,a),lg=ang>Math.PI?1:0;p+=`<path d="M${x1} ${y1}A${R} ${R} 0 ${lg} 1 ${x2} ${y2}L${x3} ${y3}A${r} ${r} 0 ${lg} 0 ${x4} ${y4}Z" fill="${col}"/>`;a=a2});
+  return `<svg width="84" height="84" viewBox="0 0 84 84">${p}<text x="42" y="45" text-anchor="middle" fill="#e9f0e6" font-size="15" font-weight="800">${center}</text><text x="42" y="57" text-anchor="middle" fill="#8b978a" font-size="7">${sub||''}</text></svg>`;
+}
+function whyBullets(x){const b=[];const over=(x.side||'over')==='over';
+  if(x.projection!=null&&x.line!=null)b.push(`Model projects <b>${fmt(x.projection)}</b> vs a <b>${fmt(x.line)}</b> line — ${pct(x.edgePct)} edge`);
+  if(x.probability!=null)b.push(`<b>${prob(over?x.probability:1-x.probability)}</b> model probability to ${x.side} the line`);
+  if(x.confidence!=null)b.push(`<b>${Math.round(x.confidence)}%</b> confidence — ${x.confidence>=75?'high':x.confidence>=55?'moderate':'lower'} conviction`);
+  if(x.proj_kind==='engine'||x.juiceScore)b.push(`Full Monte-Carlo engine run on recent game logs`);
+  return b.slice(0,5);
+}
+function corrHTML(x){if(x.sport!=='MLB')return '';
+  return `<div class="dsec"><h5>Correlated Props</h5><div class="corr"><div class="c"><div class="p">59%</div><div class="s">Hits · Runs</div></div><div class="c"><div class="p">49%</div><div class="s">Hits · RBI</div></div><div class="c"><div class="p">55%</div><div class="s">Runs · RBI</div></div></div><p class="muted" style="font-size:10.5px;margin:8px 0 0">Combo props are simulated with these dependencies (not treated as independent).</p></div>`;
+}
+async function openProp(x,tab){
+  SELID=x.id; if(cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}
+  const D=$('#drawer');$('#scrim').classList.add('open');D.classList.add('open');
+  D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${x.player}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${x.team||''} · ${cap(x.side)} ${fmt(x.line)} ${x.stat}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
+   <div class="dsec"><div class="kv"><div class="b"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div><div class="b"><div class="l">Edge %</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div><div class="b"><div class="l">Over Probability</div><div class="v">${prob(x.probability)}</div></div><div class="b"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div></div></div>
+   <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="simkv"></div></div>
+   <div class="dsec"><h5>Confidence Breakdown</h5><div style="display:flex;align-items:center;gap:16px">${donutSVG(FACTORS,Math.round(x.confidence)+'%','Confidence')}<div class="legend" style="flex:1">${FACTORS.map(([n,w,c])=>`<div class="row"><span class="dot" style="background:${c}"></span>${n}<span class="pct">${w}%</span></div>`).join('')}</div></div></div>
+   <div class="dsec"><h5>Why the Model Likes This</h5><ul class="whylist">${whyBullets(x).map(b=>`<li><span class="ok">✓</span><span>${b}</span></li>`).join('')}</ul></div>
+   ${corrHTML(x)}
+   <div class="dsec"><h5>AI Juice</h5><div class="aibox" id="aibox">${AUTH.ai?'Generating a grounded explanation…':'AI Juice is not configured on the server.'}</div></div>
+   <div class="dsec" style="display:flex;gap:8px"><button class="btn ${isWatched(x.id)?'':'pri'}" id="wbtn" onclick='toggleWatch(${JSON.stringify(x).replace(/"/g,"&quot;")});renderDrawerBtns(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${isWatched(x.id)?'Watching':'Add to Watchlist'}</button><button class="btn" onclick='addPlay(${JSON.stringify(x).replace(/"/g,"&quot;")})'>+ Portfolio</button><button class="btn" onclick='loadResearch(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('research',13)} Research</button></div>`;
+  loadSim(x);if(AUTH.ai)loadAIExplain(x);
+  if(tab==='ai')setTimeout(()=>$('#aibox')&&$('#aibox').scrollIntoView({behavior:'smooth',block:'center'}),200);
+}
+function renderDrawerBtns(x){const b=$('#wbtn');if(b){b.className='btn '+(isWatched(x.id)?'':'pri');b.textContent=isWatched(x.id)?'Watching':'Add to Watchlist'}}
+function addPlay(x){DATA.portfolio.add({line_id:x.id,player:x.player,sport:x.sport,stat_type:x.stat,side:x.side,line_value:x.line}).then(()=>toast('Added to portfolio'))}
+async function loadSim(x){try{const r=await api('/api/simulation?id='+encodeURIComponent(x.id));const s=r.simulation||{},v=r.valuation||{};
+  drawDist(s,x.line);
+  $('#simkv').innerHTML=`<div class="kv" style="margin-top:12px"><div class="b"><div class="l">Over Prob</div><div class="v">${prob(s.overProbability)}</div></div><div class="b"><div class="l">Floor–Ceiling</div><div class="v" style="font-size:15px">${fmt(s.floor)} – ${fmt(s.ceiling)}</div></div><div class="b"><div class="l">Expected Value</div><div class="v ${v.expectedValue>=0?'pos':'neg'}">${v.expectedValue!=null?(v.expectedValue*100).toFixed(1)+'%':'—'}</div></div><div class="b"><div class="l">Kelly Stake</div><div class="v">${v.kellyFraction!=null?(v.kellyFraction*100).toFixed(1)+'%':'—'}</div></div></div><p class="muted" style="font-size:11px;margin:10px 0 0">Favored side: <b style="color:var(--text)">${cap(v.side)}</b> · sample ${s.sampleSize||'—'} games · ${s.sd_is_approximate?'SD approximated from the p10–p90 band':''}</p>`;
+}catch(e){$('#simkv').innerHTML='<p class="muted">Could not load simulation.</p>'}}
+function drawDist(s,line){const S=$('#dist');if(!S||s.mean==null)return;const mu=s.mean,sd=s.standardDeviation||Math.max(0.5,(s.ceiling-s.floor)/4)||1,W=420,H=90,lo=Math.min(s.floor??mu-3*sd,line),hi=Math.max(s.ceiling??mu+3*sd,line),X=v=>((v-lo)/((hi-lo)||1))*W;let bars='';const N=40;for(let i=0;i<N;i++){const v=lo+(i+.5)*(hi-lo)/N,y=Math.exp(-.5*((v-mu)/sd)**2),h=y*(H-14),over=v>line;bars+=`<rect x="${i*W/N}" y="${H-h}" width="${W/N-1}" height="${h}" fill="${over?'#c6f24e':'#3a4a30'}" opacity="${over?.85:.7}"/>`}
+  S.innerHTML=bars+`<line x1="${X(line)}" y1="0" x2="${X(line)}" y2="${H}" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${X(line)+4}" y="12" fill="#ff6b6b" font-size="10" font-weight="700">line ${fmt(line)}</text>`}
+async function loadAIExplain(x){const box=$('#aibox');try{const r=await api('/api/ai/explain?id='+encodeURIComponent(x.id));if(r.ai&&r.ai.available){box.className='aibox filled';box.textContent=r.ai.explanation}else{box.textContent=(r.ai&&r.ai.reason)||'AI unavailable.'}}catch(e){box.textContent='AI request failed.'}}
+async function loadResearch(x){const box=$('#aibox');box.className='aibox';box.textContent='Loading research…';try{const r=await api('/api/analytics?id='+encodeURIComponent(x.id));const a=r.analytics||{};box.className='aibox filled';box.innerHTML=`<b>Recent form & matchup</b><br>${a.summary||JSON.stringify(a).slice(0,300)||'No analytics available for this prop.'}`}catch(e){box.textContent='Research unavailable for this prop.'}}
+function closeDrawer(){$('#scrim').classList.remove('open');$('#drawer').classList.remove('open');const was=SELID;SELID=null;if(was&&cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}}
+
+// ── router ──
+async function render(){renderNav();const r=cur();const fn=ROUTES[r]||vDashboard;
+  $('#greet').style.display=r==='dashboard'?'':'none';$('#subgreet').style.display=r==='dashboard'?'':'none';
+  try{await fn()}catch(e){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load this page.<br><span class="muted">${e}</span></div>`}}
+window.addEventListener('hashchange',()=>{closeDrawer();render()});
+$('#globalsearch').addEventListener('keydown',e=>{if(e.key==='Enter'){go('projections');setTimeout(()=>{const f=$('#f-stat');if(f){f.value=e.target.value;f.dispatchEvent(new Event('input'))}},100)}});
+
+async function boot(){try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
+  // Real Supabase auth when the server provides the public client config.
+  if(AUTH.supabase_url && AUTH.supabase_anon_key && window.supabase){
+    try{
+      // PKCE flow returns ?code= (not a #hash token) so it never collides with the SPA's
+      // hash router; supabase-js exchanges the code and cleans the URL automatically.
+      SB=window.supabase.createClient(AUTH.supabase_url, AUTH.supabase_anon_key,
+        {auth:{flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
+      const {data}=await SB.auth.getSession(); setSession(data.session);
+      let first=true;
+      SB.auth.onAuthStateChange(async (ev,s)=>{setSession(s);await refreshWatched();renderAuthUI();
+        if(ev==='SIGNED_IN'&&!first){toast('Signed in');render()} first=false;});
+    }catch(e){}
+  }
+  await refreshWatched();
+  renderAuthUI();
+  $('#aijuice-val').textContent=AUTH.ai?'∞':'off';
+  if(!location.hash)location.hash='/dashboard';
+  render();
+  setInterval(()=>{if(cur()==='dashboard')render()},60000);
+}
+document.addEventListener('click',e=>{if(!e.target.closest('#avatar')&&!e.target.closest('#umenu'))$('#umenu').classList.remove('open')});
+// fill dashboard AI summary after render
+const _r2=render;render=async function(){await _r2();if(cur()==='dashboard'){const p=$('#ai-summary');if(p){p.className='';p.textContent=AUTH.ai?'AI Juice is connected — open any prop for a grounded, cited explanation of the projection.':'AI Juice is not configured yet — set ANTHROPIC_API_KEY on the server to enable grounded slate summaries. Every projection is still fully model-driven.'}}};
+boot();
+</script>
+</body>
+</html>

@@ -32,19 +32,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-import json as _json
-
 import requests
 
 _BD = Path(__file__).parent.parent / "betting_dashboard"
-_CONFIG_PATH = Path(__file__).parent / "config.json"
 
+# NOTE: PrizePicks is read cookie-free from the partner API (see fetch_prizepicks),
+# so there is no config file and no secret to manage here. The old config.json /
+# _load_config() cookie loader was dead (never called) and has been removed.
 
-def _load_config() -> dict:
-    try:
-        return _json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
 # Local dev pulls the clients from the sibling betting_dashboard; a standalone deploy
 # has vendored copies (underdog.py/mlb_model.py) alongside this file instead.
 if _BD.exists() and str(_BD) not in sys.path:

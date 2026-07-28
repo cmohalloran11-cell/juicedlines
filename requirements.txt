@@ -6,3 +6,7 @@ numpy>=1.26.0
 # scipy powers the vendored stat-projector engine's Monte-Carlo (projector/models/montecarlo.py).
 # Without it the board silently falls back to the empirical median for every MLB prop.
 scipy>=1.11.0
+# Server-side Supabase JWT verification (auth.py). Fail-closed if unset.
+pyjwt>=2.8.0
+# Postgres backend for the store/ layer (DATABASE_URL → Postgres; SQLite otherwise).
+psycopg[binary]>=3.1.0

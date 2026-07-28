@@ -138,8 +138,12 @@ def _empirical_combo_corr(form_logs: list[dict]):
         d = np.array(_COMBO_CORR_DEFAULT)
         w = min(1.0, len(form_logs) / 60.0) * 0.5
         c = w * c + (1 - w) * d
+        # Clip the OFF-diagonals to ±0.95, THEN set the diagonal to exactly 1.0. (Previously the
+        # clip ran after fill_diagonal and silently pulled the diagonal to 0.95 — a non-unit
+        # diagonal is not a valid correlation matrix and warped the Cholesky in _induce_corr.)
+        c = np.clip(c, -0.95, 0.95)
         np.fill_diagonal(c, 1.0)
-        return np.clip(c, -0.95, 0.95)
+        return c
     except Exception:
         return None
 
