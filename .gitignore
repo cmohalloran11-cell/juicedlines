@@ -22,6 +22,18 @@ static/board.premium.json
 static/analytics.json
 static/history.json
 static/clv.db
+static/trust.json
+# SPA page payloads — prebuilt by build_static.py, published to the deploy branch, read by
+# the static frontend in place of /api/*. Same deal as board.json: artifacts, not source.
+static/dashboard.json
+static/projections.json
+static/injuries.json
+static/weather.json
+static/books.json
+static/auth.json
+static/model_health.json
+static/backtest.json
+static/drift.json
 # clv_seed.db IS committed on purpose — it bootstraps the Action's ledger with the
 # already-graded rows (the edge-regression asset). Without it the first Action run starts
 # empty, publishes an empty ledger, and every later run then prefers that empty data-branch

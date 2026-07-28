@@ -62,6 +62,13 @@ jobs:
       - name: Rebuild + publish on a loop
         env:
           REMOTE: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          # Optional — set these as repo secrets to populate auth.json (login) and weather.json.
+          # Absent, the build still succeeds: login is hidden and the weather page shows "not
+          # configured". The Supabase anon key is public by design (it ships to the browser).
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          XWEATHER_CLIENT_ID: ${{ secrets.XWEATHER_CLIENT_ID }}
+          XWEATHER_CLIENT_SECRET: ${{ secrets.XWEATHER_CLIENT_SECRET }}
         run: |
           set -u
           LOOP_UNTIL=$(( $(date -u +%s) + LOOP_HOURS * 3600 ))
@@ -98,7 +105,11 @@ jobs:
 
           publish () {
             cp static/board.json _data/board.json || return 1
-            for f in analytics.json history.json clv.db board.free.json trust.json; do
+            # analytics/history/clv/trust = drawer + CLV data (unchanged on fast cycles);
+            # the rest are the SPA page payloads the static frontend reads instead of /api/*.
+            for f in analytics.json history.json clv.db board.free.json trust.json \
+                     dashboard.json projections.json injuries.json weather.json books.json \
+                     auth.json model_health.json backtest.json drift.json; do
               if [ -f "static/$f" ]; then cp "static/$f" "_data/$f"; fi
             done
             git -C _data add -A

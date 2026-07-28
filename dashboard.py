@@ -34,6 +34,8 @@ def _drop(line: dict) -> dict:
         "edge": line.get("model_edge"),
         "edgePct": _edge_pct(line),
         "probability": line.get("model_prob"),
+        "floor": line.get("model_floor"),          # for the drawer's distribution (esp. static)
+        "ceiling": line.get("model_ceiling"),
         "juiceScore": valuation.juice_score(line),
         "confidence": valuation.confidence_score(line),
         "side": "over" if (line.get("model_prob") or 0) >= 0.5 else "under",

@@ -191,7 +191,9 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 
 <script>
 const $=(s,r=document)=>r.querySelector(s),el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
-const api=(p,opt={})=>{const h={'Content-Type':'application/json'};
+const api=(p,opt={})=>{
+  if(STATIC && p.startsWith('/api/')) return staticApi(p);   // no server → read prebuilt JSON
+  const h={'Content-Type':'application/json'};
   if(AUTH.token)h['Authorization']='Bearer '+AUTH.token; else if(AUTH.dev)h['X-Dev-User']='demo';
   return fetch(p,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined}).then(r=>r.json());};
 const fmt=n=>n==null?'—':(+n).toLocaleString(undefined,{maximumFractionDigits:2});
@@ -233,8 +235,36 @@ const ico=s=>leagueLogo(s,14);
 const starIcon=on=>`<svg width="15" height="15" viewBox="0 0 24 24" fill="${on?'var(--warn)':'none'}" stroke="${on?'var(--warn)':'currentColor'}" stroke-width="1.5" stroke-linejoin="round"><path d="${IC2.star}"/></svg>`;
 const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600)};
 let AUTH={dev:false,ai:false,token:null,user:null};
-let SB=null, WATCHED=new Set();
-const signedIn=()=>!!AUTH.token;
+let SB=null, WATCHED=new Set(), STATIC=false;
+// On the free static deploy there is no live server — the GitHub Action prebuilds the data
+// as JSON on the `data` branch, which the frontend reads instead of /api/*. User data (watch/
+// portfolio/alerts) is local-only there since there's no server to sync to.
+const signedIn=()=>!!AUTH.token && !STATIC;
+// Prod static build reads the prebuilt JSON off the `data` branch via GitHub raw. When the
+// static site is served locally for testing, the JSON sits next to this file, so read relative.
+const _LOCAL=location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:';
+const DATA_BASE=_LOCAL?'./':'https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/';
+async function detectMode(){try{const r=await fetch('/api/status',{cache:'no-store'});STATIC=!r.ok;}catch(e){STATIC=true;}}
+async function staticApi(path){
+  const [base,qs]=path.split('?'); const q=new URLSearchParams(qs||'');
+  const J=f=>fetch(DATA_BASE+f+'?t='+Math.floor(Date.now()/60000)).then(r=>r.json()).catch(()=>({}));
+  switch(base){
+    case '/api/dashboard': return J('dashboard.json');
+    case '/api/projections': return J('projections.json');
+    case '/api/model/health': return J('model_health.json');
+    case '/api/backtest': return J('backtest.json');
+    case '/api/model/drift': return J('drift.json');
+    case '/api/weather': return J('weather.json');
+    case '/api/books': return J('books.json');
+    case '/api/injuries': return J('injuries.json');
+    case '/api/auth/status': return J('auth.json');
+    case '/api/lines/history': {const h=await J('history.json');return {history:(h.history||{})[q.get('id')]||[]};}
+    case '/api/analytics': {const a=await J('analytics.json');const k=(a.index||{})[q.get('id')];let an=k?(a.analytics||{})[k]:null;if(an&&an._r&&a.recent)an={...an,recent:a.recent[an._r]};return {analytics:an||{available:false}};}
+    case '/api/ai/explain': return {ai:{available:false,reason:'AI Juice needs the live server. The static build shows fully model-driven projections.'}};
+    case '/api/simulation': return {simulation:null,valuation:{available:false}};  // computed client-side in loadSim
+    default: return {};
+  }
+}
 
 // ── local demo store (used when NOT signed in) ──
 const LS={get:k=>JSON.parse(localStorage.getItem('juiced_'+k)||'[]'),set:(k,v)=>localStorage.setItem('juiced_'+k,JSON.stringify(v)),
@@ -643,7 +673,16 @@ async function openProp(x,tab){
 }
 function renderDrawerBtns(x){const b=$('#wbtn');if(b){b.className='btn '+(isWatched(x.id)?'':'pri');b.textContent=isWatched(x.id)?'Watching':'Add to Watchlist'}}
 function addPlay(x){DATA.portfolio.add({line_id:x.id,player:x.player,sport:x.sport,stat_type:x.stat,side:x.side,line_value:x.line}).then(()=>toast('Added to portfolio'))}
-async function loadSim(x){try{const r=await api('/api/simulation?id='+encodeURIComponent(x.id));const s=r.simulation||{},v=r.valuation||{};
+async function loadSim(x){try{const r=await api('/api/simulation?id='+encodeURIComponent(x.id));let s=r.simulation,v=r.valuation||{};
+  if(!s){  // static build (no server): synthesize the distribution from the prop's own fields
+    const mu=x.projection,lo=x.floor,hi=x.ceiling;
+    const sd=(hi!=null&&lo!=null&&hi>lo)?(hi-lo)/2.5631:Math.max(0.5,Math.abs(mu||1)*0.5);
+    s={mean:mu,floor:lo,ceiling:hi,overProbability:x.probability,
+       underProbability:x.probability!=null?+(1-x.probability).toFixed(3):null,
+       standardDeviation:+sd.toFixed(3),sd_is_approximate:true,sampleSize:null};
+    v={available:x.edgePct!=null,side:x.side,
+       expectedValue:x.edgePct!=null?x.edgePct/100:null,kellyFraction:null};
+  }
   drawDist(s,x.line);
   $('#simkv').innerHTML=`<div class="kv" style="margin-top:12px"><div class="b"><div class="l">Over Prob</div><div class="v">${prob(s.overProbability)}</div></div><div class="b"><div class="l">Floor–Ceiling</div><div class="v" style="font-size:15px">${fmt(s.floor)} – ${fmt(s.ceiling)}</div></div><div class="b"><div class="l">Expected Value</div><div class="v ${v.expectedValue>=0?'pos':'neg'}">${v.expectedValue!=null?(v.expectedValue*100).toFixed(1)+'%':'—'}</div></div><div class="b"><div class="l">Kelly Stake</div><div class="v">${v.kellyFraction!=null?(v.kellyFraction*100).toFixed(1)+'%':'—'}</div></div></div><p class="muted" style="font-size:11px;margin:10px 0 0">Favored side: <b style="color:var(--text)">${cap(v.side)}</b> · sample ${s.sampleSize||'—'} games · ${s.sd_is_approximate?'SD approximated from the p10–p90 band':''}</p>`;
 }catch(e){$('#simkv').innerHTML='<p class="muted">Could not load simulation.</p>'}}
@@ -660,7 +699,7 @@ async function render(){renderNav();const r=cur();const fn=ROUTES[r]||vDashboard
 window.addEventListener('hashchange',()=>{closeDrawer();render()});
 $('#globalsearch').addEventListener('keydown',e=>{if(e.key==='Enter'){go('projections');setTimeout(()=>{const f=$('#f-stat');if(f){f.value=e.target.value;f.dispatchEvent(new Event('input'))}},100)}});
 
-async function boot(){try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
+async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
   // Real Supabase auth when the server provides the public client config.
   if(AUTH.supabase_url && AUTH.supabase_anon_key && window.supabase){
     try{

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pullers
 import analytics
+import books
 
 # FAST refresh: rebuild only what actually changes minute-to-minute — the LINES (board.json)
 # and their movement (history.json). Measured 2026-07-19, a full build is 433s of which
@@ -136,8 +137,10 @@ def main() -> None:
     pp, perr = pullers.fetch_prizepicks()
     if perr:
         errors["prizepicks"] = perr
+    extra, book_errs = books.fetch_extra_books()   # Sleeper (live) + any future books
+    errors.update(book_errs)
 
-    lines = ud + pp
+    lines = ud + pp + extra
     try:
         analytics.enrich_lines(lines)
     except Exception as exc:
@@ -314,6 +317,42 @@ def main() -> None:
               f"{OUT_ANALYTICS.stat().st_size/1e6:.1f} MB | +{time.time()-ta:.0f}s")
     except Exception as exc:
         print(f"  analytics.json SKIPPED ({exc})")
+
+    # ── Juiced 2.0 dashboard JSON — the new SPA reads these on the static deploy ──
+    # Reuses the same modules the live API uses, so the static site serves the full
+    # dashboard/projections/leaderboards/weather with no backend. db.DB_PATH was pointed
+    # at the ledger (OUT_CLV) in the CLV block above, so the ledger-derived files are
+    # correct on full builds; on FAST cycles they're left to the previous build.
+    try:
+        import dashboard as _dash
+        import weather as _wx
+        SD = OUT.parent
+
+        def _w(name, obj):
+            (SD / name).write_text(json.dumps(obj, separators=(",", ":"), default=_num),
+                                   encoding="utf-8")
+
+        _w("projections.json", {"projections": _dash.projections(lines, limit=1000),
+                                "updated_at": updated})
+        _w("injuries.json", {"injuries": _dash.injuries(lines)})
+        _w("weather.json", _wx.slate(lines))
+        _w("books.json", {"books": books.status()})
+        _w("auth.json", {"auth_configured": bool(os.getenv("SUPABASE_URL")),
+                         "supabase_url": os.getenv("SUPABASE_URL"),
+                         "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY"),
+                         "ai": False, "dev_mode": False, "static": True})
+        _w("dashboard.json", _dash.build(lines, updated, errors))
+        extra_json = ""
+        if not FAST:
+            import model_health as _mh
+            import backtest as _bt
+            _w("model_health.json", _mh.health())
+            _w("backtest.json", {"current": _bt.current_accuracy("MLB")})
+            _w("drift.json", _bt.drift("MLB"))
+            extra_json = "/model_health/backtest/drift"
+        print(f"  wrote SPA JSON: projections/dashboard/injuries/weather/books/auth{extra_json}")
+    except Exception as exc:
+        print(f"  dashboard SPA JSON SKIPPED ({exc})")
 
 
 if __name__ == "__main__":
