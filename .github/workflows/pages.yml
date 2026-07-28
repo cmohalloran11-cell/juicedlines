@@ -1,22 +1,14 @@
 name: deploy site (github pages)
 
-# Publishes the static site (the `static/` dir) to GitHub Pages.
-#
-# WHY PAGES INSTEAD OF VERCEL
-# The board's data is force-pushed to the `data` branch every ~5 minutes. Vercel counted
-# each of those ~288 daily pushes as a PREVIEW deployment and blew through its free 100/day
-# cap, which then blocked the real (production) deploy — the site froze on an old build.
-# This workflow only runs when the SITE SOURCE changes (a push to `main` touching `static/`),
-# never on a data refresh, so the cap problem can't happen. Live line data is still read at
-# runtime straight from the `data` branch via raw.githubusercontent (see DATA_BASE in
-# static/dashboard.html), completely independent of when the page is deployed.
+# Publishes the static site (the `static/` dir) to GitHub Pages — kept as a MANUAL BACKUP
+# host for if Vercel breaks again (it froze once when the `data`-branch refreshes ate Vercel's
+# free 100 deploys/day cap). Production currently serves from Vercel, so this is dispatch-only:
+# it never runs automatically (no failure noise), but you can deploy Pages any time from the
+# Actions tab → "deploy site (github pages)" → Run workflow. First run: set Settings → Pages →
+# Source → GitHub Actions. Live data is read at runtime from the `data` branch via
+# raw.githubusercontent (DATA_BASE in static/dashboard.html), independent of the host.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "static/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch: {}
 
 permissions:
