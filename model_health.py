@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 import db
 import provenance
+import backtest
 
 _SPORTS = ("MLB", "WNBA", "Tennis")
 
@@ -116,4 +117,5 @@ def calibration_detail(sport: str = "MLB") -> dict:
         "probability_platt": db.prob_calibration(sport),
         "interval_widening_factor": db.interval_width(sport),
         "scorecard": db.scorecard(sport),
+        "diagnostics": backtest.diagnostics(sport),
     }

@@ -32,7 +32,7 @@ def _ledger_rows(sport: str, stat: Optional[str] = None) -> list[dict]:
     """Graded, standard-odds prop rows, deduped to one per (player, stat, game_date)."""
     q = ("SELECT player, stat_type, game_date, close_line AS L, close_proj AS P, "
          "actual AS Y, COALESCE(model_raw_prob, close_prob) AS RP, "
-         "model_floor AS FL, model_ceiling AS CE "
+         "model_floor AS FL, model_ceiling AS CE, proj_kind AS PK, source AS SRC "
          "FROM prop_clv WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL "
          "AND close_proj IS NOT NULL "
          "AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))")
@@ -113,6 +113,75 @@ def current_accuracy(sport: str = "MLB", min_n: int = 50) -> dict:
         "worst_by_mae": [{"stat": s, "mae": m["mae"], "hit_rate": m.get("hit_rate"), "n": m["n"]}
                          for s, m in ranked[:8]],
         "target_coverage": _TARGET_COVERAGE,
+    }
+
+
+# ── diagnostics: does the model's OWN signal about itself hold up? ─────────────
+# These answer the questions a real calibration system has to answer, using only what's
+# already logged on every graded row — no new plumbing, no fabricated attribution.
+
+def _bucket_by_interval_width(rows: list[dict], n_buckets: int = 3) -> list[tuple[str, list[dict]]]:
+    """Split graded rows into n_buckets tertiles by RELATIVE p10-p90 band width
+    (ceiling-floor)/|projection| — the model's own self-reported uncertainty, already
+    logged on every row. Narrower band = the model claims more certainty on that pick."""
+    scored = []
+    for r in rows:
+        fl, ce, p = r.get("FL"), r.get("CE"), r.get("P")
+        if fl is None or ce is None or p is None or ce <= fl:
+            continue
+        scored.append(((ce - fl) / max(1e-9, abs(p)), r))
+    if len(scored) < n_buckets * 20:
+        return []
+    scored.sort(key=lambda x: x[0])
+    n = len(scored)
+    labels = (["narrow (confident)", "medium", "wide (uncertain)"] if n_buckets == 3
+              else [f"bucket {i + 1}" for i in range(n_buckets)])
+    return [(labels[i], [r for _, r in scored[i * n // n_buckets:(i + 1) * n // n_buckets]])
+            for i in range(n_buckets)]
+
+
+def calibration_by_confidence(sport: str = "MLB", n_buckets: int = 3) -> dict:
+    """Does the model's OWN stated uncertainty (its p10-p90 band width) predict actual
+    accuracy? A trustworthy signal means narrow-band props hit MORE than wide-band ones —
+    that's the difference between 'confidence' meaning something and being decoration."""
+    buckets = _bucket_by_interval_width(_ledger_rows(sport), n_buckets)
+    if not buckets:
+        return {"sport": sport, "status": "insufficient_data"}
+    out = [{"bucket": label, **metrics(subset)} for label, subset in buckets]
+    narrow, wide = out[0], out[-1]
+    trustworthy = (narrow.get("hit_rate") is not None and wide.get("hit_rate") is not None
+                   and narrow["hit_rate"] >= wide["hit_rate"])
+    return {"sport": sport, "buckets": out, "confidence_signal_trustworthy": trustworthy}
+
+
+def calibration_by_method(sport: str = "MLB", min_n: int = 20) -> dict:
+    """Does a full engine run actually beat the cheaper fallback method, measured —
+    or is 'proj_kind: engine' just a label that doesn't earn its cost?"""
+    groups: dict[str, list[dict]] = {}
+    for r in _ledger_rows(sport):
+        groups.setdefault(r.get("PK") or "unknown", []).append(r)
+    return {"sport": sport,
+            "by_method": {k: metrics(rs) for k, rs in groups.items() if len(rs) >= min_n}}
+
+
+def calibration_by_book(sport: str = "MLB", min_n: int = 20) -> dict:
+    """Per-sportsbook accuracy — catches a book whose lines are systematically stale or
+    mispriced relative to the others, which a sport-wide average would hide."""
+    groups: dict[str, list[dict]] = {}
+    for r in _ledger_rows(sport):
+        groups.setdefault(r.get("SRC") or "unknown", []).append(r)
+    return {"sport": sport,
+            "by_book": {k: metrics(rs) for k, rs in groups.items() if len(rs) >= min_n}}
+
+
+def diagnostics(sport: str = "MLB") -> dict:
+    """The full self-diagnostic bundle for one sport — confidence-signal honesty,
+    method comparison, per-book accuracy. Everything measured, nothing attributed."""
+    return {
+        "sport": sport,
+        "confidence_calibration": calibration_by_confidence(sport),
+        "method_comparison": calibration_by_method(sport),
+        "book_comparison": calibration_by_book(sport),
     }
 
 
