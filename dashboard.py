@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+import time
+
 import db
 import valuation
 import model_health
@@ -22,11 +24,36 @@ def _edge_pct(line: dict) -> Optional[float]:
     return None if ev is None else round(ev * 100.0, 1)
 
 
+_OPP_CACHE: dict = {"t": 0.0, "v": {}}
+
+
+def _opp_by_abbr() -> dict:
+    """team-abbr → {opp, is_home} for today's MLB slate, from the schedule (analytics).
+    Memoized 5 min; degrades to {} with no network (opponent just shows as unknown)."""
+    if time.time() - _OPP_CACHE["t"] < 300 and _OPP_CACHE["v"]:
+        return _OPP_CACHE["v"]
+    out: dict = {}
+    try:
+        import analytics
+        by_id = analytics._team_map().get("_by_id", {})
+        for tid, info in analytics._today_opponents().items():
+            abbr = (by_id.get(tid) or {}).get("abbr")
+            if abbr:
+                out[abbr] = {"opp": info.get("opp_abbr"), "is_home": info.get("is_home")}
+    except Exception:
+        out = {}
+    _OPP_CACHE.update(t=time.time(), v=out)
+    return out
+
+
 def _drop(line: dict) -> dict:
+    opp = _opp_by_abbr().get(line.get("team")) if line.get("sport") == "MLB" else None
     return {
         "id": line.get("id"),
         "player": line.get("player"),
         "team": line.get("team"),
+        "opponent": opp.get("opp") if opp else None,     # real, from today's MLB schedule
+        "isHome": opp.get("is_home") if opp else None,
         "sport": line.get("sport"),
         "stat": line.get("stat_type"),
         "line": line.get("line"),

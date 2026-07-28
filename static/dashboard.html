@@ -148,7 +148,13 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 .qf:hover{color:var(--text)}.qf.on{background:#161d12;color:var(--accent);border-color:#31401f}
 .segbar{display:inline-flex;background:#0e130d;border:1px solid var(--line2);border-radius:9px;padding:2px;gap:2px;margin-right:4px}
 .seg{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:7px;font-weight:700;font-size:11.5px;color:var(--muted);cursor:pointer}.seg.on{background:#1c2616;color:var(--accent)}
-.rtable th{text-align:left;color:var(--dim);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.rtable th{text-align:left;color:var(--dim);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:var(--panel);z-index:2}
+.rtable th.sortable{cursor:pointer;user-select:none}.rtable th.sortable:hover{color:var(--muted)}
+.rtable th.sorted{color:var(--accent)}.sortarrow{margin-left:2px}
+/* skeleton shimmer */
+.sk{background:linear-gradient(90deg,#141b11 25%,#1b2416 50%,#141b11 75%);background-size:200% 100%;animation:shim 1.2s infinite;border-radius:6px;height:12px;display:inline-block}
+@keyframes shim{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skrow td{padding:11px 8px;border-bottom:1px solid #14190f}
 .rtable td{padding:8px;vertical-align:middle;white-space:nowrap}
 .rtable tr:not(:last-child) td{border-bottom:1px solid #14190f}.rtable tbody tr{cursor:pointer}.rtable tbody tr:hover td{background:#0f150d}
 .rtable tr.sel td{background:#101a0d;box-shadow:inset 2px 0 0 var(--accent)}
@@ -164,6 +170,23 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 .corr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.corr .c{border:1px solid var(--line);border-radius:10px;padding:9px;text-align:center;background:#0e130d}.corr .c .s{font-size:10px;color:var(--muted)}.corr .c .p{font-size:16px;font-weight:800;color:var(--accent)}
 .dtabs{display:flex;gap:4px;padding:0 0 12px}.dtab{font-size:11px;font-weight:700;color:var(--dim);padding:5px 9px;border-radius:7px;cursor:pointer}.dtab.on{background:#161d12;color:var(--accent)}
 @media(max-width:1200px){.grid2{grid-template-columns:1fr}.tiles{grid-template-columns:repeat(2,1fr)}.two,.grid3{grid-template-columns:1fr}.proj-layout{grid-template-columns:1fr}.filters{position:static}}
+/* mobile: off-canvas sidebar + hamburger */
+.menubtn{display:none;background:none;border:0;color:var(--text);cursor:pointer;padding:4px;align-items:center}
+.sidescrim{position:fixed;inset:0;background:rgba(3,6,3,.55);z-index:99;display:none}.sidescrim.open{display:block}
+@media(max-width:860px){
+  .app,.app.collapsed{grid-template-columns:1fr;transition:none}
+  .side{position:fixed;left:0;top:0;width:236px;z-index:100;transform:translateX(-100%);transition:transform .22s}
+  .side.open{transform:none;box-shadow:22px 0 60px rgba(0,0,0,.55)}
+  .app.collapsed .side{width:236px}
+  .app.collapsed .nav a span,.app.collapsed .navbottom a span,.app.collapsed .wordmark,.app.collapsed .navhdr span,.app.collapsed .plan{display:revert}
+  .app.collapsed .nav a,.app.collapsed .navbottom a{justify-content:flex-start;padding:8.5px 11px}
+  .brand .collapse{display:none}
+  .menubtn{display:inline-flex}
+  .tiles{grid-template-columns:1fr}.kv{grid-template-columns:1fr 1fr}
+  .topbar{padding:14px 15px 6px;gap:10px}.view{padding:8px 14px 50px}
+  .search{max-width:none}.search kbd{display:none}
+  .rtable{font-size:11.5px}
+}
 </style>
 </head>
 <body>
@@ -177,6 +200,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
   </aside>
   <div class="main">
     <div class="topbar">
+      <button class="menubtn" id="menubtn" onclick="toggleSide()" aria-label="Menu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
       <div class="hello"><h1 id="greet" style="display:flex;align-items:center;gap:7px">Good morning, Juice <svg width="19" height="19" viewBox="0 0 24 24" fill="#c6f24e"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></h1><p id="subgreet">Here's your edge for today.</p></div>
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="globalsearch" placeholder="Search players, teams, props…"><kbd>⌘K</kbd></div>
       <div class="topright"><div class="aijuice"><svg width="16" height="16" viewBox="0 0 24 24" fill="#c6f24e"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg><div><div class="lbl">AI Juice</div><div class="val" id="aijuice-val">—</div></div></div><span class="badge pro">Pro</span><div class="avatar" id="avatar"></div></div>
@@ -184,6 +208,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
     <div class="view" id="view"><div class="empty"><div class="em"><svg width="30" height="30" viewBox="0 0 24 24" fill="#5c675a"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></div>Loading…</div></div>
   </div>
 </div>
+<div class="sidescrim" id="sidescrim" onclick="toggleSide()"></div>
 <div class="scrim" id="scrim" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer"></div>
 <div class="toast" id="toast"></div>
@@ -369,12 +394,14 @@ const go=r=>{location.hash='/'+r};
 let COLLAPSED=localStorage.getItem('juiced_collapsed')==='1';
 function applyCollapsed(){const a=$('.app');if(a)a.classList.toggle('collapsed',COLLAPSED);const b=$('#collapseBtn');if(b){b.textContent=COLLAPSED?'›':'‹';b.title=COLLAPSED?'Expand sidebar':'Collapse sidebar'}}
 function toggleCollapse(){COLLAPSED=!COLLAPSED;localStorage.setItem('juiced_collapsed',COLLAPSED?'1':'0');applyCollapsed()}
+function toggleSide(){const open=$('.side').classList.toggle('open');$('#sidescrim').classList.toggle('open',open)}
+function closeSide(){$('.side').classList.remove('open');$('#sidescrim').classList.remove('open')}
 
 // ── shared prop table + rows ──
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
   <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.team||''} ${x.position?'· '+x.position:''}</div></div></div></td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)}</div><div class="p2">${x.stat||''}</div></td>
-  <td><div class="p1" style="font-size:12px">${ico(x.sport)} ${x.team||''}</div><div class="p2">${timeOf(x.startTime)||x.sport}</div></td>
+  <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${x.team||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${x.opponent}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
   <td class="mono" style="font-weight:800">${fmt(x.projection)}</td>
   <td class="mono muted">${fmt(x.line)}</td>
   <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${pct(x.edgePct)}</td>
@@ -450,7 +477,8 @@ function drawSpark(sel,vals,proj,line){const S=$(sel);if(!S)return;const W=520,H
   S.innerHTML=`<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#c6f24e" stop-opacity=".28"/><stop offset="1" stop-color="#c6f24e" stop-opacity="0"/></linearGradient></defs><path d="${d}L${X(vals.length-1)} ${H-pad}L${X(0)} ${H-pad}Z" fill="url(#g)"/><path d="${d}" fill="none" stroke="#c6f24e" stroke-width="2.2"/><line x1="${pad}" y1="${py}" x2="${W-pad}" y2="${py}" stroke="#8ee65a" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/><text x="${W-pad}" y="${py-6}" text-anchor="end" fill="#8ee65a" font-size="10" font-weight="700">proj ${fmt(proj)}</text>${vals.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="2" fill="#c6f24e"/>`).join('')}`}
 
 let PROJ=[], PROJUP=null, SELID=null;
-const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25};
+const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25};
+const skelRows=(n=9,cols=14)=>Array.from({length:n},()=>`<tr class="skrow">${Array.from({length:cols},(_,i)=>`<td><span class="sk" style="width:${i?30+Math.floor(Math.random()*55):70}%"></span></td>`).join('')}</tr>`).join('');
 // Only books we actually pull. Logos via Google's favicon service (real brand marks, CORS-ok).
 const BOOKS=[
   ['prizepicks','PrizePicks','https://www.google.com/s2/favicons?domain=prizepicks.com&sz=64'],
@@ -467,7 +495,7 @@ async function vProjections(title,sub){
       <div class="ph2"><div><h2>${title||'Projections'} <span class="chip" id="pcount"></span> <span class="chip" id="pupd" style="background:#12160e;color:var(--muted)"></span></h2><p>${sub||'Real projections. Real edges. Real insights.'}</p></div></div>
       <div class="tiles" id="ptiles"></div>
       <div class="ptoolbar" id="ptoolbar"></div>
-      <div class="panel"><div id="ptable"><div class="empty">Loading projections…</div></div></div>
+      <div class="panel"><div id="ptable"><table class="rtable"><tbody>${skelRows()}</tbody></table></div></div>
       <div class="pager" id="ppager"></div>
       <div class="statusbar" id="pstatus"></div>
     </div></div>`;
@@ -516,9 +544,10 @@ function renderToolbar(){
   const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k?'on':''}" onclick="PF.projSport='${k}';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}</div>`;
   $('#ptoolbar').innerHTML=`${sp}<input class="ctl" id="pq" placeholder="Search player…" style="min-width:150px" oninput="PF.q=this.value;PF.page=1;applyProj()" value="${PF.q}">
     ${vt('high',icon('fire',13)+' High Juice (80+)')}${vt('watch',icon('star',13)+' Watchlist')}
-    <select class="ctl" onchange="PF.sort=this.value;applyProj()"><option value="juice">Sort: Juice</option><option value="edge">Sort: Edge %</option><option value="confidence">Sort: Confidence</option><option value="projection">Sort: Projection</option></select>`;
+    <select class="ctl" onchange="PF.sort=this.value;PF.dir=-1;applyProj()"><option value="juice">Sort: Juice</option><option value="edge">Sort: Edge %</option><option value="confidence">Sort: Confidence</option><option value="projection">Sort: Projection</option></select>`;
 }
 function tbClick(k){if(k==='high')PF.high=!PF.high;if(k==='watch')PF.onlyWatch=!PF.onlyWatch;PF.page=1;renderToolbar();applyProj()}
+function setSort(k){if(!k)return;if(PF.sort===k)PF.dir=-(PF.dir||-1);else{PF.sort=k;PF.dir=(k==='player'||k==='opp')?1:-1}PF.page=1;applyProj()}
 function applyProj(){
   let rows=PROJ.filter(p=>PF.sources.has(p.source));
   if(PF.projSport!=='all')rows=rows.filter(p=>(p.sport||'').toLowerCase()===PF.projSport.toLowerCase());
@@ -527,12 +556,15 @@ function applyProj(){
   if(PF.high)rows=rows.filter(p=>p.juiceScore>=80);
   if(PF.onlyWatch)rows=rows.filter(p=>isWatched(p.id));
   if(PF.q){const q=PF.q.toLowerCase();rows=rows.filter(p=>(p.player||'').toLowerCase().includes(q))}
-  const key={juice:p=>p.juiceScore,edge:p=>p.edgePct??-999,confidence:p=>p.confidence||0,projection:p=>p.projection||0}[PF.sort];
-  rows.sort((a,b)=>key(b)-key(a));
+  const key={juice:p=>p.juiceScore,edge:p=>p.edgePct??-999,confidence:p=>p.confidence||0,projection:p=>p.projection||0,line:p=>p.line??0,probability:p=>p.probability??0,player:p=>(p.player||'').toLowerCase(),opp:p=>(p.opponent||'').toLowerCase()}[PF.sort]||(p=>p.juiceScore);
+  const dir=PF.dir||-1;
+  rows.sort((a,b)=>{const ka=key(a),kb=key(b);const c=typeof ka==='string'?ka.localeCompare(kb):(ka-kb);return dir*c});
   $('#pcount').textContent=rows.length+' props';
   const per=PF.per,pages=Math.max(1,Math.ceil(rows.length/per)),pg=Math.min(PF.page,pages);PF.page=pg;
   const slice=rows.slice((pg-1)*per,pg*per);
-  $('#ptable').innerHTML=`<table class="rtable"><thead><tr><th></th><th>Player</th><th>Team</th><th>Prop</th><th>Book</th><th>Line</th><th>Proj</th><th>Edge</th><th>Juice</th><th>Confidence</th><th>Over%</th><th>AI</th><th></th></tr></thead><tbody>${slice.map(richRow).join('')||'<tr><td colspan="13" class="empty">No props match these filters.</td></tr>'}</tbody></table>`;
+  const th=(label,k)=>k?`<th class="sortable ${PF.sort===k?'sorted':''}" onclick="setSort('${k}')">${label}${PF.sort===k?`<span class="sortarrow">${dir<0?'↓':'↑'}</span>`:''}</th>`:`<th>${label}</th>`;
+  const head=`<tr>${th('','')}${th('Player','player')}${th('Team','')}${th('Opp','opp')}${th('Prop','')}${th('Book','')}${th('Line','line')}${th('Proj','projection')}${th('Edge','edge')}${th('Juice','juice')}${th('Confidence','confidence')}${th('Over%','probability')}${th('AI','')}${th('','')}</tr>`;
+  $('#ptable').innerHTML=`<table class="rtable"><thead>${head}</thead><tbody>${slice.map(richRow).join('')||'<tr><td colspan="14" class="empty">No props match these filters.</td></tr>'}</tbody></table>`;
   const from=rows.length?(pg-1)*per+1:0,to=Math.min(pg*per,rows.length);
   $('#ppager').innerHTML=`<span>Showing ${from}–${to} of ${rows.length}</span><span>${Array.from({length:pages},(_,i)=>i+1).slice(Math.max(0,pg-3),pg+2).map(n=>`<span class="qf ${n===pg?'on':''}" onclick="PF.page=${n};applyProj()">${n}</span>`).join(' ')}</span>`;
 }
@@ -540,6 +572,7 @@ const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.
   <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td>
   <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.position||''} ${x.startTime?'· '+timeOf(x.startTime):''}</div></div></div></td>
   <td><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">${teamBadge(x,18)} ${x.team||''}</span></td>
+  <td class="muted">${x.opponent?`${x.isHome?'vs':'@'} ${x.opponent}`:'—'}</td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)}</div><div class="p2">${x.stat||''}</div></td>
   <td>${bookLogo(x.source,22)}</td>
   <td class="mono muted">${fmt(x.line)}</td>
@@ -796,8 +829,8 @@ function closeDrawer(){$('#scrim').classList.remove('open');$('#drawer').classLi
 // ── router ──
 async function render(){renderNav();const r=cur();const fn=ROUTES[r]||vDashboard;
   $('#greet').style.display=r==='dashboard'?'':'none';$('#subgreet').style.display=r==='dashboard'?'':'none';
-  try{await fn()}catch(e){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load this page.<br><span class="muted">${e}</span></div>`}}
-window.addEventListener('hashchange',()=>{closeDrawer();render()});
+  try{await fn()}catch(e){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load this page.<br><span class="muted">${e}</span><br><button class="btn pri" style="margin-top:14px" onclick="render()">Retry</button></div>`}}
+window.addEventListener('hashchange',()=>{closeDrawer();closeSide();render()});
 $('#globalsearch').addEventListener('keydown',e=>{if(e.key==='Enter'){go('projections');setTimeout(()=>{const f=$('#f-stat');if(f){f.value=e.target.value;f.dispatchEvent(new Event('input'))}},100)}});
 
 async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
