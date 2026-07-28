@@ -14,17 +14,30 @@
 *{box-sizing:border-box}html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--text);font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:inherit;text-decoration:none}
-.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh;transition:grid-template-columns .2s ease}
 .side{background:linear-gradient(180deg,#0c110b,#090d08);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
 .brand{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 14px;font-weight:900;letter-spacing:-.5px;font-size:19px}
-.brand .bolt{color:var(--accent)}.brand .collapse{color:var(--dim);cursor:pointer;font-size:16px}
+.brand .logo{display:flex;align-items:center;gap:4px}
+.brand .bolt{color:var(--accent)}.brand .collapse{color:var(--dim);cursor:pointer;font-size:16px;user-select:none;transition:.15s}.brand .collapse:hover{color:var(--accent)}
+.navhdr{font-size:9.5px;font-weight:800;letter-spacing:.9px;text-transform:uppercase;color:var(--dim);padding:13px 12px 5px}
+.navbottom{border-top:1px solid var(--line);padding:6px 10px}
+.ver{padding:6px 16px 12px;color:var(--dim);font-size:10.5px;font-weight:700;letter-spacing:.3px;white-space:nowrap}
+/* collapsed rail */
+.app.collapsed{grid-template-columns:66px 1fr}
+.app.collapsed .nav a span,.app.collapsed .navbottom a span,.app.collapsed .badge,.app.collapsed .navhdr span,.app.collapsed .wordmark,.app.collapsed .ver span{display:none}
+.app.collapsed .plan{display:none}
+.app.collapsed .nav a,.app.collapsed .navbottom a{justify-content:center;padding:10px 0}
+.app.collapsed .navhdr{padding:9px 0 4px;text-align:center}
+.app.collapsed .navhdr::before{content:'';display:block;height:1px;background:var(--line2);margin:0 14px}
+.app.collapsed .brand{justify-content:center;padding:18px 0 14px}
+.app.collapsed .ver{text-align:center;padding:6px 0 12px}
 .nav{flex:1;overflow-y:auto;padding:6px 10px}
 .nav::-webkit-scrollbar{width:6px}.nav::-webkit-scrollbar-thumb{background:#1c261a;border-radius:3px}
-.nav a{display:flex;align-items:center;gap:11px;padding:8.5px 11px;border-radius:9px;color:var(--muted);font-weight:600;font-size:12.7px;margin:1px 0;transition:.12s;cursor:pointer}
-.nav a:hover{background:#131a11;color:var(--text)}
-.nav a.active{background:linear-gradient(90deg,#1b2416,#141b11);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
-.nav a.active svg{color:var(--accent)}
-.nav svg{width:16px;height:16px;flex:0 0 16px;color:var(--dim)}.nav a:hover svg{color:var(--muted)}
+.nav a,.navbottom a{display:flex;align-items:center;gap:11px;padding:8.5px 11px;border-radius:9px;color:var(--muted);font-weight:600;font-size:12.7px;margin:1px 0;transition:.12s;cursor:pointer}
+.nav a:hover,.navbottom a:hover{background:#131a11;color:var(--text)}
+.nav a.active,.navbottom a.active{background:linear-gradient(90deg,#1b2416,#141b11);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
+.nav a.active svg,.navbottom a.active svg{color:var(--accent)}
+.nav svg,.navbottom svg{width:16px;height:16px;flex:0 0 16px;color:var(--dim)}.nav a:hover svg,.navbottom a:hover svg{color:var(--muted)}
 .badge{margin-left:auto;font-size:9.5px;font-weight:800;padding:1.5px 6px;border-radius:20px;background:var(--accent);color:#0a120a}
 .badge.pro{background:#2a3720;color:var(--accent)}
 .plan{margin:10px;padding:13px;border:1px solid var(--line2);border-radius:12px;background:#0e130d}
@@ -156,9 +169,11 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 <body>
 <div class="app">
   <aside class="side">
-    <div class="brand"><span style="display:flex;align-items:center;gap:4px">JUICED<svg width="17" height="17" viewBox="0 0 24 24" fill="#c6f24e" style="margin-left:1px"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></span><span class="collapse">‹</span></div>
+    <div class="brand"><span class="logo"><span class="wordmark">JUICED</span><svg width="17" height="17" viewBox="0 0 24 24" fill="#c6f24e"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></span><span class="collapse" id="collapseBtn" onclick="toggleCollapse()" title="Collapse sidebar">‹</span></div>
     <nav class="nav" id="nav"></nav>
-    <div class="plan"><div class="t" style="display:flex;align-items:center;gap:7px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M21 8l-9-5-9 5m18 0l-9 5m9-5v8l-9 5m0-13L3 8m9 5v8m-9-5V8"/></svg> Pro Plan</div><div class="s">Demo mode</div><button onclick="go('learn')">How it works</button></div>
+    <div class="plan"><div class="t" style="display:flex;align-items:center;gap:7px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M21 8l-9-5-9 5m18 0l-9 5m9-5v8l-9 5m0-13L3 8m9 5v8m-9-5V8"/></svg> Pro Plan</div><div class="s">Demo mode</div><button onclick="go('upgrade')"><span>Upgrade to Pro</span></button></div>
+    <nav class="navbottom" id="navbottom"></nav>
+    <div class="ver"><span>Juiced </span>v2.0</div>
   </aside>
   <div class="main">
     <div class="topbar">
@@ -334,12 +349,26 @@ async function doGoogle(){if(!SB){$('#login-err').textContent='Auth is not confi
   if(error)$('#login-err').textContent=error.message.includes('provider')?'Enable Google in your Supabase dashboard (Auth → Providers).':error.message}
 
 // ── nav ──
-const NAV=[['Dashboard','dashboard','grid'],['Projections','projections','bars'],['Research','research','flask','New'],['AI Juice','ai-juice','spark'],['Simulations','simulations','wave'],['Correlations','correlations','link'],['Props Center','props','layers'],['Top Movers','movers','trend'],['Injuries','injuries','plus'],['Weather','weather','cloud'],['Market Intel','market','pulse'],['Portfolio','portfolio','folder','Pro'],['Alerts','alerts','bell'],['Watchlist','watchlist','star'],['Bet Journal','journal','book','Pro'],['Leaderboards','leaderboards','trophy'],['Community','community','users','New'],['Learn','learn','cap']];
-const IC={grid:'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',bars:'M4 20V10M10 20V4M16 20v-7M20 20V8',flask:'M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3',spark:'M13 2L4 14h7l-1 8 9-12h-7z',wave:'M2 12c3-6 5 6 8 0s5 6 8 0',link:'M9 15l6-6M8 12l-2 2a3 3 0 004 4l2-2M16 12l2-2a3 3 0 00-4-4l-2 2',layers:'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5',trend:'M3 17l6-6 4 4 8-8M21 7v5h-5',plus:'M12 5v14M5 12h14',cloud:'M6 18a4 4 0 010-8 5 5 0 019.5-1A3.5 3.5 0 0118 18z',pulse:'M3 12h4l2-7 4 14 2-7h6',folder:'M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z',bell:'M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6M10 21h4',star:'M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19.2l1-5.8L3.5 9.2l5.9-.9z',book:'M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM19 3v18',trophy:'M8 4h8v4a4 4 0 01-8 0zM6 4H4v2a3 3 0 003 3M18 4h2v2a3 3 0 01-3 3M9 14h6v6H9z',users:'M9 11a3 3 0 100-6 3 3 0 000 6zM3 20a6 6 0 0112 0M17 11a3 3 0 100-6M21 20a6 6 0 00-4-5.7',cap:'M22 9L12 5 2 9l10 4 10-4zM6 11v5c0 1 3 3 6 3s6-2 6-3v-5'};
+// Grouped nav — organized around how users research props (spec Step 10).
+const NAVGROUPS=[
+  ['',[['Dashboard','dashboard','grid']]],
+  ['Research',[['Projections','projections','bars'],['Players','players','user'],['Games','games','cal'],['Teams','teams','shield'],['Research Center','research','flask','New']]],
+  ['Analysis',[['AI Juice','ai-juice','spark'],['Simulations','simulations','wave'],['Correlations','correlations','link'],['Top Movers','movers','trend'],['Market Intel','market','pulse'],['Injuries','injuries','plus'],['Weather','weather','cloud']]],
+  ['My Workspace',[['Portfolio','portfolio','folder','Pro'],['Watchlist','watchlist','star'],['Alerts','alerts','bell']]],
+  ['Community',[['Leaderboards','leaderboards','trophy'],['Learn','learn','cap'],['Community','community','users','Soon']]],
+];
+const NAVBOTTOM=[['Upgrade to Pro','upgrade','spark','Pro'],['Settings','settings','gear'],['Help & Support','help','life']];
+const IC={grid:'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',bars:'M4 20V10M10 20V4M16 20v-7M20 20V8',flask:'M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3',spark:'M13 2L4 14h7l-1 8 9-12h-7z',wave:'M2 12c3-6 5 6 8 0s5 6 8 0',link:'M9 15l6-6M8 12l-2 2a3 3 0 004 4l2-2M16 12l2-2a3 3 0 00-4-4l-2 2',layers:'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5',trend:'M3 17l6-6 4 4 8-8M21 7v5h-5',plus:'M12 5v14M5 12h14',cloud:'M6 18a4 4 0 010-8 5 5 0 019.5-1A3.5 3.5 0 0118 18z',pulse:'M3 12h4l2-7 4 14 2-7h6',folder:'M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z',bell:'M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6M10 21h4',star:'M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19.2l1-5.8L3.5 9.2l5.9-.9z',book:'M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM19 3v18',trophy:'M8 4h8v4a4 4 0 01-8 0zM6 4H4v2a3 3 0 003 3M18 4h2v2a3 3 0 01-3 3M9 14h6v6H9z',users:'M9 11a3 3 0 100-6 3 3 0 000 6zM3 20a6 6 0 0112 0M17 11a3 3 0 100-6M21 20a6 6 0 00-4-5.7',cap:'M22 9L12 5 2 9l10 4 10-4zM6 11v5c0 1 3 3 6 3s6-2 6-3v-5',cal:'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',gear:'M4 7h10M18 7h2M4 17h6M14 17h6M14 5v4M8 13v4',life:'M12 3a9 9 0 100 18 9 9 0 000-18M9.4 9.2a2.6 2.6 0 015 .8c0 1.7-2.6 2-2.6 3.5M12 17h.01'};
 const svg=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="${p}"/></svg>`;
-function renderNav(){const cur=(location.hash.slice(2)||'dashboard');
-  $('#nav').innerHTML=NAV.map(([n,r,i,b])=>`<a class="${r===cur?'active':''}" onclick="go('${r}')">${svg(IC[i])}<span>${n}</span>${b?`<span class="badge ${b==='Pro'?'pro':''}">${b}</span>`:''}</a>`).join('');}
+const navLink=c=>([n,r,i,b])=>`<a class="${r===c?'active':''}" onclick="go('${r}')" title="${n}">${svg(IC[i])}<span>${n}</span>${b?`<span class="badge ${b==='Pro'?'pro':''}">${b}</span>`:''}</a>`;
+function renderNav(){const c=location.hash.slice(2)||'dashboard';const L=navLink(c);
+  $('#nav').innerHTML=NAVGROUPS.map(([g,items])=>`${g?`<div class="navhdr"><span>${g}</span></div>`:''}${items.map(L).join('')}`).join('');
+  $('#navbottom').innerHTML=NAVBOTTOM.map(L).join('');}
 const go=r=>{location.hash='/'+r};
+// ── collapsible sidebar (persisted) ──
+let COLLAPSED=localStorage.getItem('juiced_collapsed')==='1';
+function applyCollapsed(){const a=$('.app');if(a)a.classList.toggle('collapsed',COLLAPSED);const b=$('#collapseBtn');if(b){b.textContent=COLLAPSED?'›':'‹';b.title=COLLAPSED?'Expand sidebar':'Collapse sidebar'}}
+function toggleCollapse(){COLLAPSED=!COLLAPSED;localStorage.setItem('juiced_collapsed',COLLAPSED?'1':'0');applyCollapsed()}
 
 // ── shared prop table + rows ──
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
@@ -645,7 +674,48 @@ async function vLearn(){
   $('#view').innerHTML=`<div class="ph2"><div><h2>Learn</h2><p>How Juiced thinks about props.</p></div></div><div class="grid3">${cards.map(([h,p])=>`<div class="learn-card"><h4>${h}</h4><p>${p}</p></div>`).join('')}</div>`;
 }
 
-const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),simulations:vSimulations,research:vResearch,'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:()=>vPortfolio('Portfolio'),journal:()=>vPortfolio('Bet Journal'),weather:vWeather,community:vCommunity,learn:vLearn};
+// ── Research group: Players / Games / Teams (derived from the live projections) ──
+async function vPlayers(){
+  const pr=await api('/api/projections?sort=juice&limit=1000');const rows=pr.projections||[];
+  const byP={};rows.forEach(p=>{(byP[p.player||'—']=byP[p.player||'—']||[]).push(p)});
+  const players=Object.entries(byP).map(([name,ps])=>({name,team:ps[0].team,sport:ps[0].sport,headshot:ps[0].headshot,n:ps.length,best:ps.reduce((a,b)=>b.juiceScore>a.juiceScore?b:a)})).sort((a,b)=>b.best.juiceScore-a.best.juiceScore);
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Players <span class="chip">${players.length}</span></h2><p>Every player with a projected prop today, ranked by their best Juice Score.</p></div></div>
+   <div class="panel">${players.length?`<table class="drops"><thead><tr><th>Player</th><th>Team</th><th>Props</th><th>Best Prop</th><th>Juice</th></tr></thead><tbody>${players.slice(0,150).map(pl=>`<tr onclick='openProp(${JSON.stringify(pl.best).replace(/'/g,"&#39;")})'><td><div class="pl"><img src="${ph(pl.headshot)}"><div><div class="nm">${pl.name}</div><div class="tm">${teamBadge(pl,14)} ${pl.team||''}</div></div></div></td><td>${pl.team||''}</td><td class="mono">${pl.n}</td><td class="muted">${cap(pl.best.side)} ${fmt(pl.best.line)} ${pl.best.stat}</td><td><span class="js" style="color:${jColor(pl.best.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(pl.best.juiceScore)}55">${pl.best.juiceScore}</span></td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('user',30)}</div>No players on the board yet today.</div>`}</div>`;
+}
+async function vTeams(){
+  const pr=await api('/api/projections?sort=juice&limit=1000');const rows=pr.projections||[];
+  const byT={};rows.forEach(p=>{if(p.team)(byT[p.team]=byT[p.team]||[]).push(p)});
+  const teams=Object.entries(byT).map(([team,ps])=>({team,sport:ps[0].sport,teamLogo:ps[0].teamLogo,n:ps.length,avg:Math.round(ps.reduce((s,p)=>s+p.juiceScore,0)/ps.length),top:ps.reduce((a,b)=>b.juiceScore>a.juiceScore?b:a)})).sort((a,b)=>b.avg-a.avg);
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Teams <span class="chip">${teams.length}</span></h2><p>Teams on today's slate, ranked by average Juice Score across their props.</p></div></div>
+   <div class="grid3">${teams.length?teams.map(t=>`<div class="learn-card" style="cursor:pointer" onclick='openProp(${JSON.stringify(t.top).replace(/'/g,"&#39;")})'><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">${teamBadge(t,26)}<h4 style="margin:0">${t.team}</h4><span style="margin-left:auto">${leagueLogo(t.sport,15)}</span></div><div class="kv"><div class="b"><div class="l">Props</div><div class="v" style="font-size:18px">${t.n}</div></div><div class="b"><div class="l">Avg Juice</div><div class="v" style="font-size:18px;color:${jColor(t.avg)}">${t.avg}</div></div></div></div>`).join(''):`<div class="empty" style="grid-column:1/-1"><div class="em">${icon('users',30)}</div>No teams on the board yet.</div>`}</div>`;
+}
+async function vGames(){
+  const [pr,d]=await Promise.all([api('/api/projections?sort=juice&limit=1000'),api('/api/dashboard?sport=all')]);
+  const rows=pr.projections||[];const byT={};rows.forEach(p=>{if(p.team)(byT[p.team]=byT[p.team]||[]).push(p)});
+  const games=(d.upcoming_games&&d.upcoming_games.length?d.upcoming_games:Object.keys(byT).map(t=>({team:t,sport:(byT[t][0]||{}).sport,startTime:(byT[t][0]||{}).startTime}))).slice(0,30);
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Games <span class="chip">${games.length}</span></h2><p>Today's slate — tap a game to open its top projected prop.</p></div></div>
+   <div class="grid3">${games.length?games.map(g=>{const ps=(byT[g.team]||[]).sort((a,b)=>b.juiceScore-a.juiceScore);const top=ps[0];return `<div class="learn-card" ${top?`style="cursor:pointer" onclick='openProp(${JSON.stringify(top).replace(/'/g,"&#39;")})'`:''}><div style="display:flex;align-items:center;gap:8px">${teamBadge(g,24)}<h4 style="margin:0">${g.team}</h4><span class="chip" style="margin-left:auto">${timeOf(g.startTime)||g.sport}</span></div><p class="muted" style="margin:9px 0 0;font-size:12px">${ps.length} projected prop${ps.length===1?'':'s'}${top?` · top: <b style="color:var(--text)">${top.player}</b> ${cap(top.side)} ${fmt(top.line)} ${top.stat}`:''}</p></div>`}).join(''):`<div class="empty" style="grid-column:1/-1"><div class="em">${icon('cloud',30)}</div>No games on the board yet.</div>`}</div>`;
+}
+// ── Bottom group: Settings / Help / Upgrade ──
+async function vSettings(){let bk={};try{bk=await api('/api/books')}catch(e){}
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Settings</h2><p>Account, data sources, and preferences.</p></div></div>
+   <div class="panel" style="padding:16px;margin-bottom:16px"><h3 style="margin:0 0 10px;font-size:14px">Account</h3>${AUTH.user?`<p style="margin:0 0 10px">Signed in as <b>${AUTH.user.email}</b> — watchlist, portfolio & alerts sync across devices.</p><button class="btn" onclick="doLogout()">Sign out</button>`:`<p class="muted" style="margin:0 0 10px">You're a guest — data is saved locally. Sign in to sync across devices.</p><button class="btn pri" onclick="openLogin()">Sign in</button>`}</div>
+   <div class="panel" style="padding:16px;margin-bottom:16px"><h3 style="margin:0 0 12px;font-size:14px">Data Sources</h3><div class="statusbar" style="border:0;margin:0;padding:0">${(bk.books||[]).map(b=>`<span class="s"><span class="dot" style="background:${b.ok?'var(--accent)':'var(--down)'}"></span>${cap(b.book||b.name||'')} ${b.ok?'live':'offline'}</span>`).join('')||'<span class="muted">Sources report on the live server.</span>'}</div></div>
+   <div class="panel" style="padding:16px"><h3 style="margin:0 0 8px;font-size:14px">Appearance</h3><p class="muted" style="margin:0">Juiced uses a dark night-game theme tuned for long research sessions. A light theme is on the roadmap.</p></div>`;
+}
+async function vHelp(){const faqs=[['How are projections made?','A Bayesian + Monte-Carlo ensemble over recent game logs, calibrated against the closing line. Open any prop to see its distribution and the math.'],['What is a Juice Score?','A 0–100 blend of how decisive and how confident the model is — gated so a noisy line cannot top the board.'],['Is my data synced?','Sign in and your watchlist, portfolio, and alerts sync across devices. Guests are saved locally.'],['Which books are supported?','PrizePicks, Underdog, and Sleeper today — more as licensed feeds become available.'],['How fresh is the data?','Lines refresh about every 5 minutes; the "updated" stamp on each page shows the last pull.'],['Feedback','Questions or ideas? Reach the team from the account menu — we read everything.']];
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Help & Support</h2><p>Answers to the most common questions.</p></div></div><div class="grid3">${faqs.map(([h,p])=>`<div class="learn-card"><h4>${h}</h4><p>${p}</p></div>`).join('')}</div>`;
+}
+async function vUpgrade(){const free=['Live projections board','Juice Scores & edges','Core filters','Watchlist'],pro=['Everything in Free','Portfolio analytics workspace','AI Juice explanations','Saved filter presets','CSV export','Correlated-combo simulations'];
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Upgrade to Juiced Pro</h2><p>Unlock the full edge.</p></div></div>
+   <div class="two" style="align-items:stretch">
+    <div class="panel" style="padding:22px"><h3 style="margin:0">Free</h3><div style="font-size:30px;font-weight:900;margin:6px 0">$0</div><ul class="whylist">${free.map(f=>`<li><span class="ok">✓</span><span>${f}</span></li>`).join('')}</ul></div>
+    <div class="panel" style="padding:22px;border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)"><div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">Pro</h3><span class="badge pro">Recommended</span></div><div style="font-size:30px;font-weight:900;margin:6px 0">$12.99<span class="muted" style="font-size:14px">/mo</span></div><div style="color:var(--accent);font-size:11.5px;font-weight:700;margin-bottom:8px">Free while in beta — no card required.</div><ul class="whylist">${pro.map(f=>`<li><span class="ok">✓</span><span>${f}</span></li>`).join('')}</ul><button class="btn pri" style="width:100%;justify-content:center;margin-top:10px" onclick="upgradeClick()">${AUTH.user?'You are on the beta ✓':'Get started free'}</button></div>
+   </div>`;
+}
+function upgradeClick(){if(AUTH.user)toast('Pro is free during beta — you are all set');else openLogin();}
+
+const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:()=>vPortfolio('Portfolio'),journal:()=>vPortfolio('Portfolio'),weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade};
 
 // ── prop detail drawer ──
 // Colors for the REAL confidence components (from valuation.confidence_factors). No fake weights.
@@ -746,6 +816,7 @@ async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}
   }
   await refreshWatched();
   renderAuthUI();
+  applyCollapsed();
   $('#aijuice-val').textContent=AUTH.ai?'∞':'off';
   if(!location.hash)location.hash='/dashboard';
   render();
