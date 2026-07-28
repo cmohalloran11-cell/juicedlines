@@ -232,10 +232,13 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 <script>
 const $=(s,r=document)=>r.querySelector(s),el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
 const api=(p,opt={})=>{
-  if(STATIC && p.startsWith('/api/')) return staticApi(p);   // no server → read prebuilt JSON
+  // Static: prebuilt JSON for everything EXCEPT /api/ai/* — those hit the Vercel serverless
+  // function (which holds the Gemini key). Relative URL so it resolves under the site root.
+  if(STATIC && p.startsWith('/api/') && !p.startsWith('/api/ai/')) return staticApi(p);
   const h={'Content-Type':'application/json'};
   if(AUTH.token)h['Authorization']='Bearer '+AUTH.token; else if(AUTH.dev)h['X-Dev-User']='demo';
-  return fetch(p,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined}).then(r=>r.json());};
+  const url=(STATIC && p.startsWith('/api/'))?'.'+p:p;
+  return fetch(url,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined}).then(r=>r.json());};
 const fmt=n=>n==null?'—':(+n).toLocaleString(undefined,{maximumFractionDigits:2});
 const signed=n=>n==null?'—':(n>0?'+':'')+(+n).toFixed(Math.abs(n)<10?1:0);
 const pct=n=>n==null?'—':(n>0?'+':'')+(+n).toFixed(1)+'%';
@@ -907,7 +910,18 @@ async function loadSim(x){try{const r=await api('/api/simulation?id='+encodeURIC
 }catch(e){$('#simkv').innerHTML='<p class="muted">Could not load simulation.</p>'}}
 function drawDist(s,line){const S=$('#dist');if(!S||s.mean==null)return;const mu=s.mean,sd=s.standardDeviation||Math.max(0.5,(s.ceiling-s.floor)/4)||1,W=420,H=90,lo=Math.min(s.floor??mu-3*sd,line),hi=Math.max(s.ceiling??mu+3*sd,line),X=v=>((v-lo)/((hi-lo)||1))*W;let bars='';const N=40;for(let i=0;i<N;i++){const v=lo+(i+.5)*(hi-lo)/N,y=Math.exp(-.5*((v-mu)/sd)**2),h=y*(H-14),over=v>line;bars+=`<rect x="${i*W/N}" y="${H-h}" width="${W/N-1}" height="${h}" fill="${over?'#c6f24e':'#3a4a30'}" opacity="${over?.85:.7}"/>`}
   S.innerHTML=bars+`<line x1="${X(line)}" y1="0" x2="${X(line)}" y2="${H}" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${X(line)+4}" y="12" fill="#ff6b6b" font-size="10" font-weight="700">line ${fmt(line)}</text>`}
-async function loadAIExplain(x){const box=$('#aibox');try{const r=await api('/api/ai/explain?id='+encodeURIComponent(x.id));if(r.ai&&r.ai.available){box.className='aibox filled';box.textContent=r.ai.explanation}else{box.textContent=(r.ai&&r.ai.reason)||'AI unavailable.'}}catch(e){box.textContent='AI request failed.'}}
+// On static there's no server/DB to look up the prop by id, so pass the grounded context
+// (only the prop's own numbers) to the Vercel function — it can't fabricate a stat.
+function aiContext(x){const cf={};(x.confidenceFactors||[]).forEach(f=>cf[f.factor]=f);
+  const m=cf['Sample Size']&&/(\d+)/.exec(cf['Sample Size'].detail||'');
+  return {player:x.player,team:x.team,sport:x.sport,stat:x.stat,line:x.line,projection:x.projection,
+    edge:x.edge,edgePct:x.edgePct,probability:x.probability,floor:x.floor,ceiling:x.ceiling,
+    confidence:x.confidence,side:x.side,sample_games:m?+m[1]:null};}
+async function loadAIExplain(x){const box=$('#aibox');box.textContent='Generating a grounded explanation…';
+  try{const r=STATIC?await api('/api/ai/explain',{method:'POST',body:aiContext(x)})
+                    :await api('/api/ai/explain?id='+encodeURIComponent(x.id));
+    if(r.ai&&r.ai.available){box.className='aibox filled';box.textContent=r.ai.explanation}
+    else{box.className='aibox';box.textContent=(r.ai&&r.ai.reason)||'AI unavailable.'}}catch(e){box.textContent='AI request failed.'}}
 // Real recent-games + hit-rate from /api/analytics (replaces the old raw-JSON dump).
 async function loadRecent(x){const box=$('#recentbox');if(!box)return;
   try{const r=await api('/api/analytics?id='+encodeURIComponent(x.id));const a=r.analytics||{};
@@ -930,6 +944,8 @@ window.addEventListener('hashchange',()=>{closeDrawer();closeSide();render()});
 $('#globalsearch').addEventListener('keydown',e=>{if(e.key==='Enter'){go('projections');setTimeout(()=>{const f=$('#f-stat');if(f){f.value=e.target.value;f.dispatchEvent(new Event('input'))}},100)}});
 
 async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
+  // On static, auth.json can't know if the Vercel AI function has a key — probe it.
+  if(STATIC){try{const s=await api('/api/ai/status');if(s&&typeof s.available==='boolean')AUTH.ai=s.available}catch(e){}}
   // Real Supabase auth when the server provides the public client config.
   if(AUTH.supabase_url && AUTH.supabase_anon_key && window.supabase){
     try{
