@@ -1,0 +1,57 @@
+name: deploy to production (vercel)
+
+# Triggers a Vercel PRODUCTION deploy via a Deploy Hook, instead of relying on Vercel's
+# git auto-deploy. Why: the board's `data` branch is force-pushed every ~5 min, and Vercel
+# was turning each push into a PREVIEW build — burning the free 100/day deploy cap and
+# starving the real production deploy. This workflow only fires on real SITE changes (a push
+# to main touching the app, or a manual run), so production deploys stay well under the cap.
+#
+# ── ONE-TIME SETUP ──────────────────────────────────────────────────────────────────────
+#   1. Vercel → Project → Settings → Git → Deploy Hooks → "Create Hook":
+#        Name: prod   ·   Branch: main   → copy the generated URL.
+#   2. GitHub → repo → Settings → Secrets and variables → Actions → New repository secret:
+#        Name: VERCEL_DEPLOY_HOOK   ·   Value: <the hook URL>
+#   3. (Strongly recommended) In Vercel → Settings → Git, turn OFF automatic deployments
+#      (or disable Preview Deployments) so ONLY this hook deploys — that permanently stops
+#      the data-branch previews from eating the cap.
+# After that, every push to main that touches the app auto-deploys to production, and you
+# can also deploy on demand from the Actions tab → "Run workflow".
+
+on:
+  workflow_dispatch: {}            # manual "Run workflow" button (deploy on demand)
+  push:
+    branches: [main]
+    paths:
+      - "static/**"
+      - "*.py"
+      - ".github/workflows/deploy-prod.yml"
+
+concurrency:
+  group: vercel-prod
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel production deploy
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::VERCEL_DEPLOY_HOOK secret is not set. Create a Vercel Deploy Hook"
+            echo "::error::(Settings → Git → Deploy Hooks, branch=main) and add its URL as a"
+            echo "::error::repo secret named VERCEL_DEPLOY_HOOK. See this file's header for steps."
+            exit 1
+          fi
+          echo "POSTing to the Vercel deploy hook…"
+          code=$(curl -s -o /tmp/resp.json -w '%{http_code}' -X POST "$HOOK")
+          echo "HTTP $code"
+          cat /tmp/resp.json 2>/dev/null || true
+          echo
+          case "$code" in
+            200|201) echo "✅ Production deploy triggered." ;;
+            429)     echo "::error::Hook returned 429 — Vercel deploy cap hit. Disable the"
+                     echo "::error::data-branch previews (setup step 3) so the cap frees."; exit 1 ;;
+            *)       echo "::error::Deploy hook returned HTTP $code"; exit 1 ;;
+          esac
