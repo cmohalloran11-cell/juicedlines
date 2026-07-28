@@ -54,7 +54,7 @@ def _fetch(loc: str) -> Optional[dict]:
     try:
         r = requests.get(_BASE.format(loc=loc),
                          params={"client_id": creds[0], "client_secret": creds[1],
-                                 "format": "json"}, timeout=15)
+                                 "format": "json"}, timeout=8)
         data = r.json()
     except Exception:
         return None
@@ -84,12 +84,22 @@ def status() -> dict:
             "reason": None if available() else "Set XWEATHER_CLIENT_ID + XWEATHER_CLIENT_SECRET."}
 
 
+_SLATE_BUDGET = 30.0  # seconds — hard wall-clock cap so a slow/degraded provider can never
+
+
 def slate(lines: list[dict[str, Any]], limit: int = 16) -> dict:
-    """Weather for the home teams playing today (MLB only — outdoor). One card per team."""
+    """Weather for the home teams playing today (MLB only — outdoor). One card per team.
+    Bounded by _SLATE_BUDGET total wall-clock time: each call already has its own timeout,
+    but with ~30 teams to try that alone doesn't cap the WHOLE loop, so a degraded/slow
+    provider could otherwise stall a build cycle for many minutes. Whatever games were
+    fetched before the budget runs out are returned — a partial slate beats a stalled build."""
     if not available():
         return {"available": False, "reason": status()["reason"], "games": []}
+    start = time.time()
     seen, games = set(), []
     for l in lines:
+        if time.time() - start > _SLATE_BUDGET:
+            break
         if l.get("sport") != "MLB":
             continue
         team = l.get("team")
