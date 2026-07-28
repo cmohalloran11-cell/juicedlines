@@ -37,6 +37,18 @@ def test_kelly_formula_and_cap():
     assert valuation.kelly_fraction(0.5, line) == 0.0
 
 
+def test_confidence_factors_decompose_the_score():
+    # The three real components must sum to the confidence score (the honest breakdown).
+    line = {"model_prob": 0.72, "model_n": 18, "proj_kind": "engine"}
+    factors = valuation.confidence_factors(line)
+    assert [f["factor"] for f in factors] == ["Sample Size", "Decisiveness", "Method"]
+    total = sum(f["value"] for f in factors)
+    assert round(total) == valuation.confidence_score(line)
+    # caps are the real weights (50/30/20) and no component exceeds its cap
+    assert [f["max"] for f in factors] == [50, 30, 20]
+    assert all(0 <= f["value"] <= f["max"] for f in factors)
+
+
 def test_confidence_monotonic_in_sample_and_decisiveness():
     base = {"model_prob": 0.55, "model_n": 5, "proj_kind": "model"}
     more_games = {**base, "model_n": 40}

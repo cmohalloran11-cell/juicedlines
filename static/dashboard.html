@@ -202,6 +202,7 @@ const pct=n=>n==null?'—':(n>0?'+':'')+(+n).toFixed(1)+'%';
 const prob=n=>n==null?'—':Math.round(n*100)+'%';
 const ph=u=>u||"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%230e130d'/%3E%3C/svg%3E";
 const timeOf=s=>{if(!s)return'';try{return new Date(s).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}catch(e){return''}};
+const rel=ts=>{if(!ts)return'';const s=(Date.now()-new Date(ts).getTime())/1000;if(isNaN(s))return'';if(s<0||s<45)return'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'};
 const jColor=v=>v>=70?'var(--accent)':v>=55?'#d7e04a':'#e8c84a';
 const cap=s=>(s||'').replace(/^\w/,m=>m.toUpperCase());
 // ── SVG icon system (replaces all emoji) ──
@@ -381,7 +382,7 @@ async function vDashboard(){
     <div class="panel"><div class="phead"><h3>Daily Juice Drops <span class="hint">Top props our model loves today</span></h3><span class="lnk" onclick="go('projections')">View All →</span></div>${propTable((d.drops||[]).slice(0,7))}</div>
     <div class="two">
       <div class="panel"><div class="phead"><h3>Line Movement</h3><span class="hint" id="tsub"></span></div><div style="padding:6px 12px 14px"><svg class="spark" id="spark" viewBox="0 0 520 150" preserveAspectRatio="none"></svg></div></div>
-      <div class="panel"><div class="phead"><h3>Model Confidence Breakdown</h3></div><div class="donutwrap"><svg width="150" height="150" viewBox="0 0 150 150" id="donut"></svg><div class="legend" id="legend"></div></div></div>
+      <div class="panel"><div class="phead"><h3>Confidence Breakdown <span class="hint">top drop · real components</span></h3></div><div class="donutwrap"><svg width="150" height="150" viewBox="0 0 150 150" id="donut"></svg><div class="legend" id="legend"></div></div></div>
     </div>
     <div class="ai-sum"><div class="orb">AI</div><div><h4>Today's AI Slate Summary</h4><p id="ai-summary" class="skel">Checking AI Juice…</p></div><button class="btn" onclick="go('ai-juice')">Open AI Juice</button></div>
    </div>
@@ -406,11 +407,14 @@ function renderAlerts(d){const mv=d.movers||{},a=[];
   $('#aln').textContent='('+a.length+')';
   $('#ralerts').innerHTML=a.length?a.map(([ic,bg,c,h,dd,v])=>`<div class="alert"><div class="ai" style="background:${bg};color:${c}">${icon(ic,14)}</div><div style="flex:1;min-width:0"><div class="h">${h}</div><div class="d">${dd}</div></div><div class="t">${v}</div></div>`).join(''):'<div class="alert muted">No alerts yet.</div>';
 }
-function renderDonut(d){const f=d.factor_weights||[],cols=['#c6f24e','#8ee65a','#5bd0c0','#e8c84a','#7c9bff','#5c675a'];let a=-Math.PI/2,R=58,r=38,cx=75,cy=75,p='';const tot=f.reduce((s,x)=>s+x.weight,0)||1;
-  f.forEach((x,i)=>{const ang=x.weight/tot*2*Math.PI,a2=a+ang,P=(rad,an)=>[cx+rad*Math.cos(an),cy+rad*Math.sin(an)];const[x1,y1]=P(R,a),[x2,y2]=P(R,a2),[x3,y3]=P(r,a2),[x4,y4]=P(r,a),lg=ang>Math.PI?1:0;p+=`<path d="M${x1} ${y1}A${R} ${R} 0 ${lg} 1 ${x2} ${y2}L${x3} ${y3}A${r} ${r} 0 ${lg} 0 ${x4} ${y4}Z" fill="${cols[i%6]}" opacity="${1-i*.06}"/>`;a=a2});
-  const conf=(d.drops&&d.drops[0]?d.drops[0].confidence:0)||0;
-  $('#donut').innerHTML=p+`<text x="75" y="72" text-anchor="middle" fill="#e9f0e6" font-size="22" font-weight="800">${Math.round(conf)}%</text><text x="75" y="88" text-anchor="middle" fill="#8b978a" font-size="9">Top Drop Conf.</text>`;
-  $('#legend').innerHTML=f.map((x,i)=>`<div class="row"><span class="dot" style="background:${cols[i%6]}"></span>${x.factor}<span class="pct">${x.weight}%</span></div>`).join('');
+function renderDonut(d){const drop=d.drops&&d.drops[0];const f=(drop&&drop.confidenceFactors)||[];
+  const items=f.map(z=>[z.factor,z.value,CFCOL[z.factor]||'#5c675a']);
+  const sum=items.reduce((s,i)=>s+i[1],0),head=Math.max(0,100-sum);if(head>0.5)items.push(['Headroom',head,'#26311f']);
+  let a=-Math.PI/2,R=58,r=38,cx=75,cy=75,p='';const tot=items.reduce((s,x)=>s+x[1],0)||1;
+  items.forEach(([_n,w,col])=>{const ang=w/tot*2*Math.PI,a2=a+ang,P=(rad,an)=>[cx+rad*Math.cos(an),cy+rad*Math.sin(an)];const[x1,y1]=P(R,a),[x2,y2]=P(R,a2),[x3,y3]=P(r,a2),[x4,y4]=P(r,a),lg=ang>Math.PI?1:0;p+=`<path d="M${x1} ${y1}A${R} ${R} 0 ${lg} 1 ${x2} ${y2}L${x3} ${y3}A${r} ${r} 0 ${lg} 0 ${x4} ${y4}Z" fill="${col}"/>`;a=a2});
+  const conf=drop?Math.round(drop.confidence):0;
+  $('#donut').innerHTML=(p||'')+`<text x="75" y="72" text-anchor="middle" fill="#e9f0e6" font-size="22" font-weight="800">${conf}%</text><text x="75" y="88" text-anchor="middle" fill="#8b978a" font-size="9">Top Drop Conf.</text>`;
+  $('#legend').innerHTML=f.length?f.map(z=>`<div class="row"><span class="dot" style="background:${CFCOL[z.factor]||'#5c675a'}"></span>${z.factor}<span class="pct">${z.value}/${z.max}</span></div>`).join(''):'<div class="row muted">Breakdown updates with the next build.</div>';
 }
 async function loadSpark(drop){$('#tsub').textContent=drop.player+' — '+drop.stat;let pts=[drop.line,drop.line];try{const h=(await api('/api/lines/history?id='+encodeURIComponent(drop.id)+'&limit=40')).history||[];const v=h.map(x=>x.line_value).filter(x=>x!=null);if(v.length>1)pts=v}catch(e){}drawSpark('#spark',pts,drop.projection,drop.line)}
 function drawSpark(sel,vals,proj,line){const S=$(sel);if(!S)return;const W=520,H=150,pad=14,mn=Math.min(...vals,proj),mx=Math.max(...vals,proj),rng=(mx-mn)||1,X=i=>pad+i*(W-2*pad)/Math.max(1,vals.length-1),Y=v=>H-pad-((v-mn)/rng)*(H-2*pad);let d='';vals.forEach((v,i)=>d+=(i?'L':'M')+X(i)+' '+Y(v));const py=Y(proj);
@@ -431,7 +435,7 @@ async function vProjections(title,sub){
   $('#view').innerHTML=`<div class="proj-layout">
     <aside class="filters" id="filters"></aside>
     <div class="proj-main">
-      <div class="ph2"><div><h2>${title||'Projections'} <span class="chip" id="pcount"></span></h2><p>${sub||'Real projections. Real edges. Real insights.'}</p></div></div>
+      <div class="ph2"><div><h2>${title||'Projections'} <span class="chip" id="pcount"></span> <span class="chip" id="pupd" style="background:#12160e;color:var(--muted)"></span></h2><p>${sub||'Real projections. Real edges. Real insights.'}</p></div></div>
       <div class="tiles" id="ptiles"></div>
       <div class="ptoolbar" id="ptoolbar"></div>
       <div class="panel"><div id="ptable"><div class="empty">Loading projections…</div></div></div>
@@ -519,8 +523,9 @@ const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.
   <td onclick="event.stopPropagation();addPlay(${JSON.stringify(x).replace(/'/g,'&#39;')})"><button class="addbtn">+</button></td></tr>`;
 async function renderStatus(d){const dh=d.data_health||{};let ver='';try{ver=(await api('/api/version')).code_sha||''}catch(e){}
   const s=(lbl,age)=>`<span class="s"><span class="dot"></span>${lbl} ${age||''}</span>`;
-  $('#pstatus').innerHTML=s('Projections','live')+s('Data quality',(dh.quality_score??'—')+'/100')+s('Sources',dh.live_sources||0)+
-    `<span class="s" style="margin-left:auto">Model ${ver} · Uptime 99.99%</span>`;
+  if($('#pupd'))$('#pupd').textContent='updated '+(rel(PROJUP)||'just now');
+  $('#pstatus').innerHTML=s('Projections updated',rel(PROJUP)||'live')+s('Data quality',(dh.quality_score??'—')+'/100')+s('Sources',dh.live_sources||0)+
+    `<span class="s" style="margin-left:auto">Model ${ver||'—'}</span>`;
 }
 async function vMovers(){
   const d=await api('/api/dashboard?sport=all');const m=d.movers||{};
@@ -585,7 +590,8 @@ async function vCorrelations(){
    <div class="panel" style="padding:18px"><h3 style="margin:0 0 8px">Correlation-aware combo simulation</h3>
    <p class="muted" style="max-width:720px">A player's Hits, Runs, and RBIs move together — a big game lifts all three. Treating them as independent makes a combo prop (e.g. H+R+RBI) look ~40% narrower than reality. Juiced re-pairs the simulated components using each player's own historical dependence (an Iman-Conover copula), so the combo's spread is honest while every single-stat probability is unchanged.</p>
    <div class="kv" style="margin-top:16px;max-width:520px"><div class="b"><div class="l">Default H · R corr</div><div class="v">0.59</div></div><div class="b"><div class="l">Default H · RBI corr</div><div class="v">0.49</div></div><div class="b"><div class="l">Default R · RBI corr</div><div class="v">0.55</div></div><div class="b"><div class="l">Shrinkage</div><div class="v">→ per-player</div></div></div>
-   <p class="muted" style="margin-top:16px;font-size:11.5px">A per-player correlation matrix (from their own game logs) is computed live for every H/R/RBI combo on the board — visible in each combo prop's simulation drawer.</p></div>`;
+   <p class="muted" style="margin-top:16px;font-size:11.5px">These priors are shrunk toward each player's own game-log correlations when a combo is simulated, so every combo's spread reflects that player's real dependence. Open any H/R/RBI combo prop to see the priors in its drawer.</p></div>`;
+
 }
 function demoTable(kind,cols,rows,emptyEm,emptyMsg){
   return rows.length?`<table class="drops"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows}</tbody></table>`
@@ -642,10 +648,20 @@ async function vLearn(){
 const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),simulations:vSimulations,research:vResearch,'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:()=>vPortfolio('Portfolio'),journal:()=>vPortfolio('Bet Journal'),weather:vWeather,community:vCommunity,learn:vLearn};
 
 // ── prop detail drawer ──
-const FACTORS=[['Recent Form',30,'#c6f24e'],['Matchup',25,'#8ee65a'],['Usage / Role',20,'#5bd0c0'],['Injuries',10,'#e8c84a'],['Weather / Park',5,'#7c9bff'],['Other',10,'#5c675a']];
+// Colors for the REAL confidence components (from valuation.confidence_factors). No fake weights.
+const CFCOL={'Sample Size':'#c6f24e','Decisiveness':'#5bd0c0','Method':'#7c9bff'};
 function donutSVG(items,center,sub){let a=-Math.PI/2,R=40,r=26,cx=42,cy=42,p='';const tot=items.reduce((s,x)=>s+x[1],0)||1;
   items.forEach(([_n,w,col],i)=>{const ang=w/tot*2*Math.PI,a2=a+ang,P=(rad,an)=>[cx+rad*Math.cos(an),cy+rad*Math.sin(an)];const[x1,y1]=P(R,a),[x2,y2]=P(R,a2),[x3,y3]=P(r,a2),[x4,y4]=P(r,a),lg=ang>Math.PI?1:0;p+=`<path d="M${x1} ${y1}A${R} ${R} 0 ${lg} 1 ${x2} ${y2}L${x3} ${y3}A${r} ${r} 0 ${lg} 0 ${x4} ${y4}Z" fill="${col}"/>`;a=a2});
   return `<svg width="84" height="84" viewBox="0 0 84 84">${p}<text x="42" y="45" text-anchor="middle" fill="#e9f0e6" font-size="15" font-weight="800">${center}</text><text x="42" y="57" text-anchor="middle" fill="#8b978a" font-size="7">${sub||''}</text></svg>`;
+}
+// Real confidence breakdown from the prop's own confidenceFactors (sum ≤100; grey = headroom).
+function confBreakdown(x){
+  const f=x.confidenceFactors||[];
+  if(!f.length)return `<div class="dsec"><h5>Confidence</h5><div class="v" style="font-size:22px;font-weight:800">${Math.round(x.confidence)}%</div><p class="muted" style="font-size:10.5px;margin:6px 0 0">Blends sample size, decisiveness, and whether a full engine run backed it.</p></div>`;
+  const items=f.map(z=>[z.factor,z.value,CFCOL[z.factor]||'#5c675a']);
+  const sum=items.reduce((s,i)=>s+i[1],0),head=Math.max(0,100-sum);
+  if(head>0.5)items.push(['Headroom',head,'#26311f']);
+  return `<div class="dsec"><h5>What Drives This Confidence</h5><div style="display:flex;align-items:center;gap:16px">${donutSVG(items,Math.round(x.confidence)+'%','Confidence')}<div class="legend" style="flex:1">${f.map(z=>`<div class="row" title="${z.detail}"><span class="dot" style="background:${CFCOL[z.factor]||'#5c675a'}"></span>${z.factor}<span class="pct">${z.value} / ${z.max}</span></div>`).join('')}</div></div><p class="muted" style="font-size:10.5px;margin:8px 0 0">Real components of this prop's confidence score — not a fixed template.</p></div>`;
 }
 function whyBullets(x){const b=[];const over=(x.side||'over')==='over';
   if(x.projection!=null&&x.line!=null)b.push(`Model projects <b>${fmt(x.projection)}</b> vs a <b>${fmt(x.line)}</b> line — ${pct(x.edgePct)} edge`);
@@ -654,8 +670,11 @@ function whyBullets(x){const b=[];const over=(x.side||'over')==='over';
   if(x.proj_kind==='engine'||x.juiceScore)b.push(`Full Monte-Carlo engine run on recent game logs`);
   return b.slice(0,5);
 }
-function corrHTML(x){if(x.sport!=='MLB')return '';
-  return `<div class="dsec"><h5>Correlated Props</h5><div class="corr"><div class="c"><div class="p">59%</div><div class="s">Hits · Runs</div></div><div class="c"><div class="p">49%</div><div class="s">Hits · RBI</div></div><div class="c"><div class="p">55%</div><div class="s">Runs · RBI</div></div></div><p class="muted" style="font-size:10.5px;margin:8px 0 0">Combo props are simulated with these dependencies (not treated as independent).</p></div>`;
+// Only shown for H/R/RBI COMBO props, where these priors actually apply — and labeled as the
+// model's defaults (shrunk toward the player's own game-log correlations at simulation time).
+function corrHTML(x){const st=(x.stat||'');
+  if(!(x.sport==='MLB'&&st.includes('+')&&/hit|run|rbi/i.test(st)))return '';
+  return `<div class="dsec"><h5>Combo Dependency <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">· model priors</span></h5><div class="corr"><div class="c"><div class="p">59%</div><div class="s">Hits · Runs</div></div><div class="c"><div class="p">49%</div><div class="s">Hits · RBI</div></div><div class="c"><div class="p">55%</div><div class="s">Runs · RBI</div></div></div><p class="muted" style="font-size:10.5px;margin:8px 0 0">Default H/R/RBI correlations the engine starts from — shrunk toward this player's own game-log dependence when the combo is simulated, so its spread is honest.</p></div>`;
 }
 async function openProp(x,tab){
   SELID=x.id; if(cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}
@@ -663,12 +682,13 @@ async function openProp(x,tab){
   D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${x.player}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${x.team||''} · ${cap(x.side)} ${fmt(x.line)} ${x.stat}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
    <div class="dsec"><div class="kv"><div class="b"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div><div class="b"><div class="l">Edge %</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div><div class="b"><div class="l">Over Probability</div><div class="v">${prob(x.probability)}</div></div><div class="b"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div></div></div>
    <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="simkv"></div></div>
-   <div class="dsec"><h5>Confidence Breakdown</h5><div style="display:flex;align-items:center;gap:16px">${donutSVG(FACTORS,Math.round(x.confidence)+'%','Confidence')}<div class="legend" style="flex:1">${FACTORS.map(([n,w,c])=>`<div class="row"><span class="dot" style="background:${c}"></span>${n}<span class="pct">${w}%</span></div>`).join('')}</div></div></div>
+   ${confBreakdown(x)}
    <div class="dsec"><h5>Why the Model Likes This</h5><ul class="whylist">${whyBullets(x).map(b=>`<li><span class="ok">✓</span><span>${b}</span></li>`).join('')}</ul></div>
+   <div class="dsec"><h5>Recent Games & Hit Rate</h5><div id="recentbox"><p class="muted skel">Loading recent games…</p></div></div>
    ${corrHTML(x)}
    <div class="dsec"><h5>AI Juice</h5><div class="aibox" id="aibox">${AUTH.ai?'Generating a grounded explanation…':'AI Juice is not configured on the server.'}</div></div>
    <div class="dsec" style="display:flex;gap:8px"><button class="btn ${isWatched(x.id)?'':'pri'}" id="wbtn" onclick='toggleWatch(${JSON.stringify(x).replace(/"/g,"&quot;")});renderDrawerBtns(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${isWatched(x.id)?'Watching':'Add to Watchlist'}</button><button class="btn" onclick='addPlay(${JSON.stringify(x).replace(/"/g,"&quot;")})'>+ Portfolio</button><button class="btn" onclick='loadResearch(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('research',13)} Research</button></div>`;
-  loadSim(x);if(AUTH.ai)loadAIExplain(x);
+  loadSim(x);loadRecent(x);if(AUTH.ai)loadAIExplain(x);
   if(tab==='ai')setTimeout(()=>$('#aibox')&&$('#aibox').scrollIntoView({behavior:'smooth',block:'center'}),200);
 }
 function renderDrawerBtns(x){const b=$('#wbtn');if(b){b.className='btn '+(isWatched(x.id)?'':'pri');b.textContent=isWatched(x.id)?'Watching':'Add to Watchlist'}}
@@ -689,7 +709,18 @@ async function loadSim(x){try{const r=await api('/api/simulation?id='+encodeURIC
 function drawDist(s,line){const S=$('#dist');if(!S||s.mean==null)return;const mu=s.mean,sd=s.standardDeviation||Math.max(0.5,(s.ceiling-s.floor)/4)||1,W=420,H=90,lo=Math.min(s.floor??mu-3*sd,line),hi=Math.max(s.ceiling??mu+3*sd,line),X=v=>((v-lo)/((hi-lo)||1))*W;let bars='';const N=40;for(let i=0;i<N;i++){const v=lo+(i+.5)*(hi-lo)/N,y=Math.exp(-.5*((v-mu)/sd)**2),h=y*(H-14),over=v>line;bars+=`<rect x="${i*W/N}" y="${H-h}" width="${W/N-1}" height="${h}" fill="${over?'#c6f24e':'#3a4a30'}" opacity="${over?.85:.7}"/>`}
   S.innerHTML=bars+`<line x1="${X(line)}" y1="0" x2="${X(line)}" y2="${H}" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${X(line)+4}" y="12" fill="#ff6b6b" font-size="10" font-weight="700">line ${fmt(line)}</text>`}
 async function loadAIExplain(x){const box=$('#aibox');try{const r=await api('/api/ai/explain?id='+encodeURIComponent(x.id));if(r.ai&&r.ai.available){box.className='aibox filled';box.textContent=r.ai.explanation}else{box.textContent=(r.ai&&r.ai.reason)||'AI unavailable.'}}catch(e){box.textContent='AI request failed.'}}
-async function loadResearch(x){const box=$('#aibox');box.className='aibox';box.textContent='Loading research…';try{const r=await api('/api/analytics?id='+encodeURIComponent(x.id));const a=r.analytics||{};box.className='aibox filled';box.innerHTML=`<b>Recent form & matchup</b><br>${a.summary||JSON.stringify(a).slice(0,300)||'No analytics available for this prop.'}`}catch(e){box.textContent='Research unavailable for this prop.'}}
+// Real recent-games + hit-rate from /api/analytics (replaces the old raw-JSON dump).
+async function loadRecent(x){const box=$('#recentbox');if(!box)return;
+  try{const r=await api('/api/analytics?id='+encodeURIComponent(x.id));const a=r.analytics||{};
+    if(!a.available){box.innerHTML='<p class="muted" style="font-size:11.5px">No game logs for this prop yet — a full engine run needs recent games.</p>';return}
+    const hr=a.hit_rate,rec=a.recent||[],line=x.line;
+    const head=hr?`<div class="kv" style="margin-bottom:10px"><div class="b"><div class="l">Hit Rate vs ${fmt(hr.line)}</div><div class="v" style="font-size:16px">${hr.over_pct}% <span class="muted" style="font-size:11px">${hr.over}/${hr.n} over</span></div></div><div class="b"><div class="l">Last 5</div><div class="v" style="font-size:16px">${hr.last5_over}/${hr.last5_n} <span class="muted" style="font-size:11px">over</span></div></div></div>`:'';
+    const rows=rec.slice(0,8).map(g=>{const v=g.prop_val,hit=(v!=null&&line!=null)?v>line:null;
+      return `<tr><td class="muted">${g.date?g.date.slice(5):''}</td><td>${g.home?'vs':'@'} ${g.opp||''}</td><td class="mono" style="font-weight:700">${v??'—'}</td><td>${hit==null?'':hit?'<span class="chip g">over</span>':'<span class="chip r">under</span>'}</td></tr>`}).join('');
+    const vsP=a.vs_pitcher&&a.vs_pitcher.pitcher?`<p class="muted" style="font-size:11px;margin:8px 0 0">Matchup: vs <b style="color:var(--text)">${a.vs_pitcher.pitcher.name}</b></p>`:'';
+    box.innerHTML=head+(rows?`<table class="drops" style="margin:0"><thead><tr><th>Date</th><th>Opp</th><th>${(hr&&hr.stat)||x.stat||'Val'}</th><th></th></tr></thead><tbody>${rows}</tbody></table>${vsP}`:'<p class="muted" style="font-size:11.5px">No recent games on file.</p>');
+  }catch(e){box.innerHTML='<p class="muted" style="font-size:11.5px">Could not load recent games.</p>'}}
+function loadResearch(x){const b=$('#recentbox');if(b)b.scrollIntoView({behavior:'smooth',block:'center'})}
 function closeDrawer(){$('#scrim').classList.remove('open');$('#drawer').classList.remove('open');const was=SELID;SELID=null;if(was&&cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}}
 
 // ── router ──

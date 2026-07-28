@@ -80,6 +80,25 @@ def confidence_score(line: dict[str, Any]) -> int:
     return int(round(_clamp(score / 100.0) * 100))
 
 
+def confidence_factors(line: dict[str, Any]) -> list[dict[str, Any]]:
+    """The REAL decomposition of `confidence_score` — the actual weighted contributions
+    (each 0..max), so the UI can show what drives a prop's confidence instead of a constant.
+    The three values sum to the confidence score (max 50 + 30 + 20 = 100)."""
+    n = int(line.get("model_n") or 0)
+    prob = line.get("model_prob")
+    n_factor = _clamp(n / 30.0)
+    prob_factor = _clamp(2.0 * abs(float(prob) - 0.5)) if prob is not None else 0.0
+    method_factor = 1.0 if line.get("proj_kind") == "engine" else 0.5
+    return [
+        {"factor": "Sample Size", "value": round(50.0 * n_factor, 1), "max": 50,
+         "detail": f"{n} game{'' if n == 1 else 's'} of history"},
+        {"factor": "Decisiveness", "value": round(30.0 * prob_factor, 1), "max": 30,
+         "detail": "how far P(over) is from a coin-flip"},
+        {"factor": "Method", "value": round(20.0 * method_factor, 1), "max": 20,
+         "detail": "full engine run" if method_factor == 1.0 else "empirical average"},
+    ]
+
+
 def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int:
     """
     0–100 composite ranking how JUICY a play is = decisiveness × confidence, the number the

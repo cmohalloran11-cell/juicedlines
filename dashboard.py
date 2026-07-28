@@ -38,6 +38,7 @@ def _drop(line: dict) -> dict:
         "ceiling": line.get("model_ceiling"),
         "juiceScore": valuation.juice_score(line),
         "confidence": valuation.confidence_score(line),
+        "confidenceFactors": valuation.confidence_factors(line),  # real per-prop breakdown (not a constant)
         "side": "over" if (line.get("model_prob") or 0) >= 0.5 else "under",
         "headshot": line.get("headshot"),
         "teamLogo": line.get("team_logo"),
