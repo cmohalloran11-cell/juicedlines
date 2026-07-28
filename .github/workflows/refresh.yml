@@ -46,11 +46,7 @@ jobs:
     env:
       LOOP_HOURS: "5"             # recycle the runner after this long (fewer restarts = fewer
                                   # cron-throttle gaps, since GITHUB_TOKEN can't self-retrigger)
-      CYCLE_SECONDS: "1200"       # target refresh cadence — 20 min. TEMPORARY: raised from 300
-                                  # (5 min) because Vercel's connector previews each data-branch
-                                  # push and 216/day blew the free 100/day deploy cap. At 20 min
-                                  # it's ~54/day, under the cap. Restore to 300 once Vercel's git
-                                  # auto-deploy is turned OFF (then data pushes stop deploying at all).
+      CYCLE_SECONDS: "300"        # target refresh cadence
       FULL_EVERY_SECONDS: "3600"  # how often to do a FULL build (analytics + ledger + trust.json)
       ACTIVE_START_UTC: "13"      # loop only between these UTC hours (wraps past midnight):
       ACTIVE_END_UTC: "7"         # 13:00–07:00 UTC ≈ 9am–3am ET — props post in the morning,
