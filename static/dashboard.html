@@ -676,15 +676,111 @@ async function vAlerts(){
 }
 function addAlert(){const m=$('#a-metric').value,c=$('#a-cmp').value,t=parseFloat($('#a-th').value);if(isNaN(t))return toast('Enter a threshold');DATA.alerts.add({metric:m,comparator:c,threshold:t}).then(()=>{toast('Alert created');render()});}
 function delAlert(id){DATA.alerts.remove(id).then(()=>render());}
-async function vPortfolio(title){
-  const p=await DATA.portfolio.list();const open=p.filter(x=>x.status==='open'),settled=p.filter(x=>x.status!=='open');
-  const won=settled.filter(x=>x.status==='won').length,roi=settled.length?((won/settled.length*100).toFixed(0)):'—';
-  $('#view').innerHTML=`<div class="ph2"><div><h2>${title||'Portfolio'} <span class="chip pro" style="background:#2a3720;color:var(--accent)">Pro</span></h2><p>Track your plays and grade them. ${signedIn()?'Synced to your account ✓':'Saved locally — sign in to sync.'}</p></div><button class="btn" onclick="go('projections')">+ Add a play</button></div>
-   <div class="kv" style="margin-bottom:16px;grid-template-columns:repeat(4,1fr)"><div class="b"><div class="l">Open</div><div class="v">${open.length}</div></div><div class="b"><div class="l">Settled</div><div class="v">${settled.length}</div></div><div class="b"><div class="l">Won</div><div class="v pos">${won}</div></div><div class="b"><div class="l">Hit Rate</div><div class="v">${roi}${roi!=='—'?'%':''}</div></div></div>
-   <div class="panel">${p.length?`<table class="drops"><thead><tr><th>Player</th><th>Prop</th><th>Side</th><th>Status</th><th></th></tr></thead><tbody>${p.map(x=>`<tr><td class="nm" style="font-weight:700">${x.player}</td><td>${x.stat} ${fmt(x.line)}</td><td>${cap(x.side)}</td><td>${x.status==='open'?`<span class="chip y">open</span> <span class="lnk" style="color:var(--accent)" onclick="settle('${x.id}','won')">${icon('check',14)}</span> <span class="lnk" style="color:var(--down)" onclick="settle('${x.id}','lost')">${icon('x',14)}</span>`:`<span class="chip ${x.status==='won'?'g':'r'}">${x.status}</span>`}</td><td onclick="delPlay('${x.id}')"><span class="star">${icon('trash',15)}</span></td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('folder',30)}</div>No plays tracked yet — add one from Projections.</div>`}</div>`;
+// ══════════════════════ PORTFOLIO WORKSPACE (Pro) ══════════════════════
+const PFS={tab:'overview',efilter:'all',folder:'all',nq:'',ntag:''};
+const savedStore={get:()=>LS.get('pf_saved'),has:id=>LS.get('pf_saved').some(s=>s.id===id),add:x=>{if(!savedStore.has(x.id))LS.add('pf_saved',{...x,savedAt:Date.now()})},del:id=>LS.del('pf_saved',id)};
+const notesStore={get:()=>LS.get('pf_notes'),add:n=>LS.add('pf_notes',{id:uid(),at:Date.now(),...n}),del:id=>LS.del('pf_notes',id)};
+const pfGo=t=>{PFS.tab=t;vPortfolio()};
+const _ts=e=>new Date(e.created_at||e.at||0).getTime()||0;
+const STCOL={open:'y',won:'g',lost:'r'};
+
+function pfStats(entries){
+  const settled=entries.filter(e=>e.status==='won'||e.status==='lost');
+  const won=settled.filter(e=>e.status==='won').length,lost=settled.length-won;
+  const pnl=won*0.9-lost;                       // flat 1u at ~ -110
+  const avg=f=>{const v=entries.map(f).filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((s,x)=>s+ +x,0)/v.length:null};
+  const grp=key=>{const m={};settled.forEach(e=>{const k=e[key]||'—';(m[k]=m[k]||{w:0,n:0}).n++;if(e.status==='won')m[k].w++});
+    let best=null;for(const[k,v]of Object.entries(m))if(v.n>=2){const r=v.w/v.n;if(!best||r>best.rate)best={key:k,rate:r,n:v.n}}return best};
+  let streak=0,dir=null;for(const e of [...settled].sort((a,b)=>_ts(b)-_ts(a))){if(dir==null){dir=e.status;streak=1}else if(e.status===dir)streak++;else break}
+  return{total:entries.length,open:entries.filter(e=>e.status==='open').length,settled:settled.length,won,lost,
+    winRate:settled.length?won/settled.length:null,pnl,roi:settled.length?pnl/settled.length:null,
+    avgJuice:avg(e=>e.juiceScore),avgConf:avg(e=>e.confidence),bestSport:grp('sport'),bestProp:grp('stat'),streak,streakDir:dir};
 }
-function settle(id,s){DATA.portfolio.settle(id,s).then(()=>{toast('Marked '+s);render()});}
-function delPlay(id){DATA.portfolio.remove(id).then(()=>render());}
+const PFTABS=[['overview','Overview'],['entries','My Entries'],['saved','Saved Props'],['notes','Notes'],['analytics','Performance'],['exposure','Exposure'],['history','History']];
+async function vPortfolio(){
+  const entries=await DATA.portfolio.list();
+  const sub=PFTABS.map(([k,n])=>`<span class="dtab ${PFS.tab===k?'on':''}" onclick="pfGo('${k}')">${n}</span>`).join('');
+  const body=({overview:pfOverview,entries:pfEntries,saved:pfSaved,notes:pfNotes,analytics:pfAnalytics,exposure:pfExposure,history:pfHistory}[PFS.tab]||pfOverview)(entries);
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Portfolio <span class="chip pro" style="background:#2a3720;color:var(--accent)">Pro</span></h2><p>Your personal analytics workspace. ${signedIn()?'Synced ✓':'Saved locally — sign in to sync.'}</p></div><button class="btn" onclick="go('projections')">+ Add a play</button></div>
+   <div class="dtabs" style="flex-wrap:wrap;gap:6px;margin-bottom:14px">${sub}</div><div id="pfbody">${body}</div>`;
+}
+function pfEmpty(msg){return `<div class="empty"><div class="em">${icon('folder',30)}</div><b>Your portfolio is empty.</b><br><span class="muted" style="font-size:12px;max-width:440px;display:inline-block;margin-top:6px">${msg||'Add a play from Projections (the + on any prop), or save props you are eyeing to Saved Props. Your ROI, streaks, and exposure build here.'}</span><br><button class="btn pri" style="margin-top:14px" onclick="go('projections')">Browse Projections</button></div>`}
+const pfCard=(c,v,cls,sub)=>`<div class="tile"><div class="cap">${c}</div><div class="big ${cls||''}" style="font-size:22px">${v}</div>${sub?`<div class="sub">${sub}</div>`:''}</div>`;
+function pfOverview(entries){if(!entries.length)return pfEmpty();const s=pfStats(entries);
+  const cards=[pfCard('Total Entries',s.total),pfCard('Win Rate',s.winRate!=null?(s.winRate*100).toFixed(0)+'%':'—',s.winRate>=.5?'pos':''),
+    pfCard('ROI',s.roi!=null?(s.roi>0?'+':'')+(s.roi*100).toFixed(0)+'%':'—',s.roi>=0?'pos':'neg'),pfCard('Profit / Loss',s.settled?signed(s.pnl)+'u':'—',s.pnl>=0?'pos':'neg'),
+    pfCard('Avg Juice',s.avgJuice!=null?Math.round(s.avgJuice):'—'),pfCard('Avg Confidence',s.avgConf!=null?Math.round(s.avgConf)+'%':'—'),
+    pfCard('Best Sport',s.bestSport?s.bestSport.key:'—','',s.bestSport?(s.bestSport.rate*100).toFixed(0)+'% · '+s.bestSport.n:''),
+    pfCard('Best Prop Type',s.bestProp?s.bestProp.key:'—','',s.bestProp?(s.bestProp.rate*100).toFixed(0)+'%':''),
+    pfCard('Current Streak',s.streak?s.streak+' '+(s.streakDir==='won'?'W':'L'):'—',s.streakDir==='won'?'pos':s.streakDir==='lost'?'neg':'')];
+  return `<div class="tiles" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">${cards.join('')}</div>
+   <div class="two"><div class="panel"><div class="phead"><h3>Recent Entries</h3><span class="lnk" onclick="pfGo('entries')">All →</span></div>${pfEntryTable(entries.slice(0,6))}</div>
+   <div class="panel"><div class="phead"><h3>Win Rate by Sport</h3></div>${pfSportBars(entries)}</div></div>`;
+}
+function pfEntryTable(entries){if(!entries.length)return `<div class="empty" style="padding:28px">${icon('folder',24)}<br><span class="muted">No entries.</span></div>`;
+  return `<table class="drops"><thead><tr><th>Player</th><th>Prop</th><th>Side</th><th>Status</th><th></th></tr></thead><tbody>${entries.map(x=>`<tr><td><div class="nm" style="font-weight:700">${x.player||'—'}</div><div class="tm muted">${ico(x.sport)} ${x.team||x.sport||''}</div></td><td>${x.stat||''} ${fmt(x.line)}</td><td>${cap(x.side)}</td><td>${x.status==='open'?`<span class="chip y">open</span> <span class="lnk" style="color:var(--accent)" title="Won" onclick="settle('${x.id}','won')">${icon('check',14)}</span> <span class="lnk" style="color:var(--down)" title="Lost" onclick="settle('${x.id}','lost')">${icon('x',14)}</span> <span class="lnk muted" title="Void" onclick="settle('${x.id}','void')">∅</span>`:`<span class="chip ${STCOL[x.status]||''}">${x.status}</span>`}</td><td onclick="delPlay('${x.id}')"><span class="star">${icon('trash',15)}</span></td></tr>`).join('')}</tbody></table>`;
+}
+function pfEntries(entries){const f=PFS.efilter,filtered=f==='all'?entries:f==='pending'?entries.filter(e=>e.status==='open'):entries.filter(e=>e.status===f);
+  const chip=(k,n)=>`<span class="qf ${f===k?'on':''}" onclick="PFS.efilter='${k}';vPortfolio()">${n} <span class="muted">${(k==='all'?entries:k==='pending'?entries.filter(e=>e.status==='open'):entries.filter(e=>e.status===k)).length}</span></span>`;
+  return `<div class="ptoolbar">${chip('all','All')}${chip('pending','Pending')}${chip('won','Won')}${chip('lost','Lost')}${chip('void','Void')}</div><div class="panel">${pfEntryTable(filtered)}</div>`;
+}
+function pfSaved(){const saved=savedStore.get(),folder=PFS.folder;
+  const F={all:()=>true,today:()=>true,mlb:s=>s.sport==='MLB',wnba:s=>s.sport==='WNBA',highconf:s=>(s.confidence||0)>=75,longshot:s=>(s.probability||0)>0&&(s.probability||0)<0.4};
+  const L={all:'All',today:"Today's Favorites",mlb:'MLB',wnba:'WNBA',highconf:'High Confidence',longshot:'Longshots'};
+  const list=saved.filter(F[folder]||F.all);
+  const fchip=k=>`<span class="qf ${folder===k?'on':''}" onclick="PFS.folder='${k}';vPortfolio()">${L[k]} <span class="muted">${saved.filter(F[k]).length}</span></span>`;
+  return `<div class="ptoolbar">${Object.keys(L).map(fchip).join('')}</div>
+   <div class="panel">${list.length?`<table class="drops"><thead><tr><th>Player</th><th>Prop</th><th>Juice</th><th>Conf</th><th></th><th></th></tr></thead><tbody>${list.map(x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'><td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player}</div><div class="tm">${teamBadge(x,14)} ${x.team||''}</div></div></div></td><td>${cap(x.side)} ${fmt(x.line)} ${x.stat}</td><td><span class="js" style="color:${jColor(x.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(x.juiceScore)}55">${x.juiceScore||'—'}</span></td><td class="mono">${x.confidence?Math.round(x.confidence)+'%':'—'}</td><td onclick="event.stopPropagation();addPlay(${JSON.stringify(x).replace(/'/g,'&#39;')})"><button class="addbtn">+</button></td><td onclick="event.stopPropagation();unsaveProp('${x.id}')"><span class="star">${icon('trash',15)}</span></td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('star',30)}</div>No saved props in this folder.<br><span class="muted" style="font-size:12px">Open any prop and hit “Save” to stash it here without committing to a play.</span></div>`}</div>`;
+}
+function pfNotes(){const notes=notesStore.get(),q=PFS.nq.toLowerCase(),tag=PFS.ntag,tags=[...new Set(notes.flatMap(n=>n.tags||[]))];
+  let list=notes;if(q)list=list.filter(n=>(n.text||'').toLowerCase().includes(q)||(n.target||'').toLowerCase().includes(q));if(tag)list=list.filter(n=>(n.tags||[]).includes(tag));
+  return `<div class="panel" style="padding:14px;margin-bottom:14px"><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="ctl" id="note-target" placeholder="Player / game / prop (optional)" style="min-width:180px"><input class="ctl" id="note-tags" placeholder="tags, comma-separated" style="min-width:150px"></div><textarea class="ctl" id="note-text" placeholder="Your note — a read, an angle, a reminder…" style="width:100%;margin-top:8px;min-height:56px;resize:vertical;font-family:inherit"></textarea><button class="btn pri" style="margin-top:8px" onclick="addNote()">Add note</button></div>
+   <div class="ptoolbar"><input class="ctl" placeholder="Search notes…" style="min-width:160px" oninput="PFS.nq=this.value;vPortfolio()" value="${PFS.nq}">${tags.map(t=>`<span class="qf ${tag===t?'on':''}" onclick="PFS.ntag='${tag===t?'':t}';vPortfolio()">#${t}</span>`).join('')}</div>
+   <div class="panel">${list.length?list.map(n=>`<div class="alert" style="border-top:1px solid #14190f"><div style="flex:1;min-width:0"><div class="h">${(n.target||'General note').replace(/</g,'&lt;')}</div><div style="white-space:normal;color:var(--text);font-size:12.5px;margin:2px 0">${(n.text||'').replace(/</g,'&lt;')}</div><div class="muted" style="font-size:10.5px">${(n.tags||[]).map(t=>'#'+t).join(' ')} ${n.tags&&n.tags.length?'· ':''}${new Date(n.at).toLocaleDateString()}</div></div><span class="star" onclick="delNote('${n.id}')">${icon('trash',15)}</span></div>`).join(''):`<div class="empty"><div class="em">${icon('book',30)}</div>No notes yet — jot your reads, angles, and reminders above.</div>`}</div>`;
+}
+function pfBars(groups){if(!groups.length)return '<div class="mv muted" style="padding:14px 16px">Not enough settled entries yet.</div>';
+  return '<div style="padding:8px 16px 14px">'+groups.map(g=>{const r=g.n?Math.round(g.w/g.n*100):0;return `<div style="margin:9px 0"><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px"><span>${g.label} <span class="muted">${g.w}/${g.n}</span></span><b>${r}%</b></div><div style="height:7px;border-radius:4px;background:#1a2416;overflow:hidden"><i style="display:block;height:100%;width:${r}%;background:linear-gradient(90deg,${jColor(r)}aa,${jColor(r)})"></i></div></div>`}).join('')+'</div>';
+}
+function pfGroupBy(entries,key){const settled=entries.filter(e=>e.status==='won'||e.status==='lost'),m={};settled.forEach(e=>{const k=e[key]||'—';(m[k]=m[k]||{label:k,w:0,n:0}).n++;if(e.status==='won')m[k].w++});return Object.values(m).sort((a,b)=>b.n-a.n)}
+const pfSportBars=e=>pfBars(pfGroupBy(e,'sport'));
+const pfPropBars=e=>pfBars(pfGroupBy(e,'stat').slice(0,6));
+function pfConfBars(entries){const settled=entries.filter(e=>e.status==='won'||e.status==='lost'),b=[['80+',c=>c>=80],['65–79',c=>c>=65&&c<80],['50–64',c=>c>=50&&c<65],['<50',c=>c<50]];
+  return pfBars(b.map(([label,f])=>{const es=settled.filter(e=>f(e.confidence||0));return{label,w:es.filter(e=>e.status==='won').length,n:es.length}}).filter(x=>x.n));}
+function pfPnlChart(entries){const settled=[...entries.filter(e=>e.status==='won'||e.status==='lost')].sort((a,b)=>_ts(a)-_ts(b));let cum=0;const pts=[0];settled.forEach(e=>{cum+=e.status==='won'?0.9:-1;pts.push(cum)});
+  const W=420,H=120,pad=12,mn=Math.min(0,...pts),mx=Math.max(0,...pts),rng=(mx-mn)||1,X=i=>pad+i*(W-2*pad)/Math.max(1,pts.length-1),Y=v=>H-pad-((v-mn)/rng)*(H-2*pad);let d='';pts.forEach((v,i)=>d+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1));
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:120px"><line x1="${pad}" y1="${Y(0)}" x2="${W-pad}" y2="${Y(0)}" stroke="#273222" stroke-dasharray="3 3"/><path d="${d}" fill="none" stroke="${cum>=0?'#8ee65a':'#ff6b6b'}" stroke-width="2.2"/><text x="${W-pad}" y="15" text-anchor="end" fill="${cum>=0?'#8ee65a':'#ff6b6b'}" font-size="11" font-weight="800">${signed(cum)}u</text></svg>`;
+}
+function pfAnalytics(entries){const s=pfStats(entries);if(!s.settled)return `<div class="empty"><div class="em">${icon('trend',30)}</div>Settle a few entries (mark them won/lost) to unlock performance charts.</div>`;
+  return `<div class="two"><div class="panel"><div class="phead"><h3>Cumulative P&L <span class="hint">units, 1u flat</span></h3></div><div style="padding:10px 14px">${pfPnlChart(entries)}</div></div>
+   <div class="panel"><div class="phead"><h3>Win Rate by Sport</h3></div>${pfSportBars(entries)}</div></div>
+   <div class="two"><div class="panel"><div class="phead"><h3>Win Rate by Prop Type</h3></div>${pfPropBars(entries)}</div>
+   <div class="panel"><div class="phead"><h3>Win Rate by Confidence</h3></div>${pfConfBars(entries)}</div></div>`;
+}
+function pfExposure(entries){if(!entries.length)return pfEmpty();
+  const count=key=>{const m={};entries.forEach(e=>{const k=e[key]||'—';m[k]=(m[k]||0)+1});return Object.entries(m).map(([label,n])=>({label,n})).sort((a,b)=>b.n-a.n)};
+  const players=count('player'),topShare=players.length?players[0].n/entries.length:0;
+  const warn=topShare>=0.34&&entries.length>=3?`<div class="ai-sum" style="margin-bottom:16px;border-color:var(--warn)"><div class="orb" style="color:var(--warn)">${icon('warn',16,'var(--warn)')}</div><div><h4>Concentration warning</h4><p><b>${players[0].label}</b> is ${(topShare*100).toFixed(0)}% of your entries. Heavy single-player exposure ties your results to one game — consider diversifying.</p></div></div>`:'';
+  const col=(t,arr)=>`<div class="panel"><div class="phead"><h3>${t}</h3></div>${arr.slice(0,8).map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${x.label}</div></div><span class="mval">${x.n}</span></div>`).join('')||'<div class="mv muted">—</div>'}</div>`;
+  return warn+`<div class="grid3">${col('Most-Selected Players',players)}${col('Most-Selected Teams',count('team'))}${col('Most-Selected Prop Types',count('stat'))}</div>`;
+}
+function pfHistory(entries){const saved=savedStore.get(),notes=notesStore.get();
+  const items=[...entries.map(e=>({t:'Entry',label:`${e.player} · ${cap(e.side)} ${fmt(e.line)} ${e.stat}`,status:e.status,at:_ts(e)})),
+    ...saved.map(s=>({t:'Saved',label:`${s.player} · ${cap(s.side)} ${fmt(s.line)} ${s.stat}`,status:'saved',at:s.savedAt||0})),
+    ...notes.map(n=>({t:'Note',label:(n.target||n.text||'').slice(0,50),status:'note',at:n.at}))].sort((a,b)=>b.at-a.at);
+  const q=PFS.nq.toLowerCase(),list=q?items.filter(i=>i.label.toLowerCase().includes(q)):items;
+  return `<div class="ptoolbar"><input class="ctl" placeholder="Search history…" style="min-width:180px" oninput="PFS.nq=this.value;vPortfolio()" value="${PFS.nq}"><button class="btn" onclick="exportCSV()">${icon('box',13)} Export CSV</button></div>
+   <div class="panel">${list.length?`<table class="drops"><thead><tr><th>Type</th><th>Item</th><th>Status</th><th>When</th></tr></thead><tbody>${list.slice(0,200).map(i=>`<tr><td><span class="chip">${i.t}</span></td><td>${i.label.replace(/</g,'&lt;')}</td><td><span class="chip ${STCOL[i.status]||''}">${i.status}</span></td><td class="muted">${i.at?new Date(i.at).toLocaleDateString():''}</td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('research',30)}</div>Your research history — entries, saved props, and notes — appears here.</div>`}</div>`;
+}
+const _pfHere=()=>cur()==='portfolio'||cur()==='journal';
+function settle(id,s){DATA.portfolio.settle(id,s).then(()=>{toast('Marked '+s);_pfHere()?vPortfolio():render()})}
+function delPlay(id){DATA.portfolio.remove(id).then(()=>{_pfHere()?vPortfolio():render()})}
+function saveProp(x){if(savedStore.has(x.id)){toast('Already saved')}else{savedStore.add(x);toast('Saved to portfolio')}}
+function unsaveProp(id){savedStore.del(id);vPortfolio()}
+function addNote(){const text=($('#note-text').value||'').trim();if(!text)return toast('Write a note first');const tags=($('#note-tags').value||'').split(',').map(t=>t.trim()).filter(Boolean);notesStore.add({text,target:($('#note-target').value||'').trim(),tags});vPortfolio()}
+function delNote(id){notesStore.del(id);vPortfolio()}
+function exportCSV(){DATA.portfolio.list().then(entries=>{const rows=[['player','sport','team','stat','line','side','status','juice','confidence']].concat(entries.map(e=>[e.player,e.sport,e.team,e.stat,e.line,e.side,e.status,e.juiceScore,e.confidence]));
+  const csv=rows.map(r=>r.map(c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='juiced-portfolio.csv';a.click();toast('Exported CSV')})}
 async function vWeather(){
   $('#view').innerHTML=`<div class="ph2"><div><h2>Weather</h2><p>Live ballpark conditions that swing hitting and pitching props (via Vaisala Xweather).</p></div></div><div id="wx"><div class="empty">Loading conditions…</div></div>`;
   const d=await api('/api/weather');
@@ -748,7 +844,7 @@ async function vUpgrade(){const free=['Live projections board','Juice Scores & e
 }
 function upgradeClick(){if(AUTH.user)toast('Pro is free during beta — you are all set');else openLogin();}
 
-const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:()=>vPortfolio('Portfolio'),journal:()=>vPortfolio('Portfolio'),weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade};
+const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade};
 
 // ── prop detail drawer ──
 // Colors for the REAL confidence components (from valuation.confidence_factors). No fake weights.
@@ -790,12 +886,12 @@ async function openProp(x,tab){
    <div class="dsec"><h5>Recent Games & Hit Rate</h5><div id="recentbox"><p class="muted skel">Loading recent games…</p></div></div>
    ${corrHTML(x)}
    <div class="dsec"><h5>AI Juice</h5><div class="aibox" id="aibox">${AUTH.ai?'Generating a grounded explanation…':'AI Juice is not configured on the server.'}</div></div>
-   <div class="dsec" style="display:flex;gap:8px"><button class="btn ${isWatched(x.id)?'':'pri'}" id="wbtn" onclick='toggleWatch(${JSON.stringify(x).replace(/"/g,"&quot;")});renderDrawerBtns(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${isWatched(x.id)?'Watching':'Add to Watchlist'}</button><button class="btn" onclick='addPlay(${JSON.stringify(x).replace(/"/g,"&quot;")})'>+ Portfolio</button><button class="btn" onclick='loadResearch(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('research',13)} Research</button></div>`;
+   <div class="dsec" style="display:flex;gap:8px"><button class="btn ${isWatched(x.id)?'':'pri'}" id="wbtn" onclick='toggleWatch(${JSON.stringify(x).replace(/"/g,"&quot;")});renderDrawerBtns(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${isWatched(x.id)?'Watching':'Add to Watchlist'}</button><button class="btn" onclick='addPlay(${JSON.stringify(x).replace(/"/g,"&quot;")})'>+ Portfolio</button><button class="btn" onclick='saveProp(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('star',13)} Save</button><button class="btn" onclick='loadResearch(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('research',13)} Research</button></div>`;
   loadSim(x);loadRecent(x);if(AUTH.ai)loadAIExplain(x);
   if(tab==='ai')setTimeout(()=>$('#aibox')&&$('#aibox').scrollIntoView({behavior:'smooth',block:'center'}),200);
 }
 function renderDrawerBtns(x){const b=$('#wbtn');if(b){b.className='btn '+(isWatched(x.id)?'':'pri');b.textContent=isWatched(x.id)?'Watching':'Add to Watchlist'}}
-function addPlay(x){DATA.portfolio.add({line_id:x.id,player:x.player,sport:x.sport,stat_type:x.stat,side:x.side,line_value:x.line}).then(()=>toast('Added to portfolio'))}
+function addPlay(x){DATA.portfolio.add({line_id:x.id,player:x.player,sport:x.sport,team:x.team,stat_type:x.stat,side:x.side,line_value:x.line,juiceScore:x.juiceScore,confidence:x.confidence,source:x.source}).then(()=>toast('Added to portfolio'))}
 async function loadSim(x){try{const r=await api('/api/simulation?id='+encodeURIComponent(x.id));let s=r.simulation,v=r.valuation||{};
   if(!s){  // static build (no server): synthesize the distribution from the prop's own fields
     const mu=x.projection,lo=x.floor,hi=x.ceiling;
