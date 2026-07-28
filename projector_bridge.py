@@ -300,6 +300,11 @@ def _payload(p, line, correction: float = 0.0, trust: float | None = None,
                "floor": round(_st(p.floor), 1), "ceiling": round(_st(p.ceiling), 1),
                "p25": round(_st(p.p25), 1), "p75": round(_st(p.p75), 1),
                "model_raw": round(mu, 2), "method": "engine"}
+        # Guarantee the reported band brackets the reported projection. On near-zero skewed
+        # stats the p10/p90 round to the same 1-dp value while the mean rounds finer (2 dp),
+        # which otherwise leaves ceiling < projection. Clamp so floor ≤ projection ≤ ceiling.
+        out["floor"] = min(out["floor"], out["projection"])
+        out["ceiling"] = max(out["ceiling"], out["projection"])
         if line is not None:
             out["prob_over"] = round(float(p.prob_over(float(line))), 3)
     out["drivers"] = list(getattr(p, "drivers", []) or [])   # matchup/park factors
@@ -344,6 +349,9 @@ def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None 
         "p25": round(lo25, 1), "p75": round(hi75, 1),
         "model_raw": round(raw_mean, 2), "method": "engine",
     }
+    # Keep the reported band bracketing the reported projection (see note above).
+    out["floor"] = min(out["floor"], out["projection"])
+    out["ceiling"] = max(out["ceiling"], out["projection"])
     if line is not None:
         out["prob_over"] = round(float(np.mean(s > float(line))), 3)
     return out
