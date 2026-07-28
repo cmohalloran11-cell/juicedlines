@@ -514,14 +514,24 @@ async function vMarket(){
    <div class="panel"><div class="phead"><h3>Biggest Line Moves Today</h3></div>${(m.line_moves||[]).length?m.line_moves.map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${x.player}</div><div class="sub">${ico(x.sport)} ${x.stat}</div></div><span class="mval ${x.move>=0?'pos':'neg'}">${signed(x.move)}</span></div>`).join(''):'<div class="mv muted">No line moves logged yet today.</div>'}</div>`;
 }
 async function vLeaderboards(){
-  const [h,p]=await Promise.all([api('/api/model/health'),api('/api/projections?sort=juice&limit=10')]);
+  const [h,p,bt,dr]=await Promise.all([api('/api/model/health'),api('/api/projections?sort=juice&limit=10'),api('/api/backtest?sport=MLB').catch(()=>({})),api('/api/model/drift?sport=MLB').catch(()=>({}))]);
   const sports=h.sports||{};
-  const perf=Object.values(sports).filter(s=>s.hit_rate_vs_close!=null).map(s=>`<div class="mv"><span class="lg" style="width:26px">${ico(s.sport)}</span><div style="flex:1"><div class="nm">${s.sport}</div><div class="sub">${s.decided||0} decided · ${s.graded_props||0} graded</div></div><span class="mval ${s.beats_breakeven?'pos':'neg'}">${(s.hit_rate_vs_close*100).toFixed(1)}%</span></div>`).join('')||'<div class="mv muted">No graded results yet.</div>';
+  const perf=Object.values(sports).filter(s=>s.hit_rate_vs_close!=null).map(s=>`<div class="mv"><span class="lg" style="width:26px">${leagueLogo(s.sport,20)}</span><div style="flex:1"><div class="nm">${s.sport}</div><div class="sub">${s.decided||0} decided · ${s.graded_props||0} graded</div></div><span class="mval ${s.beats_breakeven?'pos':'neg'}">${(s.hit_rate_vs_close*100).toFixed(1)}%</span></div>`).join('')||'<div class="mv muted">No graded results yet.</div>';
   const stats=(sports.MLB&&sports.MLB.top_trust_stats||[]).map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${cap(x.stat)}</div><div class="sub">edge-regression trust</div></div><span class="mval pos">γ ${x.gamma}</span></div>`).join('');
-  $('#view').innerHTML=`<div class="ph2"><div><h2>Leaderboards</h2><p>Where the model earns its keep — measured accuracy by sport and by stat.</p></div></div>
+  const cur=(bt.current||{}).overall||{};
+  const worst=((bt.current||{}).worst_by_mae||[]).slice(0,6).map(w=>`<div class="mv"><div style="flex:1"><div class="nm">${w.stat}</div><div class="sub">${w.n} graded</div></div><span class="mval">MAE ${w.mae}</span></div>`).join('');
+  const driftChip=dr.status==='drifting'?`<span class="chip r">drifting</span>`:dr.status==='stable'?`<span class="chip g">stable</span>`:`<span class="chip">${dr.status||'—'}</span>`;
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Leaderboards</h2><p>Where the model earns its keep — measured accuracy, backtested against ${(cur.n||0).toLocaleString()} graded outcomes.</p></div></div>
+   <div class="kv" style="margin-bottom:16px;grid-template-columns:repeat(4,1fr)">
+     <div class="b"><div class="l">MLB Hit Rate</div><div class="v pos">${cur.hit_rate!=null?(cur.hit_rate*100).toFixed(1)+'%':'—'}</div><div class="muted" style="font-size:10.5px">vs 52.4% breakeven</div></div>
+     <div class="b"><div class="l">MAE</div><div class="v">${cur.mae??'—'}</div><div class="muted" style="font-size:10.5px">mean abs error</div></div>
+     <div class="b"><div class="l">Calibration (ECE)</div><div class="v">${cur.ece??'—'}</div><div class="muted" style="font-size:10.5px">lower = better</div></div>
+     <div class="b"><div class="l">Drift ${driftChip}</div><div class="v" style="font-size:15px">${dr.recent?(dr.recent.hit_rate*100).toFixed(1)+'%':'—'}<span class="muted" style="font-size:12px"> recent</span></div><div class="muted" style="font-size:10.5px">vs ${dr.prior?(dr.prior.hit_rate*100).toFixed(1)+'%':'—'} prior</div></div>
+   </div>
    <div class="two"><div class="panel"><div class="phead"><h3>Model Accuracy by Sport</h3><span class="hint">hit-rate vs closing line</span></div>${perf}</div>
-   <div class="panel"><div class="phead"><h3>Most-Trusted MLB Stats</h3><span class="hint">where model beats the line</span></div>${stats||'<div class="mv muted">Building…</div>'}</div></div>
-   <div class="panel"><div class="phead"><h3>Today's Highest-Juice Plays</h3><span class="lnk" onclick="go('projections')">All →</span></div>${propTable(p.projections||[])}</div>`;
+   <div class="panel"><div class="phead"><h3>Weakest Stats by MAE</h3><span class="hint">where model work pays off</span></div>${worst||'<div class="mv muted">Building…</div>'}</div></div>
+   <div class="two"><div class="panel"><div class="phead"><h3>Most-Trusted MLB Stats</h3><span class="hint">where model beats the line</span></div>${stats||'<div class="mv muted">Building…</div>'}</div>
+   <div class="panel"><div class="phead"><h3>Today's Highest-Juice Plays</h3><span class="lnk" onclick="go('projections')">All →</span></div>${propTable((p.projections||[]).slice(0,6))}</div></div>`;
 }
 async function vSimulations(){
   const p=await api('/api/projections?sort=confidence&limit=40');
