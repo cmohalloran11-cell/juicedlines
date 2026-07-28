@@ -71,6 +71,12 @@ jobs:
           XWEATHER_CLIENT_SECRET: ${{ secrets.XWEATHER_CLIENT_SECRET }}
         run: |
           set -u
+          echo "::group::secret check (yes/no only — never prints values)"
+          for v in SUPABASE_URL SUPABASE_ANON_KEY XWEATHER_CLIENT_ID XWEATHER_CLIENT_SECRET; do
+            val="${!v:-}"
+            if [ -n "$val" ]; then echo "$v: set (len=${#val})"; else echo "$v: MISSING/empty"; fi
+          done
+          echo "::endgroup::"
           LOOP_UNTIL=$(( $(date -u +%s) + LOOP_HOURS * 3600 ))
           LAST_FULL=0
           PUBLISH_FAILS=0
