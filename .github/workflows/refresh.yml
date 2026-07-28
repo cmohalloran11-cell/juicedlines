@@ -112,6 +112,11 @@ jobs:
                      auth.json model_health.json backtest.json drift.json; do
               if [ -f "static/$f" ]; then cp "static/$f" "_data/$f"; fi
             done
+            # Tell Vercel NOT to deploy the data branch. It's force-pushed every ~5 min; without
+            # this each push is a wasted preview build that burns the free 100/day deploy cap and
+            # starves the real (main) production deploy. Written at the data-branch ROOT so a
+            # connector that reads the pushed branch's config honors it.
+            printf '{"git":{"deploymentEnabled":false}}\n' > _data/vercel.json
             git -C _data add -A
             if git -C _data rev-parse HEAD >/dev/null 2>&1; then
               git -C _data commit -q --amend -m "board $(date -u +%FT%TZ)"
