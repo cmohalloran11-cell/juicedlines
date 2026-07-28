@@ -20,11 +20,7 @@ name: deploy to production (vercel)
 on:
   workflow_dispatch: {}            # manual "Run workflow" button (deploy on demand)
   push:
-    branches: [main]
-    paths:
-      - "static/**"
-      - "*.py"
-      - ".github/workflows/deploy-prod.yml"
+    branches: [main]               # any push to main → production deploy (data branch never triggers this)
 
 concurrency:
   group: vercel-prod
