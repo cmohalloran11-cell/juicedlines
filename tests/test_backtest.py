@@ -30,6 +30,19 @@ def test_metrics_hit_rate_counts_line_side():
     assert m["hit_rate"] == round(2 / 3, 4)
 
 
+def test_metrics_hit_rate_uses_real_pick_not_mean_on_skewed_props():
+    # Right-skewed prop: the mean (P) sits ABOVE the line but P(over)=RP < 0.5, so the model's
+    # ACTUAL pick is UNDER. When the actual comes under, that's a HIT. The old mean-vs-line
+    # scoring would have called both of these "over" picks and scored 0.0.
+    pairs = [
+        {"L": 0.5, "P": 0.53, "RP": 0.29, "Y": 0.0},   # pick under, actual under → hit
+        {"L": 0.5, "P": 0.54, "RP": 0.31, "Y": 0.0},   # pick under, actual under → hit
+    ]
+    m = backtest.metrics(pairs)
+    assert m["decided"] == 2
+    assert m["hit_rate"] == 1.0            # real-side scoring; mean-based would be 0.0
+
+
 def test_metrics_empty():
     assert backtest.metrics([])["n"] == 0
 

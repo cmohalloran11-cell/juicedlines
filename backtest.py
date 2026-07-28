@@ -59,9 +59,15 @@ def metrics(pairs: list[dict]) -> dict:
     ae = [abs(p["P"] - p["Y"]) for p in P]
     se = [(p["P"] - p["Y"]) ** 2 for p in P]
     bias = sum(p["P"] - p["Y"] for p in P) / n
-    # hit-rate vs the line (pushes excluded): does the model's side beat the line?
+    # hit-rate vs the line (pushes excluded): does the model's ACTUAL pick beat the line?
+    # The product picks its side by P(over) vs 0.5, not by mean-vs-line — and for right-skewed
+    # count stats (Total Bases, H+R+RBI) those disagree ~half the time (mean above the line but
+    # P(over) < 0.5 → pick under). Score the real pick: prob-based when available, else mean-based.
+    def _picks_over(p):
+        rp = p.get("RP")
+        return (rp > 0.5) if rp is not None else (p["P"] > p["L"])
     dec = [p for p in P if p.get("L") is not None and abs(p["Y"] - p["L"]) > 1e-9]
-    hit = sum(1 for p in dec if (p["P"] > p["L"]) == (p["Y"] > p["L"]))
+    hit = sum(1 for p in dec if _picks_over(p) == (p["Y"] > p["L"]))
     out = {
         "n": n,
         "mae": round(sum(ae) / n, 4),

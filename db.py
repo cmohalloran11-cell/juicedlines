@@ -477,7 +477,12 @@ def scorecard(sport: str | None = None, edge: float = 0.5) -> dict:
             pass
         else:
             dec += 1
-            pick_over = cp > cl
+            # the model's ACTUAL pick is its P(over) vs 0.5, not mean-vs-line — they diverge on
+            # right-skewed count stats (mean above the line while P(over) < 0.5 → pick under).
+            _rp = r.get("model_raw_prob")
+            if _rp is None:
+                _rp = r.get("close_prob")
+            pick_over = (_rp > 0.5) if _rp is not None else (cp > cl)
             if (act > cl) == pick_over:
                 hit += 1
             if abs(cp - cl) >= edge:
