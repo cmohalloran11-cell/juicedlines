@@ -253,10 +253,13 @@ def api_dashboard(sport: str = Query("all", description="All | MLB | WNBA | Tenn
 @app.get("/api/projections")
 def api_projections(sport: str = Query("all"), stat: str = Query(""),
                     sort: str = Query("juice", description="juice|edge|confidence|projection"),
-                    limit: int = Query(400, ge=1, le=1000)):
+                    limit: int = Query(400, ge=1, le=1000),
+                    boosted: bool = Query(False, description="demon/goblin lane instead of standard/boosted")):
     """Full enriched projected-props feed (Projections / Props Center / Top Movers)."""
+    odds_types = ("demon", "goblin") if boosted else ("standard", "boosted")
     rows = dashboard_mod.projections(
-        _cache.get("lines") or [], sport=sport, stat=stat or None, sort=sort, limit=limit)
+        _cache.get("lines") or [], sport=sport, stat=stat or None, sort=sort, limit=limit,
+        odds_types=odds_types)
     return {"projections": rows, "total": len(rows), "updated_at": _cache.get("updated_at")}
 
 

@@ -44,6 +44,22 @@ def test_expected_value_uses_pickem_price_not_even_money():
     assert valuation.expected_value(0.70, {}) == 0.4
 
 
+def test_demon_goblin_are_unpriced_not_fabricated():
+    # PrizePicks doesn't expose the boosted payout multiplier for demon/goblin legs, so EV/Kelly
+    # must honestly return None rather than fall back to even-money — even though the line has
+    # a real projection and probability (they're 96% projected, just not priced).
+    demon = {"model_prob": 0.9, "over_implied": 0.5, "pickem_price": -137, "odds_type": "demon"}
+    goblin = {"model_prob": 0.9, "odds_type": "GOBLIN"}   # case-insensitive
+    standard = {"model_prob": 0.9, "over_implied": 0.5}
+    assert valuation.is_unpriced(demon) is True
+    assert valuation.is_unpriced(goblin) is True
+    assert valuation.is_unpriced(standard) is False
+    assert valuation.expected_value(0.9, demon) is None
+    assert valuation.expected_value(0.9, goblin) is None
+    assert valuation.kelly_fraction(0.9, demon) is None
+    assert valuation.expected_value(0.9, standard) is not None
+
+
 def test_audit_ev_flags_above_threshold_not_below():
     # 95% model prob at the flat pick'em price (~57.7% implied) → EV ≈ +64%, well above
     # any sane threshold — must be flagged with the exact inputs a reviewer needs.

@@ -358,6 +358,14 @@ def main() -> None:
 
         _w("projections.json", {"projections": _dash.projections(lines, limit=1000),
                                 "updated_at": updated})
+        # Demon/goblin lane, separate from the default (priced) projections payload — see
+        # dashboard.projections()'s odds_types param. Kept out of the main file so it doesn't
+        # dominate the juice-sorted default list or bloat the normal page load; the frontend
+        # lazy-loads this only when the user opts into "Include Demon/Goblin".
+        _w("boosted.json", {"projections": _dash.projections(
+                                lines, limit=500, sort="confidence",
+                                odds_types=("demon", "goblin")),
+                            "updated_at": updated})
         _w("injuries.json", {"injuries": _dash.injuries(lines)})
         _w("weather.json", _wx.slate(lines))
         _w("books.json", {"books": books.status()})

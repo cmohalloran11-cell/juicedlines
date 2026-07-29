@@ -19,7 +19,9 @@ import dataos
 
 
 def _edge_pct(line: dict) -> Optional[float]:
-    """The play's expected value as a percent — the honest 'edge %'."""
+    """The play's expected value as a percent — the honest 'edge %'. valuation.expected_value
+    already returns None for demon/goblin (no real payout exposed to price EV against) rather
+    than a fabricated even-money-fallback number."""
     ev = valuation.expected_value(line.get("model_prob"), line)
     return None if ev is None else round(ev * 100.0, 1)
 
@@ -72,14 +74,19 @@ def _drop(line: dict) -> dict:
         "position": line.get("position"),
         "startTime": line.get("start_time"),
         "source": line.get("source"),
+        "oddsType": (line.get("odds_type") or "standard").lower(),
+        "unpriced": valuation.is_unpriced(line),   # demon/goblin — no Edge %/EV, see valuation.py
     }
 
 
 def _projected(lines: list[dict]) -> list[dict]:
+    # Demon/goblin ARE included now (the engine projects them fine — 96% coverage, actually
+    # higher than standard) — they just carry no Edge %/EV (see valuation.is_unpriced) since
+    # PrizePicks doesn't expose their boosted payout. Projection/probability/confidence are
+    # still real and useful; only the priced-EV field is honestly absent for them.
     return [l for l in lines
             if l.get("model_proj") is not None and l.get("model_prob") is not None
             and l.get("line") is not None
-            and (l.get("odds_type") or "standard").lower() in ("standard", "boosted")
             and l.get("lineup_status") != "out"]
 
 
@@ -136,12 +143,20 @@ def build(lines: list[dict], updated_at: Optional[str],
     if sport and sport.lower() != "all":
         pool = [l for l in pool if (l.get("sport") or "").lower() == sport.lower()]
 
-    drops = sorted((_drop(l) for l in pool), key=lambda d: d["juiceScore"], reverse=True)
+    # demon/goblin lines are engineered to sit at an extreme threshold (that's how PrizePicks
+    # boosts the payout), so their decisiveness — and therefore juice_score — is structurally
+    # inflated by design, not earned. Left in the ranked pool they'd swamp every top-N surface
+    # (Daily Juice Drops, the Juice Leader tile, Best Value) with boosted lines instead of real
+    # picks. The dashboard's "picks" surfaces are scoped to priced (standard/boosted) props;
+    # demon/goblin are still fully browsable — with their real projection — on the Projections
+    # page (see dashboard.projections()'s odds_types param), just not ranked alongside priced plays.
+    priced = [l for l in pool if not valuation.is_unpriced(l)]
 
-    # Tiles — each from a real leader in the pool.
-    juice_leader = max(pool, key=lambda l: valuation.juice_score(l), default=None)
-    top_edge = max(pool, key=lambda l: (_edge_pct(l) or -999), default=None)
-    best_value = max(pool, key=lambda l: abs(l.get("model_edge") or 0), default=None)
+    drops = sorted((_drop(l) for l in priced), key=lambda d: d["juiceScore"], reverse=True)
+
+    juice_leader = max(priced, key=lambda l: valuation.juice_score(l), default=None)
+    top_edge = max(priced, key=lambda l: (_edge_pct(l) or -999), default=None)
+    best_value = max(priced, key=lambda l: abs(l.get("model_edge") or 0), default=None)
     moves = db.recent_prop_moves(limit=1)
     big_move = moves[0] if moves else None
 
@@ -175,10 +190,18 @@ def build(lines: list[dict], updated_at: Optional[str],
 
 
 def projections(lines: list[dict], sport: Optional[str] = None, stat: Optional[str] = None,
-                sort: str = "juice", limit: int = 400) -> list[dict]:
+                sort: str = "juice", limit: int = 400,
+                odds_types: tuple[str, ...] = ("standard", "boosted")) -> list[dict]:
     """Full enriched projected-props feed for the Projections / Props Center / Top Movers
-    views: every projected prop with juice/confidence/edge, filterable and sortable."""
+    views: every projected prop with juice/confidence/edge, filterable and sortable.
+
+    odds_types scopes the pool (default: priced standard/boosted only, matching the page's
+    long-standing behavior/payload size). Demon/goblin — structurally decisive by design, so
+    they'd otherwise dominate a juice-sorted list — are a separate opt-in slice; pass
+    odds_types=("demon","goblin") to get that lane instead. See dashboard.build()'s `priced`
+    comment for why they're kept out of the default ranked pool."""
     pool = _projected(lines)
+    pool = [l for l in pool if (l.get("odds_type") or "standard").lower() in odds_types]
     if sport and sport.lower() != "all":
         pool = [l for l in pool if (l.get("sport") or "").lower() == sport.lower()]
     if stat:

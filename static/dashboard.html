@@ -313,7 +313,7 @@ async function staticApi(path){
   const J=f=>fetch(DATA_BASE+f+'?t='+Math.floor(Date.now()/60000)).then(r=>r.json()).catch(()=>({}));
   switch(base){
     case '/api/dashboard': return J('dashboard.json');
-    case '/api/projections': return J('projections.json');
+    case '/api/projections': return J(q.get('boosted')==='true'?'boosted.json':'projections.json');
     case '/api/model/health': return J('model_health.json');
     case '/api/backtest': return J('backtest.json');
     case '/api/model/drift': return J('drift.json');
@@ -422,11 +422,11 @@ function closeSide(){$('.side').classList.remove('open');$('#sidescrim').classLi
 // ── shared prop table + rows ──
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
   <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.team||''} ${x.position?'· '+x.position:''}</div></div></div></td>
-  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)}</div><div class="p2">${x.stat||''}</div></td>
+  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${x.stat||''}</div></td>
   <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${x.team||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${x.opponent}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
   <td class="mono" style="font-weight:800">${fmt(x.projection)}</td>
   <td class="mono muted">${fmt(x.line)}</td>
-  <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${pct(x.edgePct)}</td>
+  <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${x.unpriced?'<span class="muted" style="font-weight:600;font-size:10.5px">not priced</span>':pct(x.edgePct)}</td>
   <td><span class="js" style="color:${jColor(x.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(x.juiceScore)}55">${x.juiceScore}</span></td>
   <td><div class="conf"><div class="track"><i style="width:${Math.round(x.confidence)}%"></i></div><b class="mono">${Math.round(x.confidence)}%</b></div></td>
   <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td></tr>`;
@@ -512,7 +512,12 @@ function drawSpark(sel,vals,proj,line){const S=$(sel);if(!S)return;const W=520,H
   }}
 
 let PROJ=[], PROJUP=null, SELID=null;
-const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25};
+// Demon/goblin — no known payout multiplier (see valuation.is_unpriced), so they're a separate,
+// opt-in lane instead of mixed into the default juice-sorted pool: their decisiveness is
+// structurally inflated by design (that's how the boosted payout works), so mixed in they'd
+// swamp real priced props out of every top-N view. Lazy-loaded only when the filter is enabled.
+let BOOSTED=[], BOOSTED_LOADED=false;
+const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25,showBoosted:false};
 const skelRows=(n=9,cols=14)=>Array.from({length:n},()=>`<tr class="skrow">${Array.from({length:cols},(_,i)=>`<td><span class="sk" style="width:${i?30+Math.floor(Math.random()*55):70}%"></span></td>`).join('')}</tr>`).join('');
 // Only books we actually pull. Logos via Google's favicon service (real brand marks, CORS-ok).
 const BOOKS=[
@@ -522,6 +527,10 @@ const BOOKS=[
 ];
 const bookMeta=s=>BOOKS.find(b=>b[0]===s);
 const bookLogo=(s,size=20)=>{const b=bookMeta(s);return b?`<img src="${b[2]}" width="${size}" height="${size}" style="border-radius:5px;object-fit:contain;background:#0e130d;flex:none;vertical-align:middle" title="${b[1]}" onerror="this.style.display='none'">`:'';};
+// Demon/goblin badge — PrizePicks' boosted lines. No known payout multiplier, so no Edge/EV
+// is shown for these (see valuation.is_unpriced); the badge is why.
+const oddsTypeBadge=x=>x.oddsType==='demon'?'<span class="chip r" style="padding:1px 6px;font-size:9px" title="Boosted line — payout not exposed, no EV shown">DEMON</span>'
+  :x.oddsType==='goblin'?'<span class="chip g" style="padding:1px 6px;font-size:9px" title="Boosted line — payout not exposed, no EV shown">GOBLIN</span>':'';
 
 async function vProjections(title,sub){
   $('#view').innerHTML=`<div class="proj-layout">
@@ -554,6 +563,7 @@ function renderFilters(){
   const catRow=([c,n])=>`<label class="chk"><input type="checkbox" ${PF.catsOff.has(c)?'':'checked'} onchange="togCat(this.dataset.c,this.checked)" data-c="${c.replace(/"/g,'&quot;')}">${c} <span style="color:var(--dim);margin-left:auto;font-size:10px">${n}</span></label>`;
   $('#filters').innerHTML=`<div class="fh"><h4>Filters</h4><span class="rst" onclick="resetPF()">Reset All</span></div>
    <div class="fg"><div class="gt">Sportsbooks</div>${BOOKS.map(([k,n])=>`<label class="chk"><input type="checkbox" ${PF.sources.has(k)?'checked':''} onchange="togSrc('${k}',this.checked)">${bookLogo(k,16)}${n}</label>`).join('')}</div>
+   <div class="fg"><div class="gt">Lines</div><label class="chk" title="PrizePicks boosted lines — no known payout multiplier, so no Edge %/EV, just the raw projection"><input type="checkbox" ${PF.showBoosted?'checked':''} onchange="togBoosted(this.checked)">Include Demon/Goblin (unpriced)</label></div>
    <div class="fg"><div class="gt">Prop Categories <span style="color:var(--dim);font-weight:600;margin-left:4px">${PF.projSport==='all'?'All Sports':PF.projSport}</span></div>${shown.map(catRow).join('')||'<span class="muted" style="font-size:11px">—</span>'}${more>0?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=true;renderFilters()">+ ${more} more</span>`:(PF.catsExpanded&&all.length>10?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=false;renderFilters()">Show less</span>`:'')}</div>
    <div class="fg"><div class="gt">Juice Score</div><div class="frange"><div class="lab"><span>${PF.juiceMin}</span><span>100</span></div><input type="range" min="0" max="100" value="${PF.juiceMin}" oninput="PF.juiceMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value;applyProj()"></div></div>
    <div class="fg"><div class="gt">Confidence</div><div class="frange"><div class="lab"><span>${PF.confMin}%</span><span>100%</span></div><input type="range" min="0" max="100" value="${PF.confMin}" oninput="PF.confMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
@@ -561,6 +571,14 @@ function renderFilters(){
    <div class="fg"><button class="btn pri" style="width:100%;justify-content:center" onclick="go('learn')">How scores work</button></div>`;
 }
 function togSrc(k,on){on?PF.sources.add(k):PF.sources.delete(k);applyProj()}
+async function togBoosted(on){
+  PF.showBoosted=on;
+  if(on&&!BOOSTED_LOADED){
+    try{const r=await api('/api/projections?boosted=true&limit=500');BOOSTED=r.projections||[]}catch(e){BOOSTED=[]}
+    BOOSTED_LOADED=true;
+  }
+  PF.page=1;applyProj();
+}
 function togCat(c,on){on?PF.catsOff.delete(c):PF.catsOff.add(c);PF.page=1;applyProj()}
 function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;render()}
 function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move;
@@ -584,7 +602,7 @@ function renderToolbar(){
 function tbClick(k){if(k==='high')PF.high=!PF.high;if(k==='watch')PF.onlyWatch=!PF.onlyWatch;PF.page=1;renderToolbar();applyProj()}
 function setSort(k){if(!k)return;if(PF.sort===k)PF.dir=-(PF.dir||-1);else{PF.sort=k;PF.dir=(k==='player'||k==='opp')?1:-1}PF.page=1;applyProj()}
 function applyProj(){
-  let rows=PROJ.filter(p=>PF.sources.has(p.source));
+  let rows=(PF.showBoosted?PROJ.concat(BOOSTED):PROJ).filter(p=>PF.sources.has(p.source));
   if(PF.projSport!=='all')rows=rows.filter(p=>(p.sport||'').toLowerCase()===PF.projSport.toLowerCase());
   if(PF.catsOff.size)rows=rows.filter(p=>!PF.catsOff.has((p.stat||'').trim()));
   rows=rows.filter(p=>p.juiceScore>=PF.juiceMin && (p.confidence||0)>=PF.confMin && (p.edgePct==null||p.edgePct>=PF.edgeMin));
@@ -608,11 +626,11 @@ const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.
   <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.position||''} ${x.startTime?'· '+timeOf(x.startTime):''}</div></div></div></td>
   <td><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">${teamBadge(x,18)} ${x.team||''}</span></td>
   <td class="muted">${x.opponent?`${x.isHome?'vs':'@'} ${x.opponent}`:'—'}</td>
-  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)}</div><div class="p2">${x.stat||''}</div></td>
+  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${x.stat||''}</div></td>
   <td>${bookLogo(x.source,22)}</td>
   <td class="mono muted">${fmt(x.line)}</td>
   <td class="mono" style="font-weight:800">${fmt(x.projection)}</td>
-  <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${pct(x.edgePct)}</td>
+  <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800" title="${x.unpriced?'PrizePicks doesn\'t expose this boosted line\'s real payout, so EV can\'t be honestly computed.':''}">${x.unpriced?'<span class="muted" style="font-weight:600;font-size:10.5px">not priced</span>':pct(x.edgePct)}</td>
   <td><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66">${x.juiceScore}</span></td>
   <td><div class="conf"><div class="track"><i style="width:${Math.round(x.confidence)}%"></i></div><b class="mono">${Math.round(x.confidence)}%</b></div></td>
   <td class="mono muted">${prob(x.probability)}</td>
@@ -1171,11 +1189,13 @@ function confBreakdown(x){
 const EV_TIP='The estimated mathematical advantage based on Juiced\'s calibrated probability compared to the sportsbook\'s implied probability — not simply a percent of the projection\'s distance from the line.';
 function edgeEvKV(x){
   const edge=x.edge!=null?x.edge:(x.projection!=null&&x.line!=null?+(x.projection-x.line).toFixed(2):null);
+  const evTitle=x.unpriced?'PrizePicks doesn\'t expose this boosted line\'s real payout multiplier, so EV can\'t be honestly computed.':EV_TIP;
+  const evVal=x.unpriced?'<span class="muted" style="font-size:15px;font-weight:700">not priced</span>':pct(x.edgePct);
   return `<div class="kv">
     <div class="b"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div>
-    <div class="b"><div class="l">Line</div><div class="v">${fmt(x.line)}</div></div>
+    <div class="b"><div class="l">Line</div><div class="v">${fmt(x.line)} ${oddsTypeBadge(x)}</div></div>
     <div class="b" title="Projection − Line"><div class="l">Edge</div><div class="v ${edge>=0?'pos':'neg'}">${signed(edge)}</div></div>
-    <div class="b" title="${EV_TIP}"><div class="l">Expected Value <span class="muted" style="cursor:help">ⓘ</span></div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div>
+    <div class="b" title="${evTitle}"><div class="l">Expected Value <span class="muted" style="cursor:help">ⓘ</span></div><div class="v ${x.unpriced?'':(x.edgePct>=0?'pos':'neg')}">${evVal}</div></div>
     <div class="b"><div class="l">Over Probability</div><div class="v">${prob(x.probability)}</div></div>
     <div class="b"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div>
   </div>`;
@@ -1196,7 +1216,7 @@ function corrHTML(x){const st=(x.stat||'');
 async function openProp(x,tab){
   SELID=x.id; if(cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}
   const D=$('#drawer');$('#scrim').classList.add('open');D.classList.add('open');
-  D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${x.player}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${x.team||''} · ${cap(x.side)} ${fmt(x.line)} ${x.stat}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
+  D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${x.player} ${oddsTypeBadge(x)}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${x.team||''} · ${cap(x.side)} ${fmt(x.line)} ${x.stat}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
    <div class="dsec" style="border:0;padding-bottom:0"><button class="btn" style="width:100%;justify-content:center" onclick='goPlayer(${JSON.stringify(x.player).replace(/'/g,"&#39;")})'>${icon('user',13)} View Full Player Page</button></div>
    <div class="dsec">${edgeEvKV(x)}</div>
    <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="simkv"></div></div>

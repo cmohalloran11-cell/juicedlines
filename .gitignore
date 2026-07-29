@@ -27,6 +27,7 @@ static/trust.json
 # the static frontend in place of /api/*. Same deal as board.json: artifacts, not source.
 static/dashboard.json
 static/projections.json
+static/boosted.json
 static/injuries.json
 static/weather.json
 static/books.json

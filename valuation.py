@@ -61,10 +61,21 @@ def _decimal_odds(implied: Optional[float], line: Optional[dict[str, Any]] = Non
     return 2.0  # genuinely unpriced (no per-side odds, no pick'em price) → even money
 
 
+# PrizePicks demon/goblin legs carry their own boosted-payout multiplier that this feed does
+# NOT expose (pullers.py leaves pickem_price None for them on purpose). There is no real price
+# to compute EV/Kelly against for these — returning a number anyway (even the even-money
+# fallback) would be exactly the fabricated-number problem the Edge/EV audit removed.
+_UNPRICED_ODDS_TYPES = {"demon", "goblin"}
+
+
+def is_unpriced(line: dict[str, Any]) -> bool:
+    return (line.get("odds_type") or "standard").lower() in _UNPRICED_ODDS_TYPES
+
+
 def expected_value(model_prob: float, line: dict[str, Any]) -> Optional[float]:
     """EV per $1 staked on the model's favored side. Positive = model sees value. None if
-    there is no probability to work with."""
-    if model_prob is None:
+    there is no probability to work with, or the line has no real payout to price against."""
+    if model_prob is None or is_unpriced(line):
         return None
     _side, p, implied = _favored_side(float(model_prob), line)
     d = _decimal_odds(implied, line)
@@ -74,7 +85,7 @@ def expected_value(model_prob: float, line: dict[str, Any]) -> Optional[float]:
 def kelly_fraction(model_prob: float, line: dict[str, Any], cap: float = 0.25) -> Optional[float]:
     """Fraction of bankroll to stake by the Kelly criterion on the favored side, capped
     (quarter-Kelly by default — full Kelly is too aggressive for noisy prop models)."""
-    if model_prob is None:
+    if model_prob is None or is_unpriced(line):
         return None
     _side, p, implied = _favored_side(float(model_prob), line)
     d = _decimal_odds(implied, line)
