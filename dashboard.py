@@ -101,7 +101,9 @@ def _movers(limit: int = 5) -> dict:
         lm = (r.get("close_line") or 0) - (r.get("open_line") or 0)
         if abs(lm) > 1e-9:
             line_moves.append({"player": r["player"], "stat": r["stat_type"],
-                               "sport": r["sport"], "move": round(lm, 1)})
+                               "sport": r["sport"], "move": round(lm, 1),
+                               "book": r.get("source"), "open_line": r.get("open_line"),
+                               "close_line": r.get("close_line")})
         op, cp = r.get("open_proj"), r.get("close_proj")
         if op is not None and cp is not None and abs(cp - op) > 1e-9:
             entry = {"player": r["player"], "stat": r["stat_type"],

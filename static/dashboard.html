@@ -624,16 +624,26 @@ async function vInjuries(){
    <div class="panel">${inj.length?`<table class="drops"><thead><tr><th>Player</th><th>Status</th><th>Note</th></tr></thead><tbody>${inj.map(x=>`<tr><td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player}</div><div class="tm">${ico(x.sport)} ${x.team||''}</div></div></div></td><td><span class="chip ${x.status==='OUT'?'r':'y'}">${x.status}</span></td><td class="muted">${x.note}</td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('check',30,'var(--accent)')}</div>No scratches or IL returns flagged right now.<br><span class="muted" style="font-size:11.5px">Injury flags appear once teams post lineups. A full injury feed (probable/questionable/out) needs a dedicated provider.</span></div>`}</div>`;
 }
 async function vMarket(){
-  const [h,d]=await Promise.all([api('/api/model/health?sport=MLB'),api('/api/dashboard?sport=all')]);
+  const [h,d,pr]=await Promise.all([api('/api/model/health?sport=MLB'),api('/api/dashboard?sport=all'),api('/api/projections?sort=juice&limit=200')]);
   const s=(h.sports||{}).MLB||{},clv=s.clv||{},m=d.movers||{};
+  MKT_PROJ=pr.projections||[];
   $('#view').innerHTML=`<div class="ph2"><div><h2>Market Intel</h2><p>How the model's opinion tracks vs the closing line — CLV and line movement.</p></div></div>
    <div class="kv" style="margin-bottom:16px">
      <div class="b"><div class="l">Hit Rate vs Close (MLB)</div><div class="v ${s.beats_breakeven?'pos':''}">${s.hit_rate_vs_close!=null?(s.hit_rate_vs_close*100).toFixed(1)+'%':'—'}</div><div class="muted" style="font-size:11px">breakeven ${(s.breakeven*100||52.4).toFixed(1)}% · ${s.decided||0} decided</div></div>
      <div class="b"><div class="l">CLV Positive</div><div class="v">${clv.positive_pct!=null?(clv.positive_pct*100).toFixed(0)+'%':'—'}</div><div class="muted" style="font-size:11px">avg move ${signed(clv.avg_move)} · n=${clv.n||0}</div></div>
      <div class="b"><div class="l">Graded Props</div><div class="v">${(s.graded_props||0).toLocaleString()}</div><div class="muted" style="font-size:11px">from the live CLV ledger</div></div>
      <div class="b"><div class="l">Interval Widening</div><div class="v">×${s.interval_widening_factor||1}</div><div class="muted" style="font-size:11px">to honest 80% coverage</div></div></div>
-   <div class="panel"><div class="phead"><h3>Biggest Line Moves Today</h3></div>${(m.line_moves||[]).length?m.line_moves.map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${x.player}</div><div class="sub">${ico(x.sport)} ${x.stat}</div></div><span class="mval ${x.move>=0?'pos':'neg'}">${signed(x.move)}</span></div>`).join(''):'<div class="mv muted">No line moves logged yet today.</div>'}</div>`;
+   <div class="panel"><div class="phead"><h3>Line Movement</h3><span class="hint">pick a prop</span></div>
+     <div style="padding:0 16px 8px"><select class="ctl" id="mkt-pick" style="width:100%" onchange="loadMktSpark(this.value)">${MKT_PROJ.slice(0,60).map((p,i)=>`<option value="${i}">${p.player} — ${p.stat} (${p.team||''})</option>`).join('')}</select></div>
+     <div style="padding:6px 16px 14px"><svg class="spark" id="mkt-spark" viewBox="0 0 520 150" preserveAspectRatio="none"></svg></div></div>
+   <div class="panel"><div class="phead"><h3>Top Line Moves <span class="hint">open → current, by book</span></h3></div>${(m.line_moves||[]).length?`<table class="drops" style="margin:0"><thead><tr><th>Player</th><th>Prop</th><th>Book</th><th>Open</th><th>Current</th><th>Move</th></tr></thead><tbody>${m.line_moves.map(x=>`<tr><td><div class="nm">${x.player}</div><div class="tm">${ico(x.sport)} ${x.stat}</div></td><td class="muted">${x.stat}</td><td>${x.book?bookLogo(x.book,18):'—'}</td><td class="mono muted">${fmt(x.open_line)}</td><td class="mono">${fmt(x.close_line)}</td><td class="mono ${x.move>=0?'pos':'neg'}" style="font-weight:800">${signed(x.move)}</td></tr>`).join('')}</tbody></table>`:'<div class="mv muted">No line moves logged yet today.</div>'}</div>`;
+  if(MKT_PROJ.length)loadMktSpark(0);
 }
+let MKT_PROJ=[];
+async function loadMktSpark(idx){const p=MKT_PROJ[+idx];if(!p)return;
+  let pts=[p.line,p.line];try{const hres=(await api('/api/lines/history?id='+encodeURIComponent(p.id)+'&limit=40')).history||[];
+    const v=hres.map(x=>x.line_value).filter(x=>x!=null);if(v.length>1)pts=v}catch(e){}
+  drawSpark('#mkt-spark',pts,p.projection,p.line);}
 async function vLeaderboards(){
   const [h,p,bt,dr]=await Promise.all([api('/api/model/health'),api('/api/projections?sort=juice&limit=10'),api('/api/backtest?sport=MLB').catch(()=>({})),api('/api/model/drift?sport=MLB').catch(()=>({}))]);
   const sports=h.sports||{};
