@@ -50,6 +50,7 @@ def _opp_by_abbr() -> dict:
 
 def _drop(line: dict) -> dict:
     opp = _opp_by_abbr().get(line.get("team")) if line.get("sport") == "MLB" else None
+    rec = valuation.recommend_side(line.get("model_prob"), line)
     return {
         "id": line.get("id"),
         "player": line.get("player"),
@@ -68,7 +69,10 @@ def _drop(line: dict) -> dict:
         "juiceScore": valuation.juice_score(line),
         "confidence": valuation.confidence_score(line),
         "confidenceFactors": valuation.confidence_factors(line),  # real per-prop breakdown (not a constant)
-        "side": "over" if (line.get("model_prob") or 0) >= 0.5 else "under",
+        # The side we'd actually recommend: highest-EV AVAILABLE side (valuation.recommend_side),
+        # not just whichever side model_prob favors — a multiplier book can make the less-likely
+        # side the better bet, and a side the book doesn't offer is never recommended.
+        "side": rec["side"] if rec else None,
         "headshot": line.get("headshot"),
         "teamLogo": line.get("team_logo"),
         "position": line.get("position"),
@@ -80,23 +84,32 @@ def _drop(line: dict) -> dict:
 
 
 def _projected(lines: list[dict]) -> list[dict]:
-    # Demon/goblin ARE included now (the engine projects them fine — 96% coverage, actually
-    # higher than standard) — they just carry no Edge %/EV (see valuation.is_unpriced) since
-    # PrizePicks doesn't expose their boosted payout. Projection/probability/confidence are
-    # still real and useful; only the priced-EV field is honestly absent for them.
-    return [l for l in lines
-            if l.get("model_proj") is not None and l.get("model_prob") is not None
-            and l.get("line") is not None
-            and l.get("lineup_status") != "out"]
+    # Demon/goblin ARE included (the engine projects them fine — 96% coverage, actually higher
+    # than standard) — they just carry no Edge %/EV (see valuation.is_unpriced) since PrizePicks
+    # doesn't expose their boosted payout, and are always "over" (you can't take Under on a
+    # boosted leg — valuation.recommend_side). Everything else must have a real, offered,
+    # priceable side (valuation.recommend_side returns non-None) — a prop where the book offers
+    # NEITHER side priced (rare on Underdog/Sleeper) is dropped rather than shown as a bet that
+    # can't actually be placed.
+    out = []
+    for l in lines:
+        if (l.get("model_proj") is None or l.get("model_prob") is None
+                or l.get("line") is None or l.get("lineup_status") == "out"):
+            continue
+        if valuation.recommend_side(l.get("model_prob"), l) is None:
+            continue
+        out.append(l)
+    return out
 
 
 def _tile(line: Optional[dict], value: Any, label: str) -> Optional[dict]:
     if not line:
         return None
+    rec = valuation.recommend_side(line.get("model_prob"), line)
     return {
         "player": line.get("player"), "team": line.get("team"),
         "stat": line.get("stat_type"), "line": line.get("line"),
-        "side": "over" if (line.get("model_prob") or 0) >= 0.5 else "under",
+        "side": rec["side"] if rec else None,
         "headshot": line.get("headshot"), "value": value, "label": label,
     }
 

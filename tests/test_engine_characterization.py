@@ -145,6 +145,31 @@ def test_runs_allowed_is_scaled_above_earned_runs():
     assert out["runs_allowed"].mean == pytest.approx(out["earned_runs"].mean * 1.0904, rel=0.02)
 
 
+def test_projection_direction_always_agrees_with_prob_over():
+    # 2026-07-29 Over/Under bias audit: on a right-skewed count-stat sample array (e.g.
+    # Hits+Runs+RBIs at a low line), the MEAN can sit above the line while fewer than half
+    # the samples clear it — a mean-based "projection" would then show Projection > Line
+    # while P(Over) < 50%, visually contradicting the recommended Under. This is the
+    # mathematical guarantee that fix relies on: with projection = MEDIAN of the same sample
+    # array prob_over is computed from, "projection > line" can never coincide with
+    # "prob_over < 0.5" for ANY sample array/line combination.
+    rng = np.random.default_rng(1)
+    for line in (0.5, 1.5, 2.5, 6.5):
+        for _ in range(20):
+            # negative-binomial-like: skewed, integer-valued, mean pulled up by a long tail
+            samples = rng.negative_binomial(2, 0.4, 3000).astype(float)
+            from projector.models.base import Projection
+            proj_obj = Projection(stat="x", mean=float(samples.mean()),
+                                   median=float(np.median(samples)), p25=0.0, p75=0.0,
+                                   floor=0.0, ceiling=0.0, std=1.0, samples=samples)
+            out = pb._payload(proj_obj, line)
+            projection, prob_over = out["projection"], out["prob_over"]
+            if projection > line:
+                assert prob_over >= 0.5, (projection, line, prob_over)
+            elif projection < line:
+                assert prob_over <= 0.5, (projection, line, prob_over)
+
+
 def test_plate_appearances_resolves_through_for_stat():
     # for_stat's alias table must map the human prop label to the engine key end to end.
     from projector.models.base import Projection
@@ -154,6 +179,10 @@ def test_plate_appearances_resolves_through_for_stat():
         stat="plate_appearances", mean=4.2, median=4.0, p25=3.0, p75=5.0,
         floor=2.0, ceiling=7.0, std=2.0, samples=samples)}
     out = pb.for_stat(projs, "Plate Appearances", 3.5, is_pitcher=False)
-    assert out is not None and out["projection"] == pytest.approx(4.2, abs=0.01)
+    # projection is the MEDIAN of the sample distribution, not the mean (2026-07-29 Over/Under
+    # bias audit) — guarantees Projection > Line always agrees in direction with P(Over) > 50%.
+    # Poisson(4.2) median is 4.0 (the mean 4.2 is preserved separately in model_raw).
+    assert out is not None and out["projection"] == pytest.approx(4.0, abs=0.01)
+    assert out["model_raw"] == pytest.approx(4.2, abs=0.01)
     out2 = pb.for_stat(projs, "PA", 3.5, is_pitcher=False)   # the short alias too
     assert out2 is not None

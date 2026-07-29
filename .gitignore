@@ -28,6 +28,7 @@ static/trust.json
 static/dashboard.json
 static/projections.json
 static/boosted.json
+static/direction_report.json
 static/injuries.json
 static/weather.json
 static/books.json

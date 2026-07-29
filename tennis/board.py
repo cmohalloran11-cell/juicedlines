@@ -110,9 +110,14 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
                 # upstream now, so trust the model.
                 center = blended
                 arr_line = arr + (center - model_mean)
+                # Projection = the MEDIAN of this same shifted array, not the mean (`center`) —
+                # guarantees Projection and the recommended side always agree in direction
+                # (median > line ⇒ P(X > line) ≥ 0.5 on the same sample set). See the MLB/WNBA
+                # engines for the same fix. (2026-07-29 Over/Under bias audit.)
+                med = float(np.median(arr_line))
                 l["model_prob"] = round(float((arr_line > line).mean()), 4)
-                l["model_proj"] = round(center, 2)
-                l["model_edge"] = round(center - line, 1)
+                l["model_proj"] = round(med, 2)
+                l["model_edge"] = round(med - line, 1)
                 # Be honest about what the number IS. Fully anchored → the projection is the
                 # market's own median standard line, NOT a model call, and any apparent "edge"
                 # is just this variant's distance from that median (demons/goblins sit far off

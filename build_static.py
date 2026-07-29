@@ -21,6 +21,7 @@ import pullers
 import analytics
 import books
 import valuation
+import dataos
 
 # FAST refresh: rebuild only what actually changes minute-to-minute — the LINES (board.json)
 # and their movement (history.json). Measured 2026-07-19, a full build is 433s of which
@@ -154,6 +155,29 @@ def main() -> None:
         analytics.attach_projections(lines)
     except Exception as exc:
         errors["projections"] = str(exc)
+
+    # Direction-invariant validation (2026-07-29 Over/Under bias audit): every exported
+    # projection must satisfy Projection > Line ⇒ P(Over) > 50% (and the reverse). The engines
+    # now report the MEDIAN of the same sample array model_prob comes from specifically to
+    # GUARANTEE this (see dataos.direction_report's docstring) — this is the runtime safety
+    # net, and reject=True means any violation found is actually dropped from the board
+    # (dashboard._projected() already requires model_proj/model_prob, so nulling them here is
+    # enough), not just logged. Should print ~0 violations; any it finds are worth investigating.
+    dreport: dict = {}
+    try:
+        dreport = dataos.direction_report(lines, reject=True)
+        dist = dreport["distribution"]
+        print(f"::group::Direction check — {dreport['violations']}/{dreport['checked']} "
+              f"violated the Projection/Probability invariant (rejected) | board: "
+              f"{dist['over']} over ({dist['pct_over']}%) / {dist['under']} under ({dist['pct_under']}%)")
+        for b in dreport["violations_by_sport_and_kind"].items():
+            print(f"  {b[0]}: {b[1]}")
+        for v in dreport["sample_violations"]:
+            print(f"  REJECTED  {v['player']} — {v['stat']} ({v['source']}/{v['proj_kind']}) "
+                  f"line {v['line']}, proj {v['projection']}, prob_over {v['prob_over']}")
+        print("::endgroup::")
+    except Exception as exc:
+        errors["direction_audit"] = str(exc)
 
     # EV quality safeguard (Edge/EV audit): log any USER-FACING projection whose EV
     # exceeds EV_REVIEW_THRESHOLD (env, default 60% — see valuation.py for why not 15%).
@@ -374,6 +398,10 @@ def main() -> None:
                          "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY"),
                          "ai": False, "dev_mode": False, "static": True})
         _w("dashboard.json", _dash.build(lines, updated, errors))
+        # Diagnostics deliverable for the Over/Under bias audit — violation count, root cause
+        # by sport/engine, and the before-rejection Over/Under distribution. Also the data
+        # source for the planned admin Model Bias Monitor.
+        _w("direction_report.json", {**dreport, "updated_at": updated})
         extra_json = ""
         if not FAST:
             import model_health as _mh

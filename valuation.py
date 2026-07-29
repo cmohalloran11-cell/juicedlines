@@ -14,8 +14,14 @@ probabilities from the book's price. For a side with implied prob q, the offered
 odds are D = 1/q, so:
     EV per $1 stake = model_p * D - 1 = model_p / q - 1
     Kelly fraction  = (D*model_p - 1) / (D - 1) = (model_p - q) / (1 - q)
-We evaluate the side the model favors (over if model_prob >= 0.5, else under). Pick'em books
-without a per-side price fall back to an even-money payout (D = 2.0).
+
+Side selection (`recommend_side`) picks whichever AVAILABLE side has the higher EV — NOT
+whichever the model gives >50% probability. This matters for multiplier books (Sleeper,
+Underdog): a 30%-likely Over at a 4.0x payout can beat a 70%-likely Under at a thin 1.1x
+payout, and a side with no price at all (the book doesn't offer it — e.g. some Home Run
+props are Over-only) is never recommended even if the model likes it. Pick'em books without
+a per-side price fall back to an even-money payout (D = 2.0) on whichever side(s) they do
+offer (PrizePicks standard legs: same flat payout either way, both sides always offered).
 """
 from __future__ import annotations
 
@@ -25,13 +31,6 @@ from typing import Any, Optional
 
 def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
-
-
-def _favored_side(model_prob: float, line: dict[str, Any]) -> tuple[str, float, Optional[float]]:
-    """Return (side, model_p_for_side, implied_p_for_side). implied may be None."""
-    if model_prob >= 0.5:
-        return "over", model_prob, line.get("over_implied")
-    return "under", 1.0 - model_prob, line.get("under_implied")
 
 
 def _american_to_decimal(american: Any) -> Optional[float]:
@@ -46,25 +45,27 @@ def _american_to_decimal(american: Any) -> Optional[float]:
     return None
 
 
-def _decimal_odds(implied: Optional[float], line: Optional[dict[str, Any]] = None) -> float:
-    """Offered decimal odds. Priority: a real per-side implied prob (Underdog/Sleeper) >
-    the book's flat pick'em price (PrizePicks standard legs — same payout on every leg
-    regardless of side, so it applies whichever side we favor) > even-money as a last resort
-    for the rare line with neither (previously the ONLY behavior — silently pricing every
-    PrizePicks leg at 0% vig instead of its real ~15pp pick'em vig)."""
+def _side_decimal_odds(line: dict[str, Any], side: str) -> Optional[float]:
+    """Decimal odds actually offered for ONE side, or None if that side isn't offered at all.
+    Real per-side implied prob (Underdog/Sleeper, from that side's own multiplier/price) wins;
+    PrizePicks' flat pick'em price applies to either side (real PrizePicks: same payout no
+    matter which way you pick on a standard leg). A side with neither — a genuine per-side
+    price missing on a source that DOES report per-side prices (Underdog/Sleeper) — means the
+    book doesn't actually offer that side for this leg (e.g. an Over-only Home Run prop); we
+    must not invent a price for it."""
+    implied = line.get(f"{side}_implied")
     if implied and 0.0 < implied < 1.0:
         return 1.0 / implied
-    if line is not None:
-        d = _american_to_decimal(line.get("pickem_price"))
-        if d and d > 1.0:
-            return d
-    return 2.0  # genuinely unpriced (no per-side odds, no pick'em price) → even money
+    d = _american_to_decimal(line.get("pickem_price"))
+    return d if d and d > 1.0 else None
 
 
 # PrizePicks demon/goblin legs carry their own boosted-payout multiplier that this feed does
 # NOT expose (pullers.py leaves pickem_price None for them on purpose). There is no real price
 # to compute EV/Kelly against for these — returning a number anyway (even the even-money
-# fallback) would be exactly the fabricated-number problem the Edge/EV audit removed.
+# fallback) would be exactly the fabricated-number problem the Edge/EV audit removed. They are
+# also structurally single-sided on PrizePicks: you can only take the boosted direction, never
+# the Under — see recommend_side().
 _UNPRICED_ODDS_TYPES = {"demon", "goblin"}
 
 
@@ -72,24 +73,53 @@ def is_unpriced(line: dict[str, Any]) -> bool:
     return (line.get("odds_type") or "standard").lower() in _UNPRICED_ODDS_TYPES
 
 
+def recommend_side(model_prob: Optional[float], line: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """The side to actually recommend: whichever AVAILABLE side has the higher EV, not
+    whichever the model gives >50% to. Returns None when there's no probability, or the book
+    offers neither side for this leg (don't recommend a bet that can't be placed).
+
+    Demon/goblin are always "over" (PrizePicks doesn't let you take Under on a boosted leg)
+    and carry no EV/price — the boosted payout isn't exposed by the feed, so we don't guess.
+    """
+    if model_prob is None:
+        return None
+    if is_unpriced(line):
+        return {"side": "over", "p": float(model_prob), "decimal_odds": None, "ev": None}
+    p = float(model_prob)
+    candidates = []
+    over_d = _side_decimal_odds(line, "over")
+    if over_d is not None:
+        candidates.append({"side": "over", "p": p, "decimal_odds": over_d,
+                           "ev": round(p * over_d - 1.0, 4)})
+    under_d = _side_decimal_odds(line, "under")
+    if under_d is not None:
+        q = 1.0 - p
+        candidates.append({"side": "under", "p": q, "decimal_odds": under_d,
+                           "ev": round(q * under_d - 1.0, 4)})
+    if not candidates:
+        return None
+    return max(candidates, key=lambda c: c["ev"])
+
+
 def expected_value(model_prob: float, line: dict[str, Any]) -> Optional[float]:
-    """EV per $1 staked on the model's favored side. Positive = model sees value. None if
-    there is no probability to work with, or the line has no real payout to price against."""
+    """EV per $1 staked on the recommended side. Positive = model sees value. None if there's
+    no probability, no priceable/offered side, or the line is a demon/goblin (unpriced)."""
     if model_prob is None or is_unpriced(line):
         return None
-    _side, p, implied = _favored_side(float(model_prob), line)
-    d = _decimal_odds(implied, line)
-    return round(p * d - 1.0, 4)
+    rec = recommend_side(model_prob, line)
+    return rec["ev"] if rec else None
 
 
 def kelly_fraction(model_prob: float, line: dict[str, Any], cap: float = 0.25) -> Optional[float]:
-    """Fraction of bankroll to stake by the Kelly criterion on the favored side, capped
+    """Fraction of bankroll to stake by the Kelly criterion on the recommended side, capped
     (quarter-Kelly by default — full Kelly is too aggressive for noisy prop models)."""
     if model_prob is None or is_unpriced(line):
         return None
-    _side, p, implied = _favored_side(float(model_prob), line)
-    d = _decimal_odds(implied, line)
-    if d <= 1.0:
+    rec = recommend_side(model_prob, line)
+    if not rec:
+        return None
+    d, p = rec["decimal_odds"], rec["p"]
+    if not d or d <= 1.0:
         return 0.0
     f = (d * p - 1.0) / (d - 1.0)
     return round(_clamp(f, 0.0, cap), 4)
@@ -204,15 +234,15 @@ def audit_ev(line: dict[str, Any], threshold: Optional[float] = None) -> Optiona
     prob = line.get("model_prob")
     if prob is None:
         return None
-    ev = expected_value(prob, line)
-    if ev is None or ev <= th:
+    rec = recommend_side(float(prob), line)
+    if not rec or rec["ev"] is None or rec["ev"] <= th:
         return None
-    side, p, implied = _favored_side(float(prob), line)
+    real_implied = line.get(f"{rec['side']}_implied")
     return {
-        "flagged": True, "ev": ev, "threshold": th, "side": side,
-        "model_prob_for_side": round(p, 4),
-        "implied_prob_used": implied if (implied and 0 < implied < 1) else None,
-        "used_pickem_fallback": not (implied and 0 < implied < 1),
+        "flagged": True, "ev": rec["ev"], "threshold": th, "side": rec["side"],
+        "model_prob_for_side": round(rec["p"], 4),
+        "implied_prob_used": real_implied if (real_implied and 0 < real_implied < 1) else None,
+        "used_pickem_fallback": not (real_implied and 0 < real_implied < 1),
         "player": line.get("player"), "stat": line.get("stat_type"),
         "line": line.get("line"), "projection": line.get("model_proj"),
         "source": line.get("source"), "id": line.get("id"),
@@ -220,16 +250,20 @@ def audit_ev(line: dict[str, Any], threshold: Optional[float] = None) -> Optiona
 
 
 def valuation(line: dict[str, Any]) -> dict:
-    """Full valuation bundle for one projection: the favored side + EV, Kelly, confidence,
-    and Juice Score. Returns {available: False} when there's nothing to value."""
+    """Full valuation bundle for one projection: the recommended side + EV, Kelly, confidence,
+    and Juice Score. Returns {available: False} when there's nothing to value, or the book
+    offers no side of this leg that we know how to price."""
     prob = line.get("model_prob")
     proj = line.get("model_proj")
     if prob is None or proj is None or line.get("line") is None:
         return {"available": False, "reason": "No model projection/probability for this line."}
-    side, _p, implied = _favored_side(float(prob), line)
+    rec = recommend_side(float(prob), line)
+    if not rec:
+        return {"available": False, "reason": "Neither side of this line is offered by the book."}
+    implied = (1.0 / rec["decimal_odds"]) if rec.get("decimal_odds") else None
     return {
         "available": True,
-        "side": side,
+        "side": rec["side"],
         "line": line.get("line"),
         "projection": proj,
         "edge": line.get("model_edge"),

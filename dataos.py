@@ -87,3 +87,73 @@ def health(lines: list[dict[str, Any]], updated_at: Optional[str],
             "error_clean_w0.15": round(error_penalty, 3),
         },
     }
+
+
+# ─────────────────────────── direction-invariant validation ──────────────────
+# 2026-07-29 Over/Under bias audit: every exported projection must satisfy
+#   Projection > Line  ⇒  P(Over) > 50%
+#   Projection < Line  ⇒  P(Over) < 50%
+# The projection engines now report the MEDIAN of the same sample array model_prob is
+# computed from (projector_bridge.py, basketball/board.py, tennis/board.py), which
+# mathematically guarantees this — see tests/test_engine_characterization.py's
+# test_projection_direction_always_agrees_with_prob_over for the proof. This check is the
+# runtime safety net: it should find ~0 violations going forward; any it finds are real bugs
+# to investigate, not swept under a silent tolerance.
+
+def validate_direction(lines: list[dict[str, Any]], reject: bool = False) -> list[dict[str, Any]]:
+    """Return every line that violates the Projection/Probability direction invariant, with
+    enough context (player/stat/line/projection/prob/source) to investigate without re-deriving
+    anything. Empty list = a clean board.
+
+    reject=True mutates the offending line dicts in place — clears model_proj/model_prob/
+    model_edge and sets direction_rejected=True — so downstream filters (dashboard._projected(),
+    which already requires model_proj/model_prob to be non-None) exclude them from the board
+    automatically. "Reject any projection that violates this rule" — this IS the rejection."""
+    bad = []
+    for l in lines:
+        proj, line, prob = l.get("model_proj"), l.get("line"), l.get("model_prob")
+        if proj is None or line is None or prob is None:
+            continue
+        violated = (proj > line and prob < 0.5) or (proj < line and prob > 0.5)
+        if violated:
+            bad.append({
+                "id": l.get("id"), "player": l.get("player"), "sport": l.get("sport"),
+                "stat": l.get("stat_type"), "source": l.get("source"),
+                "proj_kind": l.get("proj_kind"), "line": line, "projection": proj,
+                "prob_over": prob,
+            })
+            if reject:
+                l["model_proj"] = None
+                l["model_prob"] = None
+                l["model_edge"] = None
+                l["direction_rejected"] = True
+    return bad
+
+
+def direction_report(lines: list[dict[str, Any]], reject: bool = False) -> dict[str, Any]:
+    """Diagnostics deliverable for the Over/Under bias audit: violation count, a root-cause
+    breakdown by proj_kind/sport (so a regression shows up as a specific engine, not a vague
+    number), and the current Over/Under distribution of the exported board. Computes the
+    distribution BEFORE any rejection so it reflects what the board actually contained."""
+    checked = [l for l in lines
+               if l.get("model_proj") is not None and l.get("line") is not None
+               and l.get("model_prob") is not None]
+    over = sum(1 for l in checked if (l.get("model_prob") or 0) >= 0.5)
+    under = len(checked) - over
+    bad = validate_direction(lines, reject=reject)
+    by_kind: dict[str, int] = {}
+    for b in bad:
+        k = f"{b.get('sport')}/{b.get('proj_kind')}"
+        by_kind[k] = by_kind.get(k, 0) + 1
+    return {
+        "checked": len(checked),
+        "violations": len(bad),
+        "violation_rate": round(len(bad) / len(checked), 4) if checked else None,
+        "violations_by_sport_and_kind": by_kind,
+        "sample_violations": bad[:15],
+        "distribution": {
+            "over": over, "under": under,
+            "pct_over": round(100.0 * over / len(checked), 1) if checked else None,
+            "pct_under": round(100.0 * under / len(checked), 1) if checked else None,
+        },
+    }

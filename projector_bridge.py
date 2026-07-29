@@ -291,17 +291,23 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
 def _payload(p, line, correction: float = 0.0, trust: float | None = None,
              anchor: float | None = None, width: float | None = None) -> dict:
     # Compute from the sample distribution so a calibration `correction` and the `trust`
-    # anchor shift the projection AND prob_over together. Projection = the MEAN (continuous);
-    # the median of integer count samples is lumpy.
+    # anchor shift the projection AND prob_over together. Projection = the MEDIAN, not the
+    # mean — on a right-skewed count stat (Hits, RBIs, Total Bases…) the mean can sit above
+    # the line while fewer than half the samples clear it, so a mean-based "Projection > Line"
+    # can visually contradict a "P(Over) < 50%" recommendation. The median doesn't have that
+    # failure mode: median > line mathematically guarantees P(X > line) ≥ 50% for the same
+    # sample set (at least half the samples are ≥ the median), so Projection and the
+    # recommended side always agree in direction. (2026-07-29 Over/Under bias audit.)
     s = getattr(p, "samples", None)
     if s is not None:
         out = _payload_from_samples(s, line, correction, trust, anchor, width)
     else:
         mu = float(p.mean)
+        med = float(p.median)
         w = min(3.0, float(width)) if width and float(width) > 1.0 else 1.0
         def _st(v):                                  # stretch around the mean, never below 0
             return max(0.0, mu + w * (float(v) - mu))
-        out = {"projection": round(mu, 2), "median": round(float(p.median), 1),
+        out = {"projection": round(med, 1), "median": round(med, 1),
                "floor": round(_st(p.floor), 1), "ceiling": round(_st(p.ceiling), 1),
                "p25": round(_st(p.p25), 1), "p75": round(_st(p.p75), 1),
                "model_raw": round(mu, 2), "method": "engine"}
@@ -348,8 +354,12 @@ def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None 
         w = min(3.0, float(width))
         qw = np.percentile(np.clip(proj + w * (s - proj), 0.0, None), [10, 25, 75, 90])
         lo10, lo25, hi75, hi90 = (float(x) for x in qw)
+    # Projection = the MEDIAN of this same (corrected/trust-blended) sample array, not the mean
+    # (`proj`/`raw_mean` above) — see _payload's docstring. `prob_over` below is computed on this
+    # identical `s`, so median > line always implies prob_over ≥ 0.5: Projection and the
+    # recommended side can never point in different directions.
     out = {
-        "projection": round(proj, 2), "median": round(med, 1),
+        "projection": round(med, 1), "median": round(med, 1),
         "floor": round(lo10, 1), "ceiling": round(hi90, 1),
         "p25": round(lo25, 1), "p75": round(hi75, 1),
         "model_raw": round(raw_mean, 2), "method": "engine",

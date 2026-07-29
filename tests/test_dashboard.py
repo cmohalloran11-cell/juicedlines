@@ -17,6 +17,9 @@ def _line(id_, player, odds_type="standard", model_prob=0.6, model_edge=0.5):
         "source": "prizepicks", "line": 1.5, "model_proj": 2.0, "model_prob": model_prob,
         "model_edge": model_edge, "model_n": 20, "proj_kind": "engine",
         "odds_type": odds_type, "lineup_status": None,
+        # real PrizePicks standard legs always carry a flat pick'em price (595/595 in
+        # production); demon/goblin never do (valuation.is_unpriced gates those separately).
+        "pickem_price": None if odds_type in ("demon", "goblin") else -137,
     }
 
 
@@ -52,6 +55,32 @@ def test_drop_marks_demon_goblin_unpriced_with_no_edge_pct():
     assert row["oddsType"] == "demon"
     # projection/probability still real and present
     assert row["projection"] is not None and row["probability"] is not None
+
+
+def test_drop_side_is_over_for_demon_even_when_model_favors_under():
+    # PrizePicks doesn't offer Under on a boosted leg — the displayed side must never be
+    # "under" for demon/goblin, regardless of what the raw model probability says.
+    row = dashboard._drop(_line("d1", "Demon Guy", odds_type="demon", model_prob=0.05))
+    assert row["side"] == "over"
+
+
+def test_projected_excludes_props_with_no_priced_available_side():
+    # Market-availability audit: a standard/boosted prop where the book offers neither side
+    # priced (no pickem_price, no over/under_implied — e.g. thin Underdog/Sleeper data) isn't
+    # a bet a user can actually place, so it must be excluded from the board entirely rather
+    # than shown with a fabricated recommendation.
+    unpriced_standard = {
+        "id": "u1", "player": "Nobody", "team": "NYY", "sport": "MLB", "stat_type": "Hits",
+        "source": "underdog", "line": 1.5, "model_proj": 2.0, "model_prob": 0.7,
+        "model_edge": 0.5, "model_n": 20, "proj_kind": "engine",
+        "odds_type": "standard", "lineup_status": None, "pickem_price": None,
+    }
+    assert dashboard._projected([unpriced_standard]) == []
+    # same prop, but with a real price on one side → included, recommending only that side
+    priced = {**unpriced_standard, "over_implied": 0.5}
+    out = dashboard._projected([priced])
+    assert len(out) == 1
+    assert dashboard._drop(out[0])["side"] == "over"
 
 
 def test_projections_default_excludes_demon_goblin_opt_in_includes():
