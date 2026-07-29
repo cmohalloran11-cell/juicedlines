@@ -845,7 +845,7 @@ async function vGames(){
   const rows=pr.projections||[];const byT={};rows.forEach(p=>{if(p.team)(byT[p.team]=byT[p.team]||[]).push(p)});
   const games=(d.upcoming_games&&d.upcoming_games.length?d.upcoming_games:Object.keys(byT).map(t=>({team:t,sport:(byT[t][0]||{}).sport,startTime:(byT[t][0]||{}).startTime}))).slice(0,30);
   $('#view').innerHTML=`<div class="ph2"><div><h2>Games <span class="chip">${games.length}</span></h2><p>Today's slate — tap a game to open its top projected prop.</p></div></div>
-   <div class="grid3">${games.length?games.map(g=>{const ps=(byT[g.team]||[]).sort((a,b)=>b.juiceScore-a.juiceScore);const top=ps[0];return `<div class="learn-card" ${top?`style="cursor:pointer" onclick='openProp(${JSON.stringify(top).replace(/'/g,"&#39;")})'`:''}><div style="display:flex;align-items:center;gap:8px">${teamBadge(g,24)}<h4 style="margin:0">${g.team}</h4><span class="chip" style="margin-left:auto">${timeOf(g.startTime)||g.sport}</span></div><p class="muted" style="margin:9px 0 0;font-size:12px">${ps.length} projected prop${ps.length===1?'':'s'}${top?` · top: <b style="color:var(--text)">${top.player}</b> ${cap(top.side)} ${fmt(top.line)} ${top.stat}`:''}</p></div>`}).join(''):`<div class="empty" style="grid-column:1/-1"><div class="em">${icon('cloud',30)}</div>No games on the board yet.</div>`}</div>`;
+   <div class="grid3">${games.length?games.map(g=>{const ps=(byT[g.team]||[]).sort((a,b)=>b.juiceScore-a.juiceScore);const top=ps[0];return `<div class="learn-card" style="cursor:pointer" onclick="goGame(${JSON.stringify(g.team).replace(/"/g,'&quot;')})"><div style="display:flex;align-items:center;gap:8px">${teamBadge(g,24)}<h4 style="margin:0">${g.team}${top&&top.opponent?` ${top.isHome?'vs':'@'} ${top.opponent}`:''}</h4><span class="chip" style="margin-left:auto">${timeOf(g.startTime)||g.sport}</span></div><p class="muted" style="margin:9px 0 0;font-size:12px">${ps.length} projected prop${ps.length===1?'':'s'}${top?` · top: <b style="color:var(--text)">${top.player}</b> ${cap(top.side)} ${fmt(top.line)} ${top.stat}`:''}</p></div>`}).join(''):`<div class="empty" style="grid-column:1/-1"><div class="em">${icon('cloud',30)}</div>No games on the board yet.</div>`}</div>`;
 }
 // ── Bottom group: Settings / Help / Upgrade ──
 async function vSettings(){let bk={};try{bk=await api('/api/books')}catch(e){}
@@ -947,6 +947,31 @@ async function loadPPMatchup(x,sel='#pp-matchup'){const box=$(sel);if(!box)retur
   }catch(e){box.innerHTML='<p class="muted">Could not load matchup data.</p>'}}
 let PP_ROWS=[],PP_TOP=null;
 
+// ══════════════════════ GAME PAGE ══════════════════════
+const goGame=team=>{location.hash='/game/'+encodeURIComponent(team)};
+async function vGamePage(team){
+  if(!team){$('#view').innerHTML=`<div class="empty">${icon('cloud',30)}<br>No game specified.</div>`;return}
+  const pr=await api('/api/projections?sort=juice&limit=1000');
+  const rows=(pr.projections||[]).filter(p=>p.team===team);
+  if(!rows.length){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('cloud',30)}</div>No live props for <b>${team}</b> right now.</div>`;return}
+  const top=rows[0];
+  const opp=top.opponent;                     // real, from today's schedule (MLB only — see dashboard.py._opp_by_abbr)
+  const oppRows=opp?(pr.projections||[]).filter(p=>p.team===opp):[];
+  const all=[...rows,...oppRows].sort((a,b)=>b.juiceScore-a.juiceScore);
+  const home=top.isHome?team:opp, away=top.isHome?opp:team;
+  $('#view').innerHTML=`<div class="ph2"><div><h2>${home||team}${away?` vs ${away}`:''} <span class="chip">${leagueLogo(top.sport,13)} ${top.sport}</span></h2><p>${timeOf(top.startTime)?'First pitch '+timeOf(top.startTime):"Today's slate"} — player props only; Juiced doesn't model team win probability or final score.</p></div></div>
+   <div class="gh-teams">
+     <div class="t">${teamBadge({team,sport:top.sport,teamLogo:top.teamLogo},40)}<span>${team}</span></div>
+     <span class="vs">${top.isHome?'HOME vs AWAY':'AWAY @ HOME'}</span>
+     ${opp?`<div class="t">${leagueLogo(top.sport,40)}<span>${opp}</span></div>`:''}
+   </div>
+   <div class="panel"><div class="phead"><h3>Top Player Props <span class="hint">both teams, by Juice Score</span></h3><span class="lnk" onclick="go('projections')">All →</span></div>${propTable(all.slice(0,12))}</div>
+   <div class="two">
+    <div class="panel"><div class="phead"><h3>${team}</h3></div>${propTable(rows.sort((a,b)=>b.juiceScore-a.juiceScore).slice(0,8))}</div>
+    <div class="panel"><div class="phead"><h3>${opp||'Opponent'}</h3></div>${opp?propTable(oppRows.sort((a,b)=>b.juiceScore-a.juiceScore).slice(0,8)):`<div class="empty" style="padding:30px"><span class="muted">Opponent matchup data isn't available for this sport yet (MLB only, currently).</span></div>`}</div>
+   </div>`;
+}
+
 const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade};
 
 // ── prop detail drawer ──
@@ -1042,6 +1067,7 @@ function closeDrawer(){$('#scrim').classList.remove('open');$('#drawer').classLi
 async function render(){renderNav();const r=cur();
   let fn=ROUTES[r],arg=null;
   if(!fn){const pm=r.match(/^player\/(.+)$/);if(pm){fn=vPlayerPage;arg=decodeURIComponent(pm[1])}}
+  if(!fn){const gm=r.match(/^game\/(.+)$/);if(gm){fn=vGamePage;arg=decodeURIComponent(gm[1])}}
   fn=fn||vDashboard;
   $('#greet').style.display=r==='dashboard'?'':'none';$('#subgreet').style.display=r==='dashboard'?'':'none';
   try{await fn(arg)}catch(e){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load this page.<br><span class="muted">${e}</span><br><button class="btn pri" style="margin-top:14px" onclick="render()">Retry</button></div>`}}
