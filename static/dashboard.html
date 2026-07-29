@@ -498,7 +498,18 @@ function renderDonut(d){const drop=d.drops&&d.drops[0];const f=(drop&&drop.confi
 }
 async function loadSpark(drop){$('#tsub').textContent=drop.player+' — '+drop.stat;let pts=[drop.line,drop.line];try{const h=(await api('/api/lines/history?id='+encodeURIComponent(drop.id)+'&limit=40')).history||[];const v=h.map(x=>x.line_value).filter(x=>x!=null);if(v.length>1)pts=v}catch(e){}drawSpark('#spark',pts,drop.projection,drop.line)}
 function drawSpark(sel,vals,proj,line){const S=$(sel);if(!S)return;const W=520,H=150,pad=14,mn=Math.min(...vals,proj),mx=Math.max(...vals,proj),rng=(mx-mn)||1,X=i=>pad+i*(W-2*pad)/Math.max(1,vals.length-1),Y=v=>H-pad-((v-mn)/rng)*(H-2*pad);let d='';vals.forEach((v,i)=>d+=(i?'L':'M')+X(i)+' '+Y(v));const py=Y(proj);
-  S.innerHTML=`<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#c6f24e" stop-opacity=".28"/><stop offset="1" stop-color="#c6f24e" stop-opacity="0"/></linearGradient></defs><path d="${d}L${X(vals.length-1)} ${H-pad}L${X(0)} ${H-pad}Z" fill="url(#g)"/><path d="${d}" fill="none" stroke="#c6f24e" stroke-width="2.2"/><line x1="${pad}" y1="${py}" x2="${W-pad}" y2="${py}" stroke="#8ee65a" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/><text x="${W-pad}" y="${py-6}" text-anchor="end" fill="#8ee65a" font-size="10" font-weight="700">proj ${fmt(proj)}</text>${vals.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="2" fill="#c6f24e"/>`).join('')}`}
+  // No <text> in the SVG: preserveAspectRatio="none" stretches the viewBox non-uniformly to
+  // fill a much-wider container, which distorts SVG glyphs badly (the "proj X.X" label looked
+  // warped/bold). The label is a plain HTML overlay instead — immune to that stretch.
+  S.innerHTML=`<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#c6f24e" stop-opacity=".28"/><stop offset="1" stop-color="#c6f24e" stop-opacity="0"/></linearGradient></defs><path d="${d}L${X(vals.length-1)} ${H-pad}L${X(0)} ${H-pad}Z" fill="url(#g)"/><path d="${d}" fill="none" stroke="#c6f24e" stroke-width="2.2"/><line x1="${pad}" y1="${py}" x2="${W-pad}" y2="${py}" stroke="#8ee65a" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/>${vals.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="2" fill="#c6f24e"/>`).join('')}`;
+  const wrap=S.parentElement;
+  if(wrap){
+    wrap.style.position='relative';
+    let lbl=wrap.querySelector('.spark-label');
+    if(!lbl){lbl=document.createElement('div');lbl.className='spark-label';lbl.style.cssText='position:absolute;right:14px;color:#8ee65a;font-size:10px;font-weight:700;pointer-events:none;white-space:nowrap';wrap.appendChild(lbl)}
+    lbl.style.top=`calc(${(py/H*100).toFixed(2)}% - 16px)`;
+    lbl.textContent='proj '+fmt(proj);
+  }}
 
 let PROJ=[], PROJUP=null, SELID=null;
 const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25};
