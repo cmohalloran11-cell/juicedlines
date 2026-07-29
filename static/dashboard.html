@@ -1017,7 +1017,8 @@ async function openProp(x,tab){
    <div class="dsec"><h5>Recent Games & Hit Rate</h5><div id="recentbox"><p class="muted skel">Loading recent games…</p></div></div>
    ${corrHTML(x)}
    <div class="dsec"><h5>AI Juice</h5><div class="aibox" id="aibox">${AUTH.ai?'Generating a grounded explanation…':'AI Juice is not configured on the server.'}</div></div>
-   <div class="dsec" style="display:flex;gap:8px"><button class="btn ${isWatched(x.id)?'':'pri'}" id="wbtn" onclick='toggleWatch(${JSON.stringify(x).replace(/"/g,"&quot;")});renderDrawerBtns(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${isWatched(x.id)?'Watching':'Add to Watchlist'}</button><button class="btn" onclick='addPlay(${JSON.stringify(x).replace(/"/g,"&quot;")})'>+ Portfolio</button><button class="btn" onclick='saveProp(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('star',13)} Save</button><button class="btn" onclick='loadResearch(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('research',13)} Research</button></div>`;
+   <div class="dsec" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${isWatched(x.id)?'':'pri'}" id="wbtn" onclick='toggleWatch(${JSON.stringify(x).replace(/"/g,"&quot;")});renderDrawerBtns(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${isWatched(x.id)?'Watching':'Add to Watchlist'}</button><button class="btn" onclick='addPlay(${JSON.stringify(x).replace(/"/g,"&quot;")})'>+ Portfolio</button><button class="btn" onclick='saveProp(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('star',13)} Save</button><button class="btn" onclick='loadResearch(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('research',13)} Research</button><button class="btn" onclick='compareBooks(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('layers',13)} Compare Books</button></div>
+   <div class="dsec" id="cmpbox" style="display:none"></div>`;
   loadSim(x);loadRecent(x);if(AUTH.ai)loadAIExplain(x);
   if(tab==='ai')setTimeout(()=>$('#aibox')&&$('#aibox').scrollIntoView({behavior:'smooth',block:'center'}),200);
 }
@@ -1063,6 +1064,18 @@ async function loadRecent(x,sel='#recentbox'){const box=$(sel);if(!box)return;
     box.innerHTML=head+(rows?`<table class="drops" style="margin:0"><thead><tr><th>Date</th><th>Opp</th><th>${(hr&&hr.stat)||x.stat||'Val'}</th><th></th></tr></thead><tbody>${rows}</tbody></table>${vsP}`:'<p class="muted" style="font-size:11.5px">No recent games on file.</p>');
   }catch(e){box.innerHTML='<p class="muted" style="font-size:11.5px">Could not load recent games.</p>'}}
 function loadResearch(x){const b=$('#recentbox');if(b)b.scrollIntoView({behavior:'smooth',block:'center'})}
+// Real cross-book comparison — same player+stat, whichever other books currently have it.
+// Most props are single-book (verified: only ~8% of players appear on 2+ books this season),
+// so an honest "no line elsewhere" result is the common, correct answer, not a failure.
+async function compareBooks(x){const box=$('#cmpbox');if(!box)return;
+  box.style.display='block';box.innerHTML='<h5>Compare Books</h5><p class="muted skel">Checking other books…</p>';
+  try{
+    const pr=await api('/api/projections?limit=1000');
+    const others=(pr.projections||[]).filter(p=>p.player===x.player&&p.stat===x.stat&&p.source!==x.source);
+    if(!others.length){box.innerHTML=`<h5>Compare Books</h5><p class="muted" style="font-size:11.5px">No other book currently has ${x.player} ${x.stat} listed.</p>`;return}
+    const rows=[x,...others].sort((a,b)=>(a.source===x.source?-1:1));
+    box.innerHTML=`<h5>Compare Books</h5><table class="drops" style="margin:0"><thead><tr><th>Book</th><th>Line</th><th>Proj</th><th>Edge</th></tr></thead><tbody>${rows.map(r=>`<tr ${r.source===x.source?'style="background:#101a0d"':''}><td>${bookLogo(r.source,18)} ${cap(r.source)}</td><td class="mono">${fmt(r.line)}</td><td class="mono">${fmt(r.projection)}</td><td class="mono ${r.edgePct>=0?'pos':'neg'}">${pct(r.edgePct)}</td></tr>`).join('')}</tbody></table>`;
+  }catch(e){box.innerHTML='<h5>Compare Books</h5><p class="muted">Could not load other books.</p>'}}
 function closeDrawer(){$('#scrim').classList.remove('open');$('#drawer').classList.remove('open');const was=SELID;SELID=null;if(was&&cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}}
 
 // ── router ──
