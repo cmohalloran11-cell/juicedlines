@@ -160,7 +160,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 .rtable tr.sel td{background:#101a0d;box-shadow:inset 2px 0 0 var(--accent)}
 /* ── player / game pages ── */
 .pp-head{display:flex;align-items:center;gap:16px;margin-bottom:16px}
-.pp-head img{width:64px;height:64px;border-radius:50%;border:2px solid var(--line2);background:#0a0e09;object-fit:cover}
+.pp-head .pp-photo{width:64px;height:64px;border-radius:50%;border:2px solid var(--line2);background:#0a0e09;object-fit:cover}
 .pp-head .nm{font-size:22px;font-weight:900;letter-spacing:-.4px;display:flex;align-items:center;gap:8px}
 .pp-head .meta{color:var(--muted);font-size:12.5px;margin-top:2px;display:flex;align-items:center;gap:6px}
 .pp-badges{margin-left:auto;display:flex;gap:10px}
@@ -1040,8 +1040,8 @@ async function vPlayerPage(name){
   const top=rows.reduce((a,b)=>b.juiceScore>a.juiceScore?b:a);
   PP_ROWS=rows; PP_TOP=top;
   $('#view').innerHTML=`
-   <div class="pp-head"><img src="${ph(top.headshot)}">
-     <div><div class="nm">${name} ${teamBadge(top,20)}</div><div class="meta">${top.team||''} ${top.position?'· '+top.position:''} ${leagueLogo(top.sport,14)} ${top.sport||''}</div></div>
+   <div class="pp-head"><img class="pp-photo" src="${ph(top.headshot)}">
+     <div><div class="nm">${name} ${teamBadge(top,15)}</div><div class="meta">${top.team||''} ${top.position?'· '+top.position:''} · ${top.sport||''}</div></div>
      <div class="pp-badges">
        <div class="pp-badge"><div class="v" style="color:${jColor(top.juiceScore)}">${top.juiceScore}</div><div class="l">Juice Score</div></div>
        <div class="pp-badge"><div class="v">${Math.round(top.confidence)}</div><div class="l">Confidence</div></div>
