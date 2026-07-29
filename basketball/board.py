@@ -114,22 +114,22 @@ def attach_basketball(lines: list[dict]) -> int:
             # low 3.5 line got flattened to 3.5.)
             center = blended
             arr_line = arr + (center - model_mean)
-            # Projection = the MEDIAN of this same shifted array, not the mean (`center`) — a
-            # right-skewed stat (rebounds, blocks, steals) can have mean > line while fewer than
-            # half the samples clear it, making a mean-based Projection visually disagree with
-            # the recommended side. median > line mathematically guarantees P(X > line) ≥ 0.5
-            # on the same sample set, so Projection and the recommendation always agree.
-            # (2026-07-29 Over/Under bias audit.)
+            # Projection = the MEAN (`center`) — an informative expected value that actually
+            # differentiates players (a bench player's rebounds mean can be 0.6 while the
+            # median is legitimately 0 for a low-count skewed stat). `model_median` is
+            # reported separately — the value that explains an Under lean when it diverges
+            # from the mean. The direction guarantee (Projection/Line sign vs recommended
+            # side) lives in probability (valuation.recommend_side), not in this display
+            # field — see the 2026-07-29 projection-realism pass.
             med = float(np.median(arr_line))
             l["model_prob"] = round(float((arr_line > line).mean()), 4)
-            l["model_proj"] = round(med, 1)
-            l["model_edge"] = round(med - line, 1)
+            l["model_proj"] = round(center, 1)
+            l["model_median"] = round(med, 1)
+            l["model_edge"] = round(center - line, 1)
             l["proj_kind"] = "basketball"
-            # PRE-anchor model MEAN + the weight applied, for the ledger. `model_proj` here is
-            # the BLENDED, MEDIAN-of-shifted-samples value, so it cannot answer "does our model
-            # know anything the line doesn't" — the edge regression (y−L)=a+γ(m−L) needs the
-            # raw mean m. Recovering it later from the blend is impossible when trust==0
-            # (snap-to-line) and unstable at small trust, so record it now. Display is unchanged.
+            # PRE-anchor model MEAN + the weight applied, for the ledger — same number as
+            # model_proj here (both are the blended mean); kept for the edge-regression
+            # comment's original meaning (γ needs the raw mean before any market anchor).
             l["model_raw"] = round(model_mean, 2)
             l["model_raw_prob"] = round(float((arr > line).mean()), 4)
             l["trust_weight"] = round(float(trust), 3)

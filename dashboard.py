@@ -61,6 +61,12 @@ def _drop(line: dict) -> dict:
         "stat": line.get("stat_type"),
         "line": line.get("line"),
         "projection": line.get("model_proj"),
+        # The median of the same distribution — separate from the mean-based projection on
+        # purpose (2026-07-29 projection-realism pass): a low-count skewed stat can have a
+        # median of 0 while the mean is a real, informative nonzero number, and showing only
+        # one or the other either looks like a broken "PROJ 0" or hides why the model leans
+        # Under. The UI shows both.
+        "median": line.get("model_median"),
         "edge": line.get("model_edge"),
         "edgePct": _edge_pct(line),
         "probability": line.get("model_prob"),

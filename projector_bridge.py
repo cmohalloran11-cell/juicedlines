@@ -291,13 +291,15 @@ def for_stat(projs, stat_label: str, line, is_pitcher: bool, correction: float =
 def _payload(p, line, correction: float = 0.0, trust: float | None = None,
              anchor: float | None = None, width: float | None = None) -> dict:
     # Compute from the sample distribution so a calibration `correction` and the `trust`
-    # anchor shift the projection AND prob_over together. Projection = the MEDIAN, not the
-    # mean — on a right-skewed count stat (Hits, RBIs, Total Bases…) the mean can sit above
-    # the line while fewer than half the samples clear it, so a mean-based "Projection > Line"
-    # can visually contradict a "P(Over) < 50%" recommendation. The median doesn't have that
-    # failure mode: median > line mathematically guarantees P(X > line) ≥ 50% for the same
-    # sample set (at least half the samples are ≥ the median), so Projection and the
-    # recommended side always agree in direction. (2026-07-29 Over/Under bias audit.)
+    # anchor shift the projection AND prob_over together. Projection = the MEAN — a real,
+    # informative expected value that differentiates Aaron Judge (proj 2.15 TB) from a
+    # backup catcher (proj 0.58), never clamped to a flat 0 the way the median legitimately
+    # can be for a low-mean skewed stat (P(TB=0) > 50% for plenty of real hitters). `median`
+    # is reported as its OWN separate field — the number that actually explains an Under
+    # lean — so the UI can show both instead of collapsing one into the other (2026-07-29
+    # projection-realism pass, after the mean→median swap made weak-hitter projections look
+    # like a broken "0.0" — see the Over/Under bias audit's median-consistency guarantee,
+    # which the SIDE/recommendation still gets via probability, not via this display field).
     s = getattr(p, "samples", None)
     if s is not None:
         out = _payload_from_samples(s, line, correction, trust, anchor, width)
@@ -307,7 +309,7 @@ def _payload(p, line, correction: float = 0.0, trust: float | None = None,
         w = min(3.0, float(width)) if width and float(width) > 1.0 else 1.0
         def _st(v):                                  # stretch around the mean, never below 0
             return max(0.0, mu + w * (float(v) - mu))
-        out = {"projection": round(med, 1), "median": round(med, 1),
+        out = {"projection": round(mu, 2), "median": round(med, 1),
                "floor": round(_st(p.floor), 1), "ceiling": round(_st(p.ceiling), 1),
                "p25": round(_st(p.p25), 1), "p75": round(_st(p.p75), 1),
                "model_raw": round(mu, 2), "method": "engine"}
@@ -354,12 +356,13 @@ def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None 
         w = min(3.0, float(width))
         qw = np.percentile(np.clip(proj + w * (s - proj), 0.0, None), [10, 25, 75, 90])
         lo10, lo25, hi75, hi90 = (float(x) for x in qw)
-    # Projection = the MEDIAN of this same (corrected/trust-blended) sample array, not the mean
-    # (`proj`/`raw_mean` above) — see _payload's docstring. `prob_over` below is computed on this
-    # identical `s`, so median > line always implies prob_over ≥ 0.5: Projection and the
-    # recommended side can never point in different directions.
+    # Projection = the MEAN (`proj`, the corrected/trust-blended value) — see _payload's
+    # docstring for why this reverted from median: a mean is what actually differentiates
+    # players (a backup catcher's TB mean can be 0.55 while his median is legitimately 0),
+    # and the direction guarantee lives in probability (valuation.recommend_side), not in
+    # comparing this display field to the line. `median` stays its own honest field.
     out = {
-        "projection": round(med, 1), "median": round(med, 1),
+        "projection": round(proj, 2), "median": round(med, 1),
         "floor": round(lo10, 1), "ceiling": round(hi90, 1),
         "p25": round(lo25, 1), "p75": round(hi75, 1),
         "model_raw": round(raw_mean, 2), "method": "engine",

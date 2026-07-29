@@ -90,20 +90,24 @@ def health(lines: list[dict[str, Any]], updated_at: Optional[str],
 
 
 # ─────────────────────────── direction-invariant validation ──────────────────
-# 2026-07-29 Over/Under bias audit: every exported projection must satisfy
-#   Projection > Line  ⇒  P(Over) > 50%
-#   Projection < Line  ⇒  P(Over) < 50%
-# The projection engines now report the MEDIAN of the same sample array model_prob is
-# computed from (projector_bridge.py, basketball/board.py, tennis/board.py), which
-# mathematically guarantees this — see tests/test_engine_characterization.py's
-# test_projection_direction_always_agrees_with_prob_over for the proof. This check is the
-# runtime safety net: it should find ~0 violations going forward; any it finds are real bugs
-# to investigate, not swept under a silent tolerance.
+# 2026-07-29 Over/Under bias audit, revised 2026-07-29 projection-realism pass:
+#   Median > Line  ⇒  P(Over) > 50%
+#   Median < Line  ⇒  P(Over) < 50%
+# Checked against MEDIAN, not the displayed (mean-based) Projection. The mean is
+# deliberately informative and CAN legitimately diverge from the line-vs-probability
+# direction on a skewed stat (e.g. a bench hitter's TB mean is 0.6 while the median — and
+# therefore P(over 0.5)'s direction — is 0). Median is reported by every engine from the
+# EXACT SAME sample array model_prob is computed from (projector_bridge.py, basketball/
+# board.py, tennis/board.py, analytics.py's MLB fallback), which mathematically guarantees
+# this holds — see tests/test_engine_characterization.py's
+# test_projection_direction_always_agrees_with_prob_over. Runtime safety net: should find
+# ~0 violations; any it finds are real bugs to investigate, not a tolerance to widen.
 
 def validate_direction(lines: list[dict[str, Any]], reject: bool = False) -> list[dict[str, Any]]:
-    """Return every line that violates the Projection/Probability direction invariant, with
-    enough context (player/stat/line/projection/prob/source) to investigate without re-deriving
-    anything. Empty list = a clean board.
+    """Return every line that violates the Median/Probability direction invariant, with
+    enough context (player/stat/line/projection/median/prob/source) to investigate without
+    re-deriving anything. Empty list = a clean board. Falls back to `model_proj` for any
+    line that has no `model_median` (shouldn't happen on a current build; defensive only).
 
     reject=True mutates the offending line dicts in place — clears model_proj/model_prob/
     model_edge and sets direction_rejected=True — so downstream filters (dashboard._projected(),
@@ -112,20 +116,23 @@ def validate_direction(lines: list[dict[str, Any]], reject: bool = False) -> lis
     bad = []
     for l in lines:
         proj, line, prob = l.get("model_proj"), l.get("line"), l.get("model_prob")
-        if proj is None or line is None or prob is None:
+        med = l.get("model_median")
+        check = med if med is not None else proj
+        if check is None or line is None or prob is None:
             continue
-        violated = (proj > line and prob < 0.5) or (proj < line and prob > 0.5)
+        violated = (check > line and prob < 0.5) or (check < line and prob > 0.5)
         if violated:
             bad.append({
                 "id": l.get("id"), "player": l.get("player"), "sport": l.get("sport"),
                 "stat": l.get("stat_type"), "source": l.get("source"),
                 "proj_kind": l.get("proj_kind"), "line": line, "projection": proj,
-                "prob_over": prob,
+                "median": med, "prob_over": prob,
             })
             if reject:
                 l["model_proj"] = None
                 l["model_prob"] = None
                 l["model_edge"] = None
+                l["model_median"] = None
                 l["direction_rejected"] = True
     return bad
 

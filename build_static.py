@@ -106,6 +106,7 @@ _KEEP = (
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
     "model_floor", "model_ceiling",     # the p10-p90 range shown under the projection
     "bball_confidence", "tennis_confidence",
+    "surface", "model_agreement", "elo_eff_matches",   # tennis engine transparency fields
     "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
 )
@@ -117,6 +118,7 @@ _KEEP = (
 _PREMIUM_FIELDS = frozenset({
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
     "bball_confidence", "tennis_confidence", "model_floor", "model_ceiling",
+    "surface", "model_agreement", "elo_eff_matches",
     "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",
     "lineup_slot", "lineup_status", "workload_status", "layoff_days", "workload_outs",
 })
@@ -257,6 +259,10 @@ def main() -> None:
             graded_bb = analytics.grade_basketball()     # WNBA + SL (ESPN box scores)
         except Exception as exc:
             graded_bb = {"graded": 0, "voided": 0, "err": str(exc)[:40]}
+        try:
+            graded_tn = analytics.grade_tennis()          # Tennis (ESPN match results)
+        except Exception as exc:
+            graded_tn = {"graded": 0, "voided": 0, "err": str(exc)[:40]}
         pruned = db.prune_clv(keep_ungraded_days=3)
         import sqlite3 as _sq
         _c = _sq.connect(OUT_CLV)
@@ -264,8 +270,8 @@ def main() -> None:
         n_grd = _c.execute("SELECT COUNT(*) FROM prop_clv WHERE actual IS NOT NULL").fetchone()[0]
         _c.close()
         print(f"  wrote {OUT_CLV.name} [{src}]: logged {logged}, graded MLB {graded} + "
-              f"BB {graded_bb}, pruned {pruned} | {n_grd} graded / {n_all} rows, "
-              f"{OUT_CLV.stat().st_size/1e6:.1f} MB | +{time.time()-tc:.0f}s")
+              f"BB {graded_bb} + Tennis {graded_tn}, pruned {pruned} | {n_grd} graded / "
+              f"{n_all} rows, {OUT_CLV.stat().st_size/1e6:.1f} MB | +{time.time()-tc:.0f}s")
         # Per-stat trust (γ) for the anchoring layer — computed here where the graded ledger is
         # local, published as a TINY file that every build (incl. fast) reads so it never has to
         # re-download the multi-MB ledger just to anchor. NEXT build's attach_projections uses it.

@@ -121,6 +121,17 @@ def test_kelly_formula_and_cap():
     assert valuation.kelly_fraction(0.5, line) == 0.0
 
 
+def test_confidence_has_no_guaranteed_floor_for_a_coin_flip():
+    # 2026-07-29 projection-realism pass: a well-sampled (30+ games), engine-projected prop
+    # that's a genuine coin-flip (prob=0.5) must NOT score in the 70s just from sample size +
+    # method alone — that was the actual bug behind "everything shows 78-86% confidence".
+    coin_flip = {"model_prob": 0.5, "model_n": 40, "proj_kind": "engine"}
+    assert valuation.confidence_score(coin_flip) <= 55
+    # a genuinely decisive, well-sampled engine prop should still score high.
+    decisive = {"model_prob": 0.95, "model_n": 40, "proj_kind": "engine"}
+    assert valuation.confidence_score(decisive) >= 90
+
+
 def test_confidence_factors_decompose_the_score():
     # The three real components must sum to the confidence score (the honest breakdown).
     line = {"model_prob": 0.72, "model_n": 18, "proj_kind": "engine"}
@@ -128,8 +139,9 @@ def test_confidence_factors_decompose_the_score():
     assert [f["factor"] for f in factors] == ["Sample Size", "Decisiveness", "Method"]
     total = sum(f["value"] for f in factors)
     assert round(total) == valuation.confidence_score(line)
-    # caps are the real weights (50/30/20) and no component exceeds its cap
-    assert [f["max"] for f in factors] == [50, 30, 20]
+    # caps are the real weights (30/50/20 — decisiveness re-weighted heaviest 2026-07-29
+    # so a well-sampled engine prop that's a real coin-flip doesn't get a guaranteed floor)
+    assert [f["max"] for f in factors] == [30, 50, 20]
     assert all(0 <= f["value"] <= f["max"] for f in factors)
 
 
@@ -201,6 +213,20 @@ def test_validate_direction_reject_nulls_the_offending_line_in_place():
     dataos.validate_direction([bad], reject=True)
     assert bad["model_proj"] is None and bad["model_prob"] is None and bad["model_edge"] is None
     assert bad["direction_rejected"] is True
+
+
+def test_validate_direction_checks_median_not_the_mean_projection():
+    # 2026-07-29 projection-realism pass: `model_proj` is the MEAN and is ALLOWED to diverge
+    # from the probability's direction on a skewed stat (a bench hitter's TB mean can be 0.6
+    # while the median — and P(over 0.5)'s real direction — is 0). This must NOT be flagged:
+    # the median (0.0) correctly agrees with prob_over (0.35 < 0.5).
+    skewed_but_fine = {"id": "skew", "model_proj": 0.6, "model_median": 0.0,
+                       "line": 0.5, "model_prob": 0.35}
+    # A genuine violation must still be caught when the MEDIAN itself disagrees with prob.
+    genuinely_bad = {"id": "bad", "model_proj": 0.6, "model_median": 0.6,
+                     "line": 0.5, "model_prob": 0.35}
+    violations = dataos.validate_direction([skewed_but_fine, genuinely_bad])
+    assert {v["id"] for v in violations} == {"bad"}
 
 
 def test_direction_report_distribution_and_rejection():

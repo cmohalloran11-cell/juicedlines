@@ -25,6 +25,7 @@ import numpy as np
 
 from . import projections as P
 from .projections import _norm, _model
+from .data import espn as _espn
 
 _TRUST = {"high": 1.0, "medium": 0.5, "low": 0.15}
 
@@ -49,6 +50,42 @@ def _best_of(lines) -> int:
     return 3
 
 
+def _live_surface_lookup(tour: str) -> dict[frozenset, str]:
+    """{frozenset({normA, normB}): surface} from ESPN's live schedule — real per-match
+    surface instead of the old universal "Hard" default (the README's top-flagged gap).
+    Best-effort: an ESPN outage just means matches fall back to the `surface` param."""
+    out: dict = {}
+    try:
+        matches = _espn.upcoming(tour, days_ahead=2) + _espn.completed_matches(tour, days_back=2)
+        for m in matches:
+            if m.get("a_name") and m.get("b_name"):
+                out[frozenset({_norm(m["a_name"]), _norm(m["b_name"])})] = m["surface"]
+    except Exception:
+        pass
+    return out
+
+
+def _recent_match_counts(tour: str, days: int = 7) -> dict[str, int]:
+    """{normalized name: matches played in the last `days`} from ESPN — the fatigue
+    signal (spec: "matches played in last 7 days"). Best-effort; {} on an ESPN outage
+    means no fatigue adjustment is applied, not a crash."""
+    out: dict[str, int] = defaultdict(int)
+    try:
+        for m in _espn.completed_matches(tour, days_back=days):
+            out[_norm(m["a_name"])] += 1
+            out[_norm(m["b_name"])] += 1
+    except Exception:
+        pass
+    return out
+
+
+def _fatigue_penalty(n_recent: int) -> float:
+    """Small serve-rate (spw) penalty per match beyond the first played in the last 7
+    days — capped, since this is a real but modest effect (a AAA travel/recovery signal
+    would refine this further; not available from the free ESPN feed)."""
+    return -min(0.02, 0.004 * max(0, n_recent - 1))
+
+
 def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
     """Attach model_proj/model_prob to live tennis lines. Returns count projected."""
     tlines = [l for l in lines if l.get("sport") == "Tennis"
@@ -63,18 +100,32 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
 
     done = 0
     cache: dict = {}
+    surf_cache: dict = {}
+    fatigue_cache: dict = {}
     for mlines in matches.values():
         a, b = mlines[0]["player"], mlines[0]["matchup"]
         ck = frozenset({_norm(a), _norm(b)})
+        tour = _pick_tour(a, b)
+        if tour not in surf_cache:
+            surf_cache[tour] = _live_surface_lookup(tour)
+        if tour not in fatigue_cache:
+            fatigue_cache[tour] = _recent_match_counts(tour)
+        match_surface = surf_cache[tour].get(ck, surface)
+        fatigue_a = _fatigue_penalty(fatigue_cache[tour].get(_norm(a), 0))
+        fatigue_b = _fatigue_penalty(fatigue_cache[tour].get(_norm(b), 0))
         if ck not in cache:
             try:
-                cache[ck] = P.project_match(_pick_tour(a, b), a, b, surface, best_of=_best_of(mlines))
+                cache[ck] = P.project_match(tour, a, b, match_surface, best_of=_best_of(mlines),
+                                            fatigue_a=fatigue_a, fatigue_b=fatigue_b)
             except Exception:
                 cache[ck] = None
         res = cache[ck]
         if not res:
             continue
-        trust = _TRUST.get(res.get("confidence"), 0.3)
+        # Model agreement (spec: a real confidence factor, not just sample size) dampens
+        # trust when the sim/Elo/analytic win-prob estimates genuinely disagree — e.g. a
+        # live-Elo-only player (zero point-model history) vs a well-covered veteran.
+        trust = _TRUST.get(res.get("confidence"), 0.3) * (0.7 + 0.3 * res.get("model_agreement", 1.0))
 
         # group the match's lines by (player, market) so the mean anchors to the
         # market's standard line for that specific prop.
@@ -110,14 +161,17 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
                 # upstream now, so trust the model.
                 center = blended
                 arr_line = arr + (center - model_mean)
-                # Projection = the MEDIAN of this same shifted array, not the mean (`center`) —
-                # guarantees Projection and the recommended side always agree in direction
-                # (median > line ⇒ P(X > line) ≥ 0.5 on the same sample set). See the MLB/WNBA
-                # engines for the same fix. (2026-07-29 Over/Under bias audit.)
+                # Projection = the MEAN (`center`) — informative and differentiating (a
+                # qualifier's games-won mean can be 8.4 while the median sits lower). The
+                # direction guarantee (recommendation vs the market) lives in probability
+                # (valuation.recommend_side), not in this display field — see the 2026-07-29
+                # projection-realism pass (after the mean→median swap made thin-data
+                # projections look flatter than they should).
                 med = float(np.median(arr_line))
                 l["model_prob"] = round(float((arr_line > line).mean()), 4)
-                l["model_proj"] = round(med, 2)
-                l["model_edge"] = round(med - line, 1)
+                l["model_proj"] = round(center, 2)
+                l["model_median"] = round(med, 2)
+                l["model_edge"] = round(center - line, 1)
                 # Be honest about what the number IS. Fully anchored → the projection is the
                 # market's own median standard line, NOT a model call, and any apparent "edge"
                 # is just this variant's distance from that median (demons/goblins sit far off
@@ -126,5 +180,8 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
                 l["proj_kind"] = "market" if anchored else "tennis"
                 l["model_n"] = res["eff_matches"]
                 l["tennis_confidence"] = res["confidence"]
+                l["surface"] = match_surface
+                l["model_agreement"] = res.get("model_agreement")
+                l["elo_eff_matches"] = res.get("elo_eff_matches")
                 done += 1
     return done

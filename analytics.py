@@ -1456,6 +1456,7 @@ def attach_projections(lines: list[dict]) -> None:
                     trust=_tw_use, anchor=_anchor, width=width)
                 if eng:
                     l["model_proj"] = eng["projection"]
+                    l["model_median"] = eng.get("median")
                     l["model_edge"] = round(eng["projection"] - line_val, 1)
                     l["model_floor"] = eng["floor"]
                     l["model_ceiling"] = eng["ceiling"]
@@ -1527,15 +1528,17 @@ def attach_projections(lines: list[dict]) -> None:
             vals = [fn(g["stat"]) for g in pg]
             if not vals:
                 continue
-            # Median keeps right-skewed stats (fantasy score) calibrated. BUT a median of 0 —
-            # common on low-count props (0.5 hits, 1.5 H+R+RBI for a light hitter) — displays as
-            # a misleading "PROJ 0" even though the mean is ~0.7 and he clears it a real share of
-            # the time. In exactly those zero-median cases, show the expected value (mean) so the
-            # number reads sensibly; everywhere else keep the calibrated median.
-            _med = _median(vals)
-            _skewed = "fantasy" in (l.get("stat_type") or "").lower()
-            proj = round(_med if (_skewed or _med >= 0.5) else sum(vals) / len(vals), 1)
+            # Projection = the MEAN — a real, informative expected value (a light hitter's
+            # mean TB can be ~0.7 even though his median is legitimately 0 for a low-count
+            # skewed stat; showing the median here as "PROJ 0" told the user nothing). The
+            # median is reported separately (model_median) — the number that actually
+            # explains why the model leans Under despite a nonzero-looking projection. The
+            # recommended side/EV comes from probability (valuation.recommend_side), not
+            # from comparing this display field to the line — see the 2026-07-29
+            # projection-realism pass.
+            proj = round(sum(vals) / len(vals), 1)
             l["model_proj"] = proj
+            l["model_median"] = round(_median(vals), 1)
             l["model_edge"] = round(proj - line_val, 1)
             l["proj_kind"] = "model"
             prob = mlb.empirical_prob_over(vals, line_val)
@@ -1724,4 +1727,91 @@ def grade_basketball() -> dict:
                 db.set_actual(lid, gd, float(val), now); graded += 1
             except Exception:
                 continue
+    return {"graded": graded, "voided": voided}
+
+
+# ── tennis grading (2026-07-29 tennis engine rebuild — the spec's automatic calibration
+# requirement) ──────────────────────────────────────────────────────────────────────
+# ESPN's free tennis result gives the final score (linescores: games per set) and winner
+# but NOT point-level serve stats — so aces/DFs/breaks aren't gradeable from this source
+# (they void once stale, same as any other ungradeable market). games/total_games/
+# sets/total_sets ARE fully gradeable, which covers most of what the board projects.
+#
+# prop_clv has no opponent/matchup column, so grading leans on a real tennis invariant
+# instead: a player plays at most ONE singles match per tournament day, so (player, date)
+# uniquely identifies their match without needing to store who they played.
+
+def _tennis_actual(match: dict, side: str, stat_label: str):
+    """Actual value of a modelled tennis market from one ESPN completed-match result.
+    None = not gradeable from this source (ace/DF/break-point markets — no point-level
+    data in the free feed)."""
+    from tennis.projections import _resolve_market
+    key, _per_player = _resolve_market(stat_label)
+    if key is None or key in ("aces", "dfs", "breaks"):
+        return None
+    a_games, b_games = sum(match["a_games"]), sum(match["b_games"])
+    a_sets = sum(1 for x, y in zip(match["a_games"], match["b_games"]) if x > y)
+    b_sets = sum(1 for x, y in zip(match["a_games"], match["b_games"]) if y > x)
+    my_games, opp_games = (a_games, b_games) if side == "a" else (b_games, a_games)
+    my_sets, opp_sets = (a_sets, b_sets) if side == "a" else (b_sets, a_sets)
+    if key == "games":
+        return my_games
+    if key == "total_games":
+        return a_games + b_games
+    if key == "sets":
+        return my_sets
+    if key == "total_sets":
+        return my_sets + opp_sets
+    return None
+
+
+def grade_tennis() -> dict:
+    """Settle logged Tennis props against ESPN's completed-match results — the automatic
+    calibration/grading pipeline the tennis-engine spec requires ("after every completed
+    match: automatically record projection, closing line, actual result..."). Mirrors
+    grade_pending/grade_basketball: resolve the match for the logged date, apply the
+    market's stat, db.set_actual; void once stale if unresolvable or ungradeable.
+    Best-effort; never raises into the build."""
+    from datetime import datetime, timezone, timedelta
+    try:
+        from tennis.data import espn as _espn
+        from tennis.projections import _norm
+    except Exception:
+        return {"graded": 0, "voided": 0}
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    today = date.today()
+    stale_before = (today - timedelta(days=3)).isoformat()
+    pend = db.pending_grades(today.isoformat(), "Tennis", limit=400)
+    if not pend:
+        return {"graded": 0, "voided": 0}
+    # (normalized player name, date) -> (match, "a"|"b") from the last ~10 days, both
+    # tours — cheap (ESPN-cached) and covers the whole pending window in one pass.
+    lookup: dict[tuple, tuple] = {}
+    for tour in ("ATP", "WTA"):
+        try:
+            for m in _espn.completed_matches(tour, days_back=10):
+                if m.get("a_name"):
+                    lookup[(_norm(m["a_name"]), m["date"])] = (m, "a")
+                if m.get("b_name"):
+                    lookup[(_norm(m["b_name"]), m["date"])] = (m, "b")
+        except Exception:
+            continue
+    graded = voided = 0
+    for p in pend:
+        try:
+            name, label, gd, lid = p["player"], p["stat_type"], p["game_date"], p["line_id"]
+            hit = lookup.get((_norm(name), gd))
+            if not hit:
+                if gd < stale_before:          # unresolvable (not found / hasn't played yet)
+                    db.set_actual(lid, gd, None, now); voided += 1
+                continue
+            match, side = hit
+            val = _tennis_actual(match, side, label)
+            if val is None:
+                if gd < stale_before:          # ungradeable market (ace/DF/break-point)
+                    db.set_actual(lid, gd, None, now); voided += 1
+                continue
+            db.set_actual(lid, gd, float(val), now); graded += 1
+        except Exception:
+            continue
     return {"graded": graded, "voided": voided}

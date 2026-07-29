@@ -132,29 +132,37 @@ def confidence_score(line: dict[str, Any]) -> int:
       • decisiveness of P(over) (how far the model is from a coin flip),
       • method (a full engine run with a distribution beats a bare empirical average).
     Heuristic and deliberately transparent — see the weights below.
+
+    Weights re-tuned 2026-07-29 (projection-realism pass): the previous split (50/30/20)
+    gave sample-size + method a combined 70-point FLOOR whenever n≥30 games and
+    proj_kind=="engine" — true for most MLB props — so confidence was stuck in a
+    compressed 70-100 band regardless of how genuinely uncertain the matchup was (a real
+    coin-flip prop scored the same ~70 as a lopsided one). Decisiveness now carries the
+    plurality of the weight, so a well-sampled engine prop that's a real toss-up scores a
+    real ~50 ("medium"), not a floor-guaranteed ~70.
     """
     n = line.get("model_n") or 0
     prob = line.get("model_prob")
     n_factor = _clamp(n / 30.0)
     prob_factor = _clamp(2.0 * abs(float(prob) - 0.5)) if prob is not None else 0.0
     method_factor = 1.0 if line.get("proj_kind") == "engine" else 0.5
-    score = 100.0 * (0.5 * n_factor + 0.3 * prob_factor + 0.2 * method_factor)
+    score = 100.0 * (0.30 * n_factor + 0.50 * prob_factor + 0.20 * method_factor)
     return int(round(_clamp(score / 100.0) * 100))
 
 
 def confidence_factors(line: dict[str, Any]) -> list[dict[str, Any]]:
     """The REAL decomposition of `confidence_score` — the actual weighted contributions
     (each 0..max), so the UI can show what drives a prop's confidence instead of a constant.
-    The three values sum to the confidence score (max 50 + 30 + 20 = 100)."""
+    The three values sum to the confidence score (max 30 + 50 + 20 = 100)."""
     n = int(line.get("model_n") or 0)
     prob = line.get("model_prob")
     n_factor = _clamp(n / 30.0)
     prob_factor = _clamp(2.0 * abs(float(prob) - 0.5)) if prob is not None else 0.0
     method_factor = 1.0 if line.get("proj_kind") == "engine" else 0.5
     return [
-        {"factor": "Sample Size", "value": round(50.0 * n_factor, 1), "max": 50,
+        {"factor": "Sample Size", "value": round(30.0 * n_factor, 1), "max": 30,
          "detail": f"{n} game{'' if n == 1 else 's'} of history"},
-        {"factor": "Decisiveness", "value": round(30.0 * prob_factor, 1), "max": 30,
+        {"factor": "Decisiveness", "value": round(50.0 * prob_factor, 1), "max": 50,
          "detail": "how far P(over) is from a coin-flip"},
         {"factor": "Method", "value": round(20.0 * method_factor, 1), "max": 20,
          "detail": "full engine run" if method_factor == 1.0 else "empirical average"},
