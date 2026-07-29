@@ -113,6 +113,11 @@ def project_batter(form: dict, ctx: dict, n: int = mc.N_SIMS,
 
     out: dict[str, Projection] = {}
 
+    # plate appearances — the per-sim trial draw itself, already computed above to size
+    # every other stat's binomial/multinomial draws. Exposing it costs nothing new.
+    out["plate_appearances"] = summarize(trials, "plate_appearances",
+                                         [f"exp PA {exp_pa:.2f} × Vegas {vegas:.2f}"])
+
     # hits
     s_hits = mc.binomial_event(p_hit * off, trials)
     out["hits"] = summarize(s_hits, "hits", drivers_base)

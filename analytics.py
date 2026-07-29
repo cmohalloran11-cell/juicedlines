@@ -169,6 +169,7 @@ HIT_MAP: dict[str, Callable[[dict], float]] = {
     "hitter strikeouts": lambda s: _f(s, "strikeOuts"),
     "batter strikeouts": lambda s: _f(s, "strikeOuts"),
     "hits + runs + rbis": lambda s: _f(s, "hits") + _f(s, "runs") + _f(s, "rbi"),
+    "plate appearances": lambda s: _f(s, "plateAppearances"),
 }
 
 

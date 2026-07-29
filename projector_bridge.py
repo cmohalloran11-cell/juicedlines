@@ -43,6 +43,7 @@ _BAT = {
     "home runs": "home_runs", "runs": "runs", "rbis": "rbis",
     "runs batted in": "rbis", "stolen bases": "stolen_bases", "walks": "walks",
     "hitter strikeouts": "strikeouts", "batter strikeouts": "strikeouts",
+    "plate appearances": "plate_appearances", "pa": "plate_appearances",
 }
 _PIT = {
     "strikeouts": "strikeouts", "pitcher strikeouts": "strikeouts",

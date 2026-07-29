@@ -103,3 +103,35 @@ def test_negbinom_count_mean_and_support():
     s = mc.negbinom_count(3.0, n=20000)
     assert (s >= 0).all()
     assert s.mean() == pytest.approx(3.0, rel=0.1)
+
+
+# ── plate_appearances: exposing the engine's own per-sim PA draw as a stat ─────
+# The batter sim already draws a per-simulation trial count (Poisson around exp_pa)
+# to size every OTHER stat's binomial/multinomial draws — this just returns that
+# same array as its own Projection instead of throwing it away, so "Plate
+# Appearances" props (previously unprojected — no engine output existed for them)
+# get a real distribution.
+
+def test_plate_appearances_is_a_real_projection_matching_exp_pa():
+    from projector.models import mlb_model as mm
+    form = {"exp_pa": 4.2, "p_hit": 0.25, "p_hr": 0.04, "p_bb": 0.09, "p_k": 0.22,
+            "role": "batter"}
+    out = mm.project_batter(form, {}, n=20000, use_ensemble=False)
+    assert "plate_appearances" in out
+    pa = out["plate_appearances"]
+    assert pa.mean == pytest.approx(4.2, rel=0.1)
+    assert pa.samples is not None and (pa.samples >= 0).all()
+
+
+def test_plate_appearances_resolves_through_for_stat():
+    # for_stat's alias table must map the human prop label to the engine key end to end.
+    from projector.models.base import Projection
+    import numpy as np
+    samples = np.random.default_rng(0).poisson(4.2, 5000).astype(float)
+    projs = {"plate_appearances": Projection(
+        stat="plate_appearances", mean=4.2, median=4.0, p25=3.0, p75=5.0,
+        floor=2.0, ceiling=7.0, std=2.0, samples=samples)}
+    out = pb.for_stat(projs, "Plate Appearances", 3.5, is_pitcher=False)
+    assert out is not None and out["projection"] == pytest.approx(4.2, abs=0.01)
+    out2 = pb.for_stat(projs, "PA", 3.5, is_pitcher=False)   # the short alias too
+    assert out2 is not None
