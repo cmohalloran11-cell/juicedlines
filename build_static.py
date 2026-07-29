@@ -386,14 +386,18 @@ def main() -> None:
             (SD / name).write_text(json.dumps(obj, separators=(",", ":"), default=_num),
                                    encoding="utf-8")
 
-        _w("projections.json", {"projections": _dash.projections(lines, limit=1000),
+        # "Read every line" — limit high enough to cover the full priced (standard/boosted)
+        # pool (measured ~4-5k on a full slate), not an arbitrary top-1000 cut that silently
+        # dropped thousands of real lines.
+        _w("projections.json", {"projections": _dash.projections(lines, limit=8000),
                                 "updated_at": updated})
         # Demon/goblin lane, separate from the default (priced) projections payload — see
-        # dashboard.projections()'s odds_types param. Kept out of the main file so it doesn't
-        # dominate the juice-sorted default list or bloat the normal page load; the frontend
-        # lazy-loads this only when the user opts into "Include Demon/Goblin".
+        # dashboard.projections()'s odds_types param. Kept in its own file so it doesn't
+        # dominate the juice-sorted default list; the frontend lazy-loads this only when the
+        # user opts into the PrizePicks Demon/Goblin toggle. Limit covers the full demon+
+        # goblin pool (measured ~10-11k on a full slate) — "every line" applies here too.
         _w("boosted.json", {"projections": _dash.projections(
-                                lines, limit=500, sort="confidence",
+                                lines, limit=15000, sort="confidence",
                                 odds_types=("demon", "goblin")),
                             "updated_at": updated})
         _w("injuries.json", {"injuries": _dash.injuries(lines)})

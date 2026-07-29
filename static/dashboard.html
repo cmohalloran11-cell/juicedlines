@@ -341,7 +341,7 @@ const DATA={
     async _default(){let ls=await this._lists();let d=ls.find(l=>l.name==='My Watchlist')||ls[0];
       if(!d){d=(await api('/api/watchlists',{method:'POST',body:{name:'My Watchlist'}})).watchlist;d.items=[]}return d},
     async list(){if(!signedIn())return LS.get('watchlist');
-      const [ls,pr]=await Promise.all([this._lists(),api('/api/projections?limit=1000')]);
+      const [ls,pr]=await Promise.all([this._lists(),api('/api/projections?limit=8000')]);
       const idx={};(pr.projections||[]).forEach(p=>idx[p.id]=p);
       return ls.flatMap(l=>l.items||[]).map(it=>idx[it.line_id]||{id:it.line_id,player:it.player,sport:it.sport,stat:it.stat_type,side:'over',juiceScore:0,confidence:0})},
     async ids(){if(!signedIn())return LS.get('watchlist').map(x=>x.id);
@@ -543,7 +543,7 @@ async function vProjections(title,sub){
       <div class="pager" id="ppager"></div>
       <div class="statusbar" id="pstatus"></div>
     </div></div>`;
-  const [pr,dash]=await Promise.all([api('/api/projections?sort=juice&limit=1000'),api('/api/dashboard?sport=all')]);
+  const [pr,dash]=await Promise.all([api('/api/projections?sort=juice&limit=8000'),api('/api/dashboard?sport=all')]);
   PROJ=pr.projections||[]; PROJUP=pr.updated_at;
   renderFilters(); renderPTiles(dash); renderToolbar(); applyProj(); renderStatus(dash);
 }
@@ -581,7 +581,7 @@ function togSrc(k,on){
 async function setLineMode(mode){
   PF.lineMode=mode;
   if(mode!=='normal'&&!BOOSTED_LOADED){
-    try{const r=await api('/api/projections?boosted=true&limit=500');BOOSTED=r.projections||[]}catch(e){BOOSTED=[]}
+    try{const r=await api('/api/projections?boosted=true&limit=15000');BOOSTED=r.projections||[]}catch(e){BOOSTED=[]}
     BOOSTED_LOADED=true;
   }
   PF.page=1;renderFilters();applyProj();
@@ -763,7 +763,7 @@ async function vResearch(){
    <div class="panel"><div class="phead"><h3>Start from a top prop</h3></div>${propTable((p.projections||[]).slice(0,12))}</div>`;
 }
 async function vAI(){
-  const p=await api('/api/projections?sort=juice&limit=1000');
+  const p=await api('/api/projections?sort=juice&limit=8000');
   AI_ALL=p.projections||[];
   const banner=AUTH.ai?`<div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4 style="display:flex;align-items:center;gap:6px">AI Juice is connected ${icon('bolt',15,'var(--accent)')}</h4><p>Open any prop and hit “Explain with AI” for a grounded, cited breakdown — it may only reference that projection's own numbers, so it can't fabricate a stat.</p></div></div>`
     :`<div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4>AI Juice isn't configured yet</h4><p>Set an AI API key on the server to enable grounded per-prop explanations. Every projection below is fully model-driven regardless.</p></div></div>`;
@@ -845,7 +845,7 @@ async function vCorrelations(){
 async function loadCorrLive(){
   const box=$('#corr-live');if(!box)return;
   try{
-    const pr=await api('/api/projections?limit=1000');const rows=pr.projections||[];
+    const pr=await api('/api/projections?limit=8000');const rows=pr.projections||[];
     const combo=rows.find(p=>/hits.*runs.*rbi|hits\+runs\+rbi/i.test(p.stat||''));
     if(!combo){box.innerHTML='<h3 style="margin:0 0 8px">Live Example</h3><p class="muted">No H+R+RBI combo prop is on the board right now — check back once the slate posts.</p>';return}
     const parts=['Hits','Runs','RBIs'].map(s=>rows.find(p=>p.player===combo.player&&(p.stat||'').toLowerCase()===s.toLowerCase()));
@@ -1004,21 +1004,21 @@ async function vLearn(){
 
 // ── Research group: Players / Games / Teams (derived from the live projections) ──
 async function vPlayers(){
-  const pr=await api('/api/projections?sort=juice&limit=1000');const rows=pr.projections||[];
+  const pr=await api('/api/projections?sort=juice&limit=8000');const rows=pr.projections||[];
   const byP={};rows.forEach(p=>{(byP[p.player||'—']=byP[p.player||'—']||[]).push(p)});
   const players=Object.entries(byP).map(([name,ps])=>({name,team:ps[0].team,sport:ps[0].sport,headshot:ps[0].headshot,n:ps.length,best:ps.reduce((a,b)=>b.juiceScore>a.juiceScore?b:a)})).sort((a,b)=>b.best.juiceScore-a.best.juiceScore);
   $('#view').innerHTML=`<div class="ph2"><div><h2>Players <span class="chip">${players.length}</span></h2><p>Every player with a projected prop today, ranked by their best Juice Score.</p></div></div>
    <div class="panel">${players.length?`<table class="drops"><thead><tr><th>Player</th><th>Team</th><th>Props</th><th>Best Prop</th><th>Juice</th></tr></thead><tbody>${players.slice(0,150).map(pl=>`<tr onclick='goPlayer(${JSON.stringify(pl.name).replace(/'/g,"&#39;")})'><td><div class="pl"><img src="${ph(pl.headshot)}"><div><div class="nm">${pl.name}</div><div class="tm">${teamBadge(pl,14)} ${pl.team||''}</div></div></div></td><td>${pl.team||''}</td><td class="mono">${pl.n}</td><td class="muted">${cap(pl.best.side)} ${fmt(pl.best.line)} ${pl.best.stat}</td><td><span class="js" style="color:${jColor(pl.best.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(pl.best.juiceScore)}55">${pl.best.juiceScore}</span></td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('user',30)}</div>No players on the board yet today.</div>`}</div>`;
 }
 async function vTeams(){
-  const pr=await api('/api/projections?sort=juice&limit=1000');const rows=pr.projections||[];
+  const pr=await api('/api/projections?sort=juice&limit=8000');const rows=pr.projections||[];
   const byT={};rows.forEach(p=>{if(p.team)(byT[p.team]=byT[p.team]||[]).push(p)});
   const teams=Object.entries(byT).map(([team,ps])=>({team,sport:ps[0].sport,teamLogo:ps[0].teamLogo,n:ps.length,avg:Math.round(ps.reduce((s,p)=>s+p.juiceScore,0)/ps.length),top:ps.reduce((a,b)=>b.juiceScore>a.juiceScore?b:a)})).sort((a,b)=>b.avg-a.avg);
   $('#view').innerHTML=`<div class="ph2"><div><h2>Teams <span class="chip">${teams.length}</span></h2><p>Teams on today's slate, ranked by average Juice Score across their props.</p></div></div>
    <div class="grid3">${teams.length?teams.map(t=>`<div class="learn-card" style="cursor:pointer" onclick='openProp(${JSON.stringify(t.top).replace(/'/g,"&#39;")})'><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">${teamBadge(t,26)}<h4 style="margin:0">${t.team}</h4><span style="margin-left:auto">${leagueLogo(t.sport,15)}</span></div><div class="kv"><div class="b"><div class="l">Props</div><div class="v" style="font-size:18px">${t.n}</div></div><div class="b"><div class="l">Avg Juice</div><div class="v" style="font-size:18px;color:${jColor(t.avg)}">${t.avg}</div></div></div></div>`).join(''):`<div class="empty" style="grid-column:1/-1"><div class="em">${icon('users',30)}</div>No teams on the board yet.</div>`}</div>`;
 }
 async function vGames(){
-  const [pr,d]=await Promise.all([api('/api/projections?sort=juice&limit=1000'),api('/api/dashboard?sport=all')]);
+  const [pr,d]=await Promise.all([api('/api/projections?sort=juice&limit=8000'),api('/api/dashboard?sport=all')]);
   const rows=pr.projections||[];const byT={};rows.forEach(p=>{if(p.team)(byT[p.team]=byT[p.team]||[]).push(p)});
   const games=(d.upcoming_games&&d.upcoming_games.length?d.upcoming_games:Object.keys(byT).map(t=>({team:t,sport:(byT[t][0]||{}).sport,startTime:(byT[t][0]||{}).startTime}))).slice(0,30);
   $('#view').innerHTML=`<div class="ph2"><div><h2>Games <span class="chip">${games.length}</span></h2><p>Today's slate — tap a game to open its top projected prop.</p></div></div>
@@ -1073,7 +1073,7 @@ const goPlayer=name=>{location.hash='/player/'+encodeURIComponent(name)};
 let PPTAB='overview';
 async function vPlayerPage(name){
   if(!name){$('#view').innerHTML=`<div class="empty">${icon('user',30)}<br>No player specified.</div>`;return}
-  const pr=await api('/api/projections?sort=juice&limit=1000');
+  const pr=await api('/api/projections?sort=juice&limit=8000');
   const rows=(pr.projections||[]).filter(p=>p.player===name);
   if(!rows.length){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('user',30)}</div>No live props for <b>${name}</b> right now.</div>`;return}
   const top=rows.reduce((a,b)=>b.juiceScore>a.juiceScore?b:a);
@@ -1153,7 +1153,7 @@ let PP_ROWS=[],PP_TOP=null;
 const goGame=team=>{location.hash='/game/'+encodeURIComponent(team)};
 async function vGamePage(team){
   if(!team){$('#view').innerHTML=`<div class="empty">${icon('cloud',30)}<br>No game specified.</div>`;return}
-  const pr=await api('/api/projections?sort=juice&limit=1000');
+  const pr=await api('/api/projections?sort=juice&limit=8000');
   const rows=(pr.projections||[]).filter(p=>p.team===team);
   if(!rows.length){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('cloud',30)}</div>No live props for <b>${team}</b> right now.</div>`;return}
   const top=rows[0];
@@ -1290,7 +1290,7 @@ function loadResearch(x){const b=$('#recentbox');if(b)b.scrollIntoView({behavior
 async function compareBooks(x){const box=$('#cmpbox');if(!box)return;
   box.style.display='block';box.innerHTML='<h5>Compare Books</h5><p class="muted skel">Checking other books…</p>';
   try{
-    const pr=await api('/api/projections?limit=1000');
+    const pr=await api('/api/projections?limit=8000');
     const others=(pr.projections||[]).filter(p=>p.player===x.player&&p.stat===x.stat&&p.source!==x.source);
     if(!others.length){box.innerHTML=`<h5>Compare Books</h5><p class="muted" style="font-size:11.5px">No other book currently has ${x.player} ${x.stat} listed.</p>`;return}
     const rows=[x,...others].sort((a,b)=>(a.source===x.source?-1:1));
