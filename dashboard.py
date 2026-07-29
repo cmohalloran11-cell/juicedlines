@@ -184,7 +184,7 @@ def build(lines: list[dict], updated_at: Optional[str],
                               valuation.juice_score(juice_leader) if juice_leader else None,
                               "Juice Score Leader"),
         "top_edge": _tile(top_edge, _edge_pct(top_edge) if top_edge else None,
-                          "Top Projected Edge"),
+                          "Top Projected EV %"),
         "biggest_line_move": ({
             "player": big_move["player"], "stat": big_move["stat_type"],
             "value": round((big_move.get("close_line") or 0) - (big_move.get("open_line") or 0), 1),

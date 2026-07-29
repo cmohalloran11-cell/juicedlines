@@ -420,17 +420,23 @@ function toggleSide(){const open=$('.side').classList.toggle('open');$('#sidescr
 function closeSide(){$('.side').classList.remove('open');$('#sidescrim').classList.remove('open')}
 
 // ── shared prop table + rows ──
+// Projection is the mean — real and informative, but on a skewed stat it can sit above
+// the line while the model still leans Under (median/probability say otherwise). Surface
+// the median inline whenever it meaningfully diverges, so "Proj 0.62, Under" doesn't read
+// as a contradiction in the compact table (the full breakdown is always in the drawer).
+const medHint=x=>(x.median!=null&&Math.abs(x.median-(x.projection??0))>0.05)
+  ?`<div class="p2" style="font-size:9.5px;font-weight:600" title="Median — the typical-game outcome, which is what actually drives the Over/Under call">med ${fmt(x.median)}</div>`:'';
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
   <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.team||''} ${x.position?'· '+x.position:''}</div></div></div></td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${x.stat||''}</div></td>
   <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${x.team||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${x.opponent}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
-  <td class="mono" style="font-weight:800">${fmt(x.projection)}</td>
+  <td class="mono" style="font-weight:800">${fmt(x.projection)}${medHint(x)}</td>
   <td class="mono muted">${fmt(x.line)}</td>
   <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${x.unpriced?'<span class="muted" style="font-weight:600;font-size:10.5px">not priced</span>':pct(x.edgePct)}</td>
   <td><span class="js" style="color:${jColor(x.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(x.juiceScore)}55">${x.juiceScore}</span></td>
   <td><div class="conf"><div class="track"><i style="width:${Math.round(x.confidence)}%"></i></div><b class="mono">${Math.round(x.confidence)}%</b></div></td>
   <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td></tr>`;
-const propTable=rows=>`<table class="drops"><thead><tr><th>Player</th><th>Prop</th><th>Matchup</th><th>Proj</th><th>Line</th><th>Edge</th><th>Juice</th><th>Confidence</th><th></th></tr></thead><tbody>${rows.length?rows.map(propRow).join(''):'<tr><td colspan="9" class="empty">No projected props here right now.</td></tr>'}</tbody></table>`;
+const propTable=rows=>`<table class="drops"><thead><tr><th>Player</th><th>Prop</th><th>Matchup</th><th>Proj</th><th>Line</th><th>EV %</th><th>Juice</th><th>Confidence</th><th></th></tr></thead><tbody>${rows.length?rows.map(propRow).join(''):'<tr><td colspan="9" class="empty">No projected props here right now.</td></tr>'}</tbody></table>`;
 
 // ── watchlist helpers (demo/local) ──
 const isWatched=id=>WATCHED.has(id);
@@ -455,7 +461,7 @@ async function vDashboard(){
    <div class="grid2"><div>
     <div class="tiles">
       ${tile('Juice Score Leader',jl?jl.value:'—','',jl?`<b>${jl.player}</b><br>${cap(jl.side)} ${fmt(jl.line)} ${jl.stat}`:'—',jl&&jl.headshot)}
-      ${tile('Top Projected Edge',te?pct(te.value):'—','pos',te?`<b>${te.player}</b><br>${cap(te.side)} ${fmt(te.line)} ${te.stat}`:'—',te&&te.headshot)}
+      ${tile('Top Projected EV %',te?pct(te.value):'—','pos',te?`<b>${te.player}</b><br>${cap(te.side)} ${fmt(te.line)} ${te.stat}`:'—',te&&te.headshot)}
       ${tile('Biggest Line Move',lm?signed(lm.value):'—',lm&&lm.value>0?'pos':'neg',lm?`<b>${lm.player}</b><br>${lm.stat}`:'No moves logged')}
       ${tile('Best Value',bv?signed(bv.value):'—','pos',bv?`<b>${bv.player}</b><br>${cap(bv.side)} ${fmt(bv.line)} ${bv.stat}`:'—',bv&&bv.headshot)}
       <div class="tile meter"><div class="cap">Data Quality</div><div class="big">${dh.quality_score??'—'}<span style="font-size:14px;color:var(--muted)">/100</span></div><div class="sub"><b>${(dh.projected_lines||0).toLocaleString()}</b> projected · ${dh.live_sources||0} sources</div><div class="bar"><i style="width:${dh.quality_score||0}%"></i></div></div>
@@ -568,7 +574,7 @@ function renderFilters(){
    <div class="fg"><div class="gt">Prop Categories <span style="color:var(--dim);font-weight:600;margin-left:4px">${PF.projSport==='all'?'All Sports':PF.projSport}</span></div>${shown.map(catRow).join('')||'<span class="muted" style="font-size:11px">—</span>'}${more>0?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=true;renderFilters()">+ ${more} more</span>`:(PF.catsExpanded&&all.length>10?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=false;renderFilters()">Show less</span>`:'')}</div>
    <div class="fg"><div class="gt">Juice Score</div><div class="frange"><div class="lab"><span>${PF.juiceMin}</span><span>100</span></div><input type="range" min="0" max="100" value="${PF.juiceMin}" oninput="PF.juiceMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value;applyProj()"></div></div>
    <div class="fg"><div class="gt">Confidence</div><div class="frange"><div class="lab"><span>${PF.confMin}%</span><span>100%</span></div><input type="range" min="0" max="100" value="${PF.confMin}" oninput="PF.confMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
-   <div class="fg"><div class="gt">Min Edge %</div><div class="frange"><div class="lab"><span>${PF.edgeMin}%</span><span>+50%</span></div><input type="range" min="-20" max="50" value="${PF.edgeMin}" oninput="PF.edgeMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
+   <div class="fg"><div class="gt">Min EV %</div><div class="frange"><div class="lab"><span>${PF.edgeMin}%</span><span>+50%</span></div><input type="range" min="-20" max="50" value="${PF.edgeMin}" oninput="PF.edgeMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
    <div class="fg"><button class="btn pri" style="width:100%;justify-content:center" onclick="go('learn')">How scores work</button></div>`;
 }
 function togSrc(k,on){
@@ -591,7 +597,7 @@ function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.ju
 function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move;
   const tile=(cap,big,cls,sub)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div></div>`;
   $('#ptiles').innerHTML=
-    tile('Top Edge',te?pct(te.value):'—','pos',te?te.player:'')+
+    tile('Top EV %',te?pct(te.value):'—','pos',te?te.player:'')+
     tile('Highest Juice',jl?jl.value:'—','',jl?jl.player:'')+
     tile('Avg Confidence',(dsAvg()||'—')+'%','',(PROJ.length)+' props')+
     tile('Biggest Line Move',lm?signed(lm.value):'—',lm&&lm.value>0?'pos':'neg',lm?lm.player:'')+
@@ -604,7 +610,7 @@ function renderToolbar(){
   const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k?'on':''}" onclick="PF.projSport='${k}';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}</div>`;
   $('#ptoolbar').innerHTML=`${sp}<input class="ctl" id="pq" placeholder="Search player…" style="min-width:150px" oninput="PF.q=this.value;PF.page=1;applyProj()" value="${PF.q}">
     ${vt('high',icon('fire',13)+' High Juice (80+)')}${vt('watch',icon('star',13)+' Watchlist')}
-    <select class="ctl" onchange="PF.sort=this.value;PF.dir=-1;applyProj()"><option value="juice">Sort: Juice</option><option value="edge">Sort: Edge %</option><option value="confidence">Sort: Confidence</option><option value="projection">Sort: Projection</option></select>`;
+    <select class="ctl" onchange="PF.sort=this.value;PF.dir=-1;applyProj()"><option value="juice">Sort: Juice</option><option value="edge">Sort: EV %</option><option value="confidence">Sort: Confidence</option><option value="projection">Sort: Projection</option></select>`;
 }
 function tbClick(k){if(k==='high')PF.high=!PF.high;if(k==='watch')PF.onlyWatch=!PF.onlyWatch;PF.page=1;renderToolbar();applyProj()}
 function setSort(k){if(!k)return;if(PF.sort===k)PF.dir=-(PF.dir||-1);else{PF.sort=k;PF.dir=(k==='player'||k==='opp')?1:-1}PF.page=1;applyProj()}
@@ -626,7 +632,7 @@ function applyProj(){
   const per=PF.per,pages=Math.max(1,Math.ceil(rows.length/per)),pg=Math.min(PF.page,pages);PF.page=pg;
   const slice=rows.slice((pg-1)*per,pg*per);
   const th=(label,k)=>k?`<th class="sortable ${PF.sort===k?'sorted':''}" onclick="setSort('${k}')">${label}${PF.sort===k?`<span class="sortarrow">${dir<0?'↓':'↑'}</span>`:''}</th>`:`<th>${label}</th>`;
-  const head=`<tr>${th('','')}${th('Player','player')}${th('Team','')}${th('Opp','opp')}${th('Prop','')}${th('Book','')}${th('Line','line')}${th('Proj','projection')}${th('Edge','edge')}${th('Juice','juice')}${th('Confidence','confidence')}${th('Over%','probability')}${th('AI','')}${th('','')}</tr>`;
+  const head=`<tr>${th('','')}${th('Player','player')}${th('Team','')}${th('Opp','opp')}${th('Prop','')}${th('Book','')}${th('Line','line')}${th('Proj','projection')}${th('EV %','edge')}${th('Juice','juice')}${th('Confidence','confidence')}${th('Over%','probability')}${th('AI','')}${th('','')}</tr>`;
   $('#ptable').innerHTML=`<table class="rtable"><thead>${head}</thead><tbody>${slice.map(richRow).join('')||'<tr><td colspan="14" class="empty">No props match these filters.</td></tr>'}</tbody></table>`;
   const from=rows.length?(pg-1)*per+1:0,to=Math.min(pg*per,rows.length);
   $('#ppager').innerHTML=`<span>Showing ${from}–${to} of ${rows.length}</span><span>${Array.from({length:pages},(_,i)=>i+1).slice(Math.max(0,pg-3),pg+2).map(n=>`<span class="qf ${n===pg?'on':''}" onclick="PF.page=${n};applyProj()">${n}</span>`).join(' ')}</span>`;
@@ -639,7 +645,7 @@ const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${x.stat||''}</div></td>
   <td>${bookLogo(x.source,22)}</td>
   <td class="mono muted">${fmt(x.line)}</td>
-  <td class="mono" style="font-weight:800">${fmt(x.projection)}</td>
+  <td class="mono" style="font-weight:800">${fmt(x.projection)}${medHint(x)}</td>
   <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800" title="${x.unpriced?'PrizePicks doesn\'t expose this boosted line\'s real payout, so EV can\'t be honestly computed.':''}">${x.unpriced?'<span class="muted" style="font-weight:600;font-size:10.5px">not priced</span>':pct(x.edgePct)}</td>
   <td><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66">${x.juiceScore}</span></td>
   <td><div class="conf"><div class="track"><i style="width:${Math.round(x.confidence)}%"></i></div><b class="mono">${Math.round(x.confidence)}%</b></div></td>
@@ -867,7 +873,7 @@ async function vAlerts(){
   const a=await DATA.alerts.list();
   $('#view').innerHTML=`<div class="ph2"><div><h2>Alerts <span class="chip">${a.length}</span></h2><p>Fire when a prop crosses a threshold. ${signedIn()?'Synced to your account ✓':'Saved locally — sign in to sync.'}</p></div></div>
    <div class="panel" style="padding:16px"><div class="controls" style="margin:0">
-     <select id="a-metric"><option value="juice">Juice Score</option><option value="edge">Edge %</option><option value="probability">Probability</option></select>
+     <select id="a-metric"><option value="juice">Juice Score</option><option value="edge">EV %</option><option value="probability">Probability</option></select>
      <select id="a-cmp"><option value="gte">≥ at least</option><option value="lte">≤ at most</option></select>
      <input class="ctl" id="a-th" type="number" placeholder="Threshold" style="width:120px" value="70">
      <button class="btn pri" onclick="addAlert()">Create Alert</button></div></div>
@@ -1294,7 +1300,7 @@ async function compareBooks(x){const box=$('#cmpbox');if(!box)return;
     const others=(pr.projections||[]).filter(p=>p.player===x.player&&p.stat===x.stat&&p.source!==x.source);
     if(!others.length){box.innerHTML=`<h5>Compare Books</h5><p class="muted" style="font-size:11.5px">No other book currently has ${x.player} ${x.stat} listed.</p>`;return}
     const rows=[x,...others].sort((a,b)=>(a.source===x.source?-1:1));
-    box.innerHTML=`<h5>Compare Books</h5><table class="drops" style="margin:0"><thead><tr><th>Book</th><th>Line</th><th>Proj</th><th>Edge</th></tr></thead><tbody>${rows.map(r=>`<tr ${r.source===x.source?'style="background:#101a0d"':''}><td>${bookLogo(r.source,18)} ${cap(r.source)}</td><td class="mono">${fmt(r.line)}</td><td class="mono">${fmt(r.projection)}</td><td class="mono ${r.edgePct>=0?'pos':'neg'}">${pct(r.edgePct)}</td></tr>`).join('')}</tbody></table>`;
+    box.innerHTML=`<h5>Compare Books</h5><table class="drops" style="margin:0"><thead><tr><th>Book</th><th>Line</th><th>Proj</th><th>EV %</th></tr></thead><tbody>${rows.map(r=>`<tr ${r.source===x.source?'style="background:#101a0d"':''}><td>${bookLogo(r.source,18)} ${cap(r.source)}</td><td class="mono">${fmt(r.line)}</td><td class="mono">${fmt(r.projection)}</td><td class="mono ${r.edgePct>=0?'pos':'neg'}">${pct(r.edgePct)}</td></tr>`).join('')}</tbody></table>`;
   }catch(e){box.innerHTML='<h5>Compare Books</h5><p class="muted">Could not load other books.</p>'}}
 function closeDrawer(){$('#scrim').classList.remove('open');$('#drawer').classList.remove('open');const was=SELID;SELID=null;if(was&&cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}}
 

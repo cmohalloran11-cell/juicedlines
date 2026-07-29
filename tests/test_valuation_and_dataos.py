@@ -7,6 +7,8 @@ snapshot with a known shape.
 """
 from __future__ import annotations
 
+import pytest
+
 import valuation
 import dataos
 
@@ -14,11 +16,26 @@ import dataos
 # ── valuation: exact algebra ──────────────────────────────────────────────────
 
 def test_expected_value_matches_formula():
-    # model 60% over, book implies 50% (even money) → EV = 0.6/0.5 - 1 = 0.20
+    # model 53% over, book implies 50% (even money) → raw EV = 0.53*2-1 = 0.06 — inside the
+    # ±8% zone _dampen_ev leaves untouched, so this exercises the exact underlying formula.
     line = {"over_implied": 0.5, "under_implied": 0.5}
-    assert valuation.expected_value(0.6, line) == 0.2
-    # negative edge: model 40% over → favored side is UNDER at 60% vs implied 0.5 → +0.20
-    assert valuation.expected_value(0.4, line) == 0.2
+    assert valuation.expected_value(0.53, line) == pytest.approx(0.06, abs=1e-9)
+    # negative edge: model 47% over → favored side is UNDER at 53% vs implied 0.5 → same +0.06
+    assert valuation.expected_value(0.47, line) == pytest.approx(0.06, abs=1e-9)
+
+
+def test_ev_dampening_compresses_large_estimates_for_display():
+    # 2026-07-30: live examples showed props reading +50-77% EV — real edges rarely exceed
+    # ~10% (the product's own tier guide calls >15% "extremely rare"), so a raw estimate that
+    # large is presumed to be at least partly a calibration artifact, not a real edge, and is
+    # compressed for display. Order-preserving (never flips which side wins), untouched below
+    # the 8% threshold, only the excess above it is compressed.
+    assert valuation._dampen_ev(0.05) == 0.05                 # small, real edge: untouched
+    assert valuation._dampen_ev(0.08) == 0.08                 # exactly at the threshold: untouched
+    assert valuation._dampen_ev(0.771) == pytest.approx(0.18365, abs=1e-6)  # live example
+    assert valuation._dampen_ev(-0.42) == pytest.approx(-0.131, abs=1e-6)   # sign preserved
+    # monotonic: a bigger raw EV never dampens to a smaller shown EV
+    assert valuation._dampen_ev(0.5) < valuation._dampen_ev(0.7) < valuation._dampen_ev(0.9)
 
 
 def test_expected_value_negative_when_model_trails_price():
@@ -34,12 +51,13 @@ def test_expected_value_uses_pickem_price_not_even_money():
     # layer already computes and attaches as pickem_price. Every PrizePicks EV was too high.
     line_with_pickem = {"pickem_price": -137}
     ev = valuation.expected_value(0.70, line_with_pickem)
-    # decimal odds for -137 = 1 + 100/137 ≈ 1.7299 → EV = 0.70*1.7299-1 ≈ 0.2109
-    assert 0.20 < ev < 0.22
+    # decimal odds for -137 = 1 + 100/137 ≈ 1.7299 → raw EV = 0.70*1.7299-1 ≈ 0.2109 →
+    # dampened (_dampen_ev) to 0.08 + (0.2109-0.08)*0.15 ≈ 0.0996
+    assert 0.09 < ev < 0.11
     # a line with real per-side odds must still win over pickem_price (never used as fallback
-    # when we actually know the price)
+    # when we actually know the price) — raw EV 0.4 dampens to 0.08+(0.4-0.08)*0.15=0.128
     line_with_real_odds = {"over_implied": 0.5, "pickem_price": -137}
-    assert valuation.expected_value(0.70, line_with_real_odds) == 0.4
+    assert valuation.expected_value(0.70, line_with_real_odds) == pytest.approx(0.128, abs=1e-9)
     # neither a real per-side price nor a pick'em price → the book doesn't offer either side
     # priced, so there's nothing to recommend an EV for (no fabricated even-money guess —
     # this is the market-availability fix: never invent a price for an unpriced/unoffered side).
@@ -64,13 +82,14 @@ def test_demon_goblin_are_unpriced_not_fabricated():
 
 def test_recommend_side_picks_higher_ev_not_higher_probability():
     # Multiplier-book example from the audit: 30%-likely Over at a 4.0x payout beats a
-    # 70%-likely Under at a thin 1.1x payout — EV(over)=0.3*4-1=+0.20, EV(under)=0.7*1.1-1=-0.23.
-    # Recommending on raw probability alone would wrongly pick Under here.
+    # 70%-likely Under at a thin 1.1x payout — raw EV(over)=0.3*4-1=+0.20 (dampens to 0.098),
+    # raw EV(under)=0.7*1.1-1=-0.23 (dampens to -0.1025). Recommending on raw probability
+    # alone would wrongly pick Under here; the DAMPENING must never flip which side wins.
     line = {"over_implied": 1.0 / 4.0, "under_implied": 1.0 / 1.1}
     rec = valuation.recommend_side(0.30, line)
     assert rec["side"] == "over"
-    assert rec["ev"] == 0.2
-    assert valuation.expected_value(0.30, line) == 0.2
+    assert rec["ev"] == pytest.approx(0.098, abs=1e-9)
+    assert valuation.expected_value(0.30, line) == pytest.approx(0.098, abs=1e-9)
 
 
 def test_recommend_side_never_recommends_unavailable_side():
@@ -132,6 +151,20 @@ def test_confidence_has_no_guaranteed_floor_for_a_coin_flip():
     assert valuation.confidence_score(decisive) >= 90
 
 
+def test_juice_score_gate_softened_after_confidence_rebalance():
+    # 2026-07-30: confidence_score's own re-tuning (removing its guaranteed floor) knocked
+    # average confidence down across the board, which — left unaddressed — would have
+    # compounded through juice_score's confidence GATE and crushed scores even further. The
+    # gate floor was raised (0.4 -> 0.6) to compensate. A decisive, well-sampled engine prop
+    # should still reach a real "top of the board" score even at moderate confidence.
+    decisive_moderate_conf = {"model_prob": 0.85, "model_n": 12, "proj_kind": "engine"}
+    assert valuation.juice_score(decisive_moderate_conf) >= 55
+    # a genuine coin-flip still scores low — the gate softening must not manufacture juice
+    # out of nothing.
+    coin_flip = {"model_prob": 0.5, "model_n": 40, "proj_kind": "engine"}
+    assert valuation.juice_score(coin_flip) <= 35
+
+
 def test_confidence_factors_decompose_the_score():
     # The three real components must sum to the confidence score (the honest breakdown).
     line = {"model_prob": 0.72, "model_n": 18, "proj_kind": "engine"}
@@ -165,7 +198,8 @@ def test_simulation_object_and_valuation_bundle():
     assert sim["sampleSize"] == 25 and sim["standardDeviation"] is not None
     val = valuation.valuation(line)
     assert val["available"] and val["side"] == "over"
-    assert val["expectedValue"] == 0.24 and 0 < val["juiceScore"] <= 100
+    # raw EV 0.62*2-1=0.24 dampens (_dampen_ev) to 0.08+(0.24-0.08)*0.15=0.104
+    assert val["expectedValue"] == pytest.approx(0.104, abs=1e-9) and 0 < val["juiceScore"] <= 100
 
 
 def test_valuation_unavailable_without_projection():

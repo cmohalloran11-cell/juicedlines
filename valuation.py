@@ -73,6 +73,26 @@ def is_unpriced(line: dict[str, Any]) -> bool:
     return (line.get("odds_type") or "standard").lower() in _UNPRICED_ODDS_TYPES
 
 
+def _dampen_ev(ev: float) -> float:
+    """Compress the tail of a raw EV estimate toward a believable range for DISPLAY —
+    2026-07-30, after live examples showed props reading +50-77% EV. Real, validated
+    edges rarely exceed ~10% (the product's own tier guide calls >15% "extremely rare");
+    a raw EV far above that is usually at least partly a calibration artifact — an
+    overconfident probability estimate, a thin-data multiplier, or a brand-new model with
+    no graded track record yet (tennis's live-Elo layer, shipped this session, has none).
+    This is honest uncertainty-shrinkage, the same idea as MLB's own Platt calibration
+    (shrink toward less confident), just applied at the EV step instead of the probability
+    step so it covers every sport uniformly. Order-preserving (same sign, monotonic in
+    magnitude), so it never changes which side recommend_side() picks — only the number
+    shown for it. Does NOT touch the probability/Kelly math, only this display field."""
+    threshold = 0.08
+    mag = abs(ev)
+    if mag <= threshold:
+        return ev
+    compressed = threshold + (mag - threshold) * 0.15   # the tail counts for 15% of its raw size
+    return compressed if ev > 0 else -compressed
+
+
 def recommend_side(model_prob: Optional[float], line: dict[str, Any]) -> Optional[dict[str, Any]]:
     """The side to actually recommend: whichever AVAILABLE side has the higher EV, not
     whichever the model gives >50% to. Returns None when there's no probability, or the book
@@ -90,12 +110,12 @@ def recommend_side(model_prob: Optional[float], line: dict[str, Any]) -> Optiona
     over_d = _side_decimal_odds(line, "over")
     if over_d is not None:
         candidates.append({"side": "over", "p": p, "decimal_odds": over_d,
-                           "ev": round(p * over_d - 1.0, 4)})
+                           "ev": _dampen_ev(round(p * over_d - 1.0, 4))})
     under_d = _side_decimal_odds(line, "under")
     if under_d is not None:
         q = 1.0 - p
         candidates.append({"side": "under", "p": q, "decimal_odds": under_d,
-                           "ev": round(q * under_d - 1.0, 4)})
+                           "ev": _dampen_ev(round(q * under_d - 1.0, 4))})
     if not candidates:
         return None
     return max(candidates, key=lambda c: c["ev"])
@@ -182,8 +202,16 @@ def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int
     conf = confidence_score(line) / 100.0
     # Confidence GATES the score: a decisive-but-low-confidence prop (e.g. a market-derived
     # tennis line with an extreme probability) can't top the board over a well-sampled,
-    # engine-projected MLB prop. The trailing (0.4 + 0.6·conf) factor is the gate.
-    return int(round(100.0 * (0.45 * decisiveness + 0.55 * conf) * (0.4 + 0.6 * conf)))
+    # engine-projected MLB prop. The trailing (0.6 + 0.4·conf) factor is the gate — floor
+    # raised from 0.4 (2026-07-30): confidence_score's own weights were re-tuned the same
+    # day to remove its guaranteed floor (so a genuine coin-flip prop scores ~50, not ~70),
+    # which knocked the AVERAGE confidence down across the board (81→65) and, left alone,
+    # would have over-punished juice score right along with it — priced (standard/boosted)
+    # props are legitimately less decisive on average than demon/goblin (whose lines are
+    # deliberately warped for the boosted payout), so juice SHOULD read lower for them, but
+    # not crushed further by an unrelated gate that was tuned against the old, inflated
+    # confidence scale.
+    return int(round(100.0 * (0.45 * decisiveness + 0.55 * conf) * (0.6 + 0.4 * conf)))
 
 
 def _std_from_band(line: dict[str, Any]) -> Optional[float]:
