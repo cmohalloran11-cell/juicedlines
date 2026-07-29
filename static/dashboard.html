@@ -654,10 +654,59 @@ async function vLeaderboards(){
    <div class="two"><div class="panel"><div class="phead"><h3>Most-Trusted MLB Stats</h3><span class="hint">where model beats the line</span></div>${stats||'<div class="mv muted">Building…</div>'}</div>
    <div class="panel"><div class="phead"><h3>Today's Highest-Juice Plays</h3><span class="lnk" onclick="go('projections')">All →</span></div>${propTable((p.projections||[]).slice(0,6))}</div></div>`;
 }
+// Peter Acklam's rational approximation of the inverse standard normal CDF (probit).
+// Accurate to ~1.15e-9 — plenty for a percentile table built on an already-approximate SD.
+function normInv(p){
+  if(p<=0)return -Infinity;if(p>=1)return Infinity;
+  const a=[-3.969683028665376e1,2.209460984245205e2,-2.759285104469687e2,1.383577518672690e2,-3.066479806614716e1,2.506628277459239];
+  const b=[-5.447609879822406e1,1.615858368580409e2,-1.556989798598866e2,6.680131188771972e1,-1.328068155288572e1];
+  const c=[-7.784894002430293e-3,-3.223964580411365e-1,-2.400758277161838,-2.549732539343734,4.374664141464968,2.938163982698783];
+  const d=[7.784695709041462e-3,3.224671290700398e-1,2.445134137142996,3.754408661907416];
+  const pl=0.02425;
+  let q,r;
+  if(p<pl){q=Math.sqrt(-2*Math.log(p));return(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)}
+  if(p>1-pl){q=Math.sqrt(-2*Math.log(1-p));return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)}
+  q=p-0.5;r=q*q;
+  return(((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+let SIM_LIST=[],SIM_X=null;
 async function vSimulations(){
   const p=await api('/api/projections?sort=confidence&limit=40');
-  $('#view').innerHTML=`<div class="ph2"><div><h2>Simulations</h2><p>Monte-Carlo distribution, probabilities, and staking for any prop. Pick one to simulate.</p></div></div>
-   <div class="panel"><div class="phead"><h3>Highest-Confidence Props <span class="hint">click to simulate</span></h3></div>${propTable((p.projections||[]).slice(0,15))}</div>`;
+  SIM_LIST=p.projections||[];
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Simulations</h2><p>Monte-Carlo distribution, probabilities, and percentiles for any prop.</p></div></div>
+   <div id="sim-panel"></div>
+   <div class="panel"><div class="phead"><h3>Highest-Confidence Props <span class="hint">click to simulate</span></h3></div><div id="sim-list"></div></div>`;
+  renderSimList();
+  if(SIM_LIST.length)selectSim(SIM_LIST[0]);
+}
+function renderSimList(){$('#sim-list').innerHTML=propTable(SIM_LIST.slice(0,15))
+    .replace(/onclick='openProp/g,"onclick='selectSimRow");}
+function selectSimRow(x){selectSim(x)}
+async function selectSim(x){
+  SIM_X=x;
+  const mu=x.projection,lo=x.floor,hi=x.ceiling;
+  const sd=(hi!=null&&lo!=null&&hi>lo)?(hi-lo)/2.5631:Math.max(0.5,Math.abs(mu||1)*0.5);
+  const pcts=[10,25,50,75,90,95,99].map(pt=>({pt,v:mu+sd*normInv(pt/100)}));
+  const over=x.probability!=null?Math.round(x.probability*100):null;
+  $('#sim-panel').innerHTML=`<div class="panel" style="padding:16px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <img src="${ph(x.headshot)}" style="width:36px;height:36px;border-radius:50%;background:#0a0e09">
+      <div><div style="font-weight:800;font-size:15px">${x.player} — ${x.stat}</div><div class="muted" style="font-size:11.5px">${cap(x.side)} ${fmt(x.line)} · ${x.team||''}</div></div>
+      <span class="jspill" style="margin-left:auto;color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66">${x.juiceScore}</span>
+    </div>
+    <div class="kv" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+      <div class="b"><div class="l">Projection</div><div class="v">${fmt(mu)}</div></div>
+      <div class="b"><div class="l">Line</div><div class="v">${fmt(x.line)}</div></div>
+      <div class="b"><div class="l">Prob(Over)</div><div class="v">${prob(x.probability)}</div></div>
+      <div class="b"><div class="l">Edge %</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div>
+    </div>
+    <div class="two">
+      <div><h5 style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:0 0 8px">Monte Carlo Distribution</h5><svg class="distbar" style="height:120px" id="sim-dist" viewBox="0 0 420 120" preserveAspectRatio="none"></svg></div>
+      <div><h5 style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:0 0 8px">Percentiles</h5><table class="drops" style="margin:0"><tbody>${pcts.map(({pt,v})=>`<tr><td class="muted">${pt}th</td><td class="mono" style="font-weight:700">${v.toFixed(1)}</td></tr>`).join('')}</tbody></table></div>
+    </div>
+    ${over!=null?`<h5 style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:16px 0 8px">Probability Breakdown</h5><div class="winbar"><span class="b" style="width:${100-over}%">Under ${100-over}%</span><span class="a" style="width:${over}%">Over ${over}%</span></div>`:''}
+   </div>`;
+  drawDist({mean:mu,floor:lo,ceiling:hi,standardDeviation:sd},x.line,'#sim-dist');
 }
 async function vResearch(){
   const p=await api('/api/projections?sort=juice&limit=30');
