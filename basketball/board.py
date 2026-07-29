@@ -122,9 +122,12 @@ def attach_basketball(lines: list[dict]) -> int:
             # side) lives in probability (valuation.recommend_side), not in this display
             # field — see the 2026-07-29 projection-realism pass.
             med = float(np.median(arr_line))
+            lo10, hi90 = (float(x) for x in np.percentile(arr_line, [10, 90]))
             l["model_prob"] = round(float((arr_line > line).mean()), 4)
             l["model_proj"] = round(center, 1)
             l["model_median"] = round(med, 1)
+            l["model_floor"] = round(max(0.0, lo10), 1)
+            l["model_ceiling"] = round(max(hi90, lo10), 1)
             l["model_edge"] = round(center - line, 1)
             l["proj_kind"] = "basketball"
             # PRE-anchor model MEAN + the weight applied, for the ledger — same number as

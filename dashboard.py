@@ -73,6 +73,7 @@ def _drop(line: dict) -> dict:
         "floor": line.get("model_floor"),          # for the drawer's distribution (esp. static)
         "ceiling": line.get("model_ceiling"),
         "juiceScore": valuation.juice_score(line),
+        "juiceFactors": valuation.juice_factors(line),   # real per-prop breakdown (2026-07-30 rebuild)
         "confidence": valuation.confidence_score(line),
         "confidenceFactors": valuation.confidence_factors(line),  # real per-prop breakdown (not a constant)
         # The side we'd actually recommend: highest-EV AVAILABLE side (valuation.recommend_side),

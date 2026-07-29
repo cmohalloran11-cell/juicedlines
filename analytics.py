@@ -1099,6 +1099,30 @@ def _pair_id(sport: str, a, b) -> str | None:
     return f"{sport}:{x}|{y}"
 
 
+def attach_market_quality(lines: list[dict]) -> None:
+    """
+    Attach `market_book_count` — how many DISTINCT sportsbooks currently list this exact
+    player + stat, regardless of line/side. Juice Score's "Market Quality" component reads
+    this: a prop only one book offers can't be cross-validated against a market consensus,
+    while a prop three books all price is a much more externally-attested line. Call AFTER
+    every per-sport projection attach (attach_projections already chains tennis/basketball
+    internally), so this sees the full slate.
+    """
+    # count DISTINCT books, not raw line count (one book can post the same player/stat more
+    # than once — e.g. a standard leg AND a demon/goblin variant)
+    by_key: dict[tuple, set] = {}
+    for l in lines:
+        if not l.get("player") or not l.get("stat_type") or not l.get("source"):
+            continue
+        key = (l.get("sport"), _norm(l["player"]), _norm(l["stat_type"]))
+        by_key.setdefault(key, set()).add(l["source"])
+    for l in lines:
+        if not l.get("player") or not l.get("stat_type"):
+            continue
+        key = (l.get("sport"), _norm(l["player"]), _norm(l["stat_type"]))
+        l["market_book_count"] = len(by_key.get(key, ()))
+
+
 def attach_game_ids(lines: list[dict]) -> None:
     """
     Attach `game_id` so the parlay builder can spot CORRELATED legs — two picks from the

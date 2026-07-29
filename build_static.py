@@ -103,12 +103,16 @@ _KEEP = (
     "odds_type", "matchup", "start_time", "status", "game_id",
     "over_price", "under_price", "over_implied", "under_implied", "pickem_price",
     "headshot", "team_logo", "flag", "country",
-    "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
+    "model_proj", "model_edge", "model_prob", "proj_kind", "model_n", "model_median",
     "model_floor", "model_ceiling",     # the p10-p90 range shown under the projection
+    "model_raw",                        # pre-anchor model mean — juice_score's model-vs-market
+                                         # agreement component (MLB/WNBA; tennis has its own
+                                         # 3-way model_agreement below)
     "bball_confidence", "tennis_confidence",
     "surface", "model_agreement", "elo_eff_matches",   # tennis engine transparency fields
     "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
+    "market_book_count",                # juice_score's market-quality component (attach_market_quality)
 )
 
 # The paywall: everything a projection produces is PREMIUM. Stripping these leaves the free
@@ -116,9 +120,9 @@ _KEEP = (
 # is safe to serve publicly; the premium file must only ever reach authenticated payers
 # (Phase 3 routes it through the auth gate instead of the public data branch).
 _PREMIUM_FIELDS = frozenset({
-    "model_proj", "model_edge", "model_prob", "proj_kind", "model_n",
+    "model_proj", "model_edge", "model_prob", "proj_kind", "model_n", "model_raw", "model_median",
     "bball_confidence", "tennis_confidence", "model_floor", "model_ceiling",
-    "surface", "model_agreement", "elo_eff_matches",
+    "surface", "model_agreement", "elo_eff_matches", "market_book_count",
     "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",
     "lineup_slot", "lineup_status", "workload_status", "layoff_days", "workload_outs",
 })
@@ -157,6 +161,10 @@ def main() -> None:
         analytics.attach_projections(lines)
     except Exception as exc:
         errors["projections"] = str(exc)
+    try:
+        analytics.attach_market_quality(lines)   # juice_score's cross-book coverage signal
+    except Exception as exc:
+        errors["market_quality"] = str(exc)
 
     # Direction-invariant validation (2026-07-29 Over/Under bias audit): every exported
     # projection must satisfy Projection > Line ⇒ P(Over) > 50% (and the reverse). The engines

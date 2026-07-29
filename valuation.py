@@ -145,6 +145,16 @@ def kelly_fraction(model_prob: float, line: dict[str, Any], cap: float = 0.25) -
     return round(_clamp(f, 0.0, cap), 4)
 
 
+# Every proj_kind tag that represents a genuine full Monte Carlo/simulation run — not just
+# MLB's "engine" (2026-07-30: found WNBA's "basketball" and tennis's "tennis" are ALSO real
+# per-possession/per-point simulations, but confidence_score's method bonus only ever
+# recognized "engine", silently docking both sports 10 points (0.20 weight × 0.5 lost) their
+# entire time on the board — a genuine bug, not a deliberate demotion. "model" (MLB's
+# empirical-average fallback) and "market" (tennis fully deferred to the market line, no real
+# model call) correctly stay at the lower 0.5 — they aren't full simulations.
+_FULL_ENGINE_KINDS = frozenset({"engine", "basketball", "tennis"})
+
+
 def confidence_score(line: dict[str, Any]) -> int:
     """
     0–100 confidence in the projection itself (NOT how good the bet is). Blends:
@@ -165,7 +175,7 @@ def confidence_score(line: dict[str, Any]) -> int:
     prob = line.get("model_prob")
     n_factor = _clamp(n / 30.0)
     prob_factor = _clamp(2.0 * abs(float(prob) - 0.5)) if prob is not None else 0.0
-    method_factor = 1.0 if line.get("proj_kind") == "engine" else 0.5
+    method_factor = 1.0 if line.get("proj_kind") in _FULL_ENGINE_KINDS else 0.5
     score = 100.0 * (0.30 * n_factor + 0.50 * prob_factor + 0.20 * method_factor)
     return int(round(_clamp(score / 100.0) * 100))
 
@@ -178,7 +188,7 @@ def confidence_factors(line: dict[str, Any]) -> list[dict[str, Any]]:
     prob = line.get("model_prob")
     n_factor = _clamp(n / 30.0)
     prob_factor = _clamp(2.0 * abs(float(prob) - 0.5)) if prob is not None else 0.0
-    method_factor = 1.0 if line.get("proj_kind") == "engine" else 0.5
+    method_factor = 1.0 if line.get("proj_kind") in _FULL_ENGINE_KINDS else 0.5
     return [
         {"factor": "Sample Size", "value": round(30.0 * n_factor, 1), "max": 30,
          "detail": f"{n} game{'' if n == 1 else 's'} of history"},
@@ -189,29 +199,131 @@ def confidence_factors(line: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _scale(x: Optional[float], lo: float, hi: float, default: float = 0.5) -> float:
+    """Linearly map x from [lo,hi] to [0,1], clamped. lo>hi inverts (lower x -> higher score).
+    `default` (0.5, neutral — neither rewarded nor punished) is returned when x is unknown,
+    so a prop missing one signal isn't dragged toward 0."""
+    if x is None:
+        return default
+    if hi == lo:
+        return default
+    return _clamp((float(x) - lo) / (hi - lo))
+
+
+# 2026-07-30 Juice Score rebuild. Previously Juice Score = decisiveness × confidence — which
+# made it read as just a re-skinned Confidence (same complaint the product itself anticipated:
+# "why do I need Juice Score if I already have Confidence?"). Confidence answers "how much do
+# we trust the projection"; EV answers "how much value does the market offer"; Juice Score
+# should answer a THIRD, genuinely different question — "given everything we know, how
+# attractive is this prop overall" — built from components neither Confidence nor EV alone
+# capture: is the projection stable, does the model agree with the market's own read, is this
+# line actually cross-validated by other books, is the edge meaningful relative to the line
+# itself, and is the underlying data complete. Every component below is computed from a REAL
+# field already on the line object — nothing here is fabricated. One deliberate substitution:
+# the product spec called for "4 independent model estimates" (simulation/Bayesian/regression/
+# historical) for a Model Agreement component — that ensemble doesn't exist in this codebase
+# (one model per sport). Tennis already computes a genuine 3-way model_agreement (simulation
+# vs Elo vs closed-form serve/return model — see tennis/projections.py). MLB/WNBA don't have
+# that, so their Model Agreement instead compares the model's RAW opinion (model_raw, the
+# pre-market-anchor mean) against the final blended projection — a real, if narrower,
+# "does the model's own read agree with what the market nudged it toward" signal.
+_JUICE_WEIGHTS = {
+    "ev": 0.30, "confidence": 0.25,
+    "stability": 0.15,   # merged Projection Stability (10%) + Volatility (5%) — see below
+    "agreement": 0.10, "market_quality": 0.10, "line_value": 0.05, "data_quality": 0.05,
+}
+
+
+def _juice_components(line: dict[str, Any], model_prob: Optional[float]) -> dict[str, tuple]:
+    """(score 0-1, human detail string) for every Juice Score component."""
+    out: dict[str, tuple] = {}
+
+    # 1. Expected Value — the recommended side's real (dampened) EV. Unpriced (demon/goblin)
+    # legs have no EV to reward or punish, so they get the neutral default, not a penalty for
+    # a number that was never computable in the first place.
+    rec = recommend_side(model_prob, line) if model_prob is not None else None
+    ev = rec["ev"] if rec else None
+    out["ev"] = (_scale(ev, -0.08, 0.15), f"{ev*100:+.1f}% EV" if ev is not None else "not priced")
+
+    # 2. Confidence — reuse the existing, real confidence score.
+    conf = confidence_score(line) / 100.0
+    out["confidence"] = (conf, f"{int(round(conf*100))}/100 confidence")
+
+    # 3. Distribution stability — coefficient of variation from the shipped p10-p90 band.
+    # A tight distribution relative to its own projection is a more predictable outcome
+    # (Plate Appearances) than a wide one (Home Runs); volatility is the same signal
+    # (a volatile market IS one with an unstable projection), so they're merged into one
+    # honestly-computed component rather than inventing a second, redundant number.
+    sd, proj = _std_from_band(line), line.get("model_proj")
+    cv = (sd / max(abs(float(proj)), 0.5)) if (sd is not None and proj is not None) else None
+    out["stability"] = (_scale(cv, 2.0, 0.3), f"CV {cv:.2f}" if cv is not None else "n/a")
+
+    # 4. Model agreement — tennis's real 3-way estimate if present, else the MLB/WNBA
+    # raw-vs-blended-projection proxy (see module docstring above for why these differ).
+    ma = line.get("model_agreement")
+    if ma is not None:
+        out["agreement"] = (_clamp(float(ma)), f"{int(round(float(ma)*100))}/100 (3-model)")
+    else:
+        raw = line.get("model_raw")
+        gap = (abs(float(raw) - float(proj)) / max(abs(float(proj)), 0.5)
+               if (raw is not None and proj is not None) else None)
+        out["agreement"] = (_scale(gap, 0.6, 0.0),
+                            f"{gap*100:.0f}% raw-vs-market gap" if gap is not None else "n/a")
+
+    # 5. Market quality — how many distinct books currently list this player+stat
+    # (analytics.attach_market_quality). A single-book prop can't be cross-validated.
+    n_books = line.get("market_book_count")
+    mq = _clamp(0.5 + 0.25 * (min(n_books, 3) - 1)) if n_books else 0.5
+    out["market_quality"] = (mq, f"{n_books or 1} book{'s' if (n_books or 1) != 1 else ''}")
+
+    # 6. Line value — the edge's size relative to the line itself (a +1.6 edge on an 18.5
+    # line means more than the same +1.6 on a 3.5 line).
+    edge, ln = line.get("model_edge"), line.get("line")
+    lv = (abs(float(edge)) / max(abs(float(ln)), 0.5)) if (edge is not None and ln is not None) else None
+    out["line_value"] = (_scale(lv, 0.0, 0.5), f"{lv*100:.0f}% of line" if lv is not None else "n/a")
+
+    # 7. Data quality — sample size + lineup certainty (reuses model_n/lineup_status, but as
+    # a DATA-COMPLETENESS signal, not a trust-in-the-math signal like Confidence's use of n).
+    n = line.get("model_n") or 0
+    lineup_ok = 0.5 if line.get("lineup_status") == "questionable" else 1.0
+    dq = _clamp(0.6 * (n / 20.0) + 0.4 * lineup_ok)
+    out["data_quality"] = (dq, f"{n} games, {'questionable' if lineup_ok < 1 else 'confirmed'}")
+
+    return out
+
+
 def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int:
     """
-    0–100 composite ranking how JUICY a play is = decisiveness × confidence, the number the
-    slate leaderboard sorts on. A high Juice Score means the model is both confident in the
-    projection AND far from the line. This is a shortlisting signal, not a guarantee.
+    0–100 composite ranking how attractive a prop is OVERALL — not a re-skin of Confidence
+    or EV, but a blend of both plus distribution stability, model-vs-market agreement,
+    cross-book market quality, line value, and data completeness (see _JUICE_WEIGHTS and
+    _juice_components). Deliberately selective: a coin-flip, single-book, thin-sample prop
+    should NOT land in the same range as a stable, well-agreed, cross-validated one.
     """
     prob = model_prob if model_prob is not None else line.get("model_prob")
     if prob is None:
         return 0
-    decisiveness = _clamp(2.0 * abs(float(prob) - 0.5))
-    conf = confidence_score(line) / 100.0
-    # Confidence GATES the score: a decisive-but-low-confidence prop (e.g. a market-derived
-    # tennis line with an extreme probability) can't top the board over a well-sampled,
-    # engine-projected MLB prop. The trailing (0.6 + 0.4·conf) factor is the gate — floor
-    # raised from 0.4 (2026-07-30): confidence_score's own weights were re-tuned the same
-    # day to remove its guaranteed floor (so a genuine coin-flip prop scores ~50, not ~70),
-    # which knocked the AVERAGE confidence down across the board (81→65) and, left alone,
-    # would have over-punished juice score right along with it — priced (standard/boosted)
-    # props are legitimately less decisive on average than demon/goblin (whose lines are
-    # deliberately warped for the boosted payout), so juice SHOULD read lower for them, but
-    # not crushed further by an unrelated gate that was tuned against the old, inflated
-    # confidence scale.
-    return int(round(100.0 * (0.45 * decisiveness + 0.55 * conf) * (0.6 + 0.4 * conf)))
+    components = _juice_components(line, prob)
+    composite = sum(_JUICE_WEIGHTS[k] * components[k][0] for k in _JUICE_WEIGHTS)
+    return int(round(_clamp(composite) * 100))
+
+
+def juice_factors(line: dict[str, Any], model_prob: Optional[float] = None) -> list[dict[str, Any]]:
+    """The REAL decomposition of `juice_score` — weighted contribution + a human-readable
+    detail for every component, so the UI can show exactly what makes a prop juicy instead
+    of a single opaque number."""
+    prob = model_prob if model_prob is not None else line.get("model_prob")
+    if prob is None:
+        return []
+    components = _juice_components(line, prob)
+    labels = {"ev": "Expected Value", "confidence": "Confidence", "stability": "Stability",
+              "agreement": "Model Agreement", "market_quality": "Market Quality",
+              "line_value": "Line Value", "data_quality": "Data Quality"}
+    return [
+        {"factor": labels[k], "value": round(_JUICE_WEIGHTS[k] * components[k][0] * 100, 1),
+         "max": round(_JUICE_WEIGHTS[k] * 100, 1), "detail": components[k][1]}
+        for k in _JUICE_WEIGHTS
+    ]
 
 
 def _std_from_band(line: dict[str, Any]) -> Optional[float]:

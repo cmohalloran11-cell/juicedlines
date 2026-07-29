@@ -168,9 +168,12 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
                 # projection-realism pass (after the mean→median swap made thin-data
                 # projections look flatter than they should).
                 med = float(np.median(arr_line))
+                lo10, hi90 = (float(x) for x in np.percentile(arr_line, [10, 90]))
                 l["model_prob"] = round(float((arr_line > line).mean()), 4)
                 l["model_proj"] = round(center, 2)
                 l["model_median"] = round(med, 2)
+                l["model_floor"] = round(max(0.0, lo10), 1)
+                l["model_ceiling"] = round(max(hi90, lo10), 1)
                 l["model_edge"] = round(center - line, 1)
                 # Be honest about what the number IS. Fully anchored → the projection is the
                 # market's own median standard line, NOT a model call, and any apparent "edge"

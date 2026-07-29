@@ -151,18 +151,54 @@ def test_confidence_has_no_guaranteed_floor_for_a_coin_flip():
     assert valuation.confidence_score(decisive) >= 90
 
 
-def test_juice_score_gate_softened_after_confidence_rebalance():
-    # 2026-07-30: confidence_score's own re-tuning (removing its guaranteed floor) knocked
-    # average confidence down across the board, which — left unaddressed — would have
-    # compounded through juice_score's confidence GATE and crushed scores even further. The
-    # gate floor was raised (0.4 -> 0.6) to compensate. A decisive, well-sampled engine prop
-    # should still reach a real "top of the board" score even at moderate confidence.
-    decisive_moderate_conf = {"model_prob": 0.85, "model_n": 12, "proj_kind": "engine"}
-    assert valuation.juice_score(decisive_moderate_conf) >= 55
-    # a genuine coin-flip still scores low — the gate softening must not manufacture juice
-    # out of nothing.
-    coin_flip = {"model_prob": 0.5, "model_n": 40, "proj_kind": "engine"}
-    assert valuation.juice_score(coin_flip) <= 35
+def test_juice_score_is_not_a_reskin_of_confidence_or_ev():
+    # 2026-07-30 rebuild: Juice Score must answer a genuinely different question than
+    # Confidence ("how much do we trust the projection") or EV ("how much value does the
+    # market offer") — not just track whichever of those is highest. Two props with
+    # IDENTICAL confidence and EV can still get different Juice Scores because of stability/
+    # agreement/market-quality/data-quality — prove that here.
+    base = {"model_prob": 0.7, "model_n": 20, "proj_kind": "engine", "model_proj": 2.0,
+            "line": 1.5, "model_edge": 0.5, "over_implied": 0.55, "under_implied": 0.55}
+    thin_data = {**base, "market_book_count": 1, "lineup_status": "questionable"}
+    well_covered = {**base, "market_book_count": 3, "lineup_status": None,
+                    "model_floor": 1.5, "model_ceiling": 2.5}  # tighter, more stable band
+    assert valuation.confidence_score(thin_data) == valuation.confidence_score(well_covered)
+    assert valuation.juice_score(thin_data) < valuation.juice_score(well_covered)
+
+
+def test_juice_score_is_selective_not_inflated():
+    # The product's own tier guide wants juice scores to be selective — a genuine coin-flip
+    # prop with no real edge, single-book, thin sample must NOT land anywhere near the top.
+    weak = {"model_prob": 0.51, "model_n": 3, "proj_kind": "model", "model_proj": 1.51,
+            "line": 1.5, "model_edge": 0.01, "market_book_count": 1}
+    assert valuation.juice_score(weak) < 40
+    # a genuinely strong prop — decisive, confident, stable, cross-booked, real edge — should
+    # score meaningfully higher, but the components are real math, not a rubber stamp to 100.
+    strong = {"model_prob": 0.85, "model_n": 30, "proj_kind": "engine", "model_proj": 3.5,
+              "line": 1.5, "model_edge": 2.0, "model_floor": 3.0, "model_ceiling": 4.0,
+              "over_implied": 0.55, "under_implied": 0.55, "market_book_count": 3,
+              "lineup_status": None}
+    assert valuation.juice_score(strong) > valuation.juice_score(weak)
+    assert valuation.juice_score(strong) >= 60
+
+
+def test_juice_factors_sum_to_juice_score():
+    line = {"model_prob": 0.72, "model_n": 18, "proj_kind": "engine", "model_proj": 2.2,
+            "line": 1.5, "model_edge": 0.7, "over_implied": 0.5, "under_implied": 0.5,
+            "market_book_count": 2}
+    factors = valuation.juice_factors(line)
+    assert len(factors) == 7   # ev, confidence, stability, agreement, market_quality, line_value, data_quality
+    assert round(sum(f["value"] for f in factors)) == valuation.juice_score(line)
+    assert round(sum(f["max"] for f in factors)) == 100
+    assert all(0 <= f["value"] <= f["max"] for f in factors)
+
+
+def test_juice_score_missing_signals_stay_neutral_not_penalized():
+    # A prop missing model_raw/model_agreement/market_book_count (e.g. a sport or path that
+    # doesn't compute them yet) must fall back to a neutral 0.5 for that component, not 0 —
+    # an unknown signal shouldn't be punished as if it were confirmed bad.
+    minimal = {"model_prob": 0.6, "model_n": 10, "proj_kind": "engine"}
+    assert valuation.juice_score(minimal) > 0
 
 
 def test_confidence_factors_decompose_the_score():
@@ -187,6 +223,22 @@ def test_confidence_monotonic_in_sample_and_decisiveness():
     assert valuation.confidence_score(more_decisive) > valuation.confidence_score(base)
     assert valuation.confidence_score(engine) > valuation.confidence_score(base)
     assert 0 <= valuation.confidence_score(base) <= 100
+
+
+def test_confidence_full_engine_bonus_applies_to_wnba_and_tennis_too():
+    # 2026-07-30: WNBA's per-possession sim (proj_kind="basketball") and tennis's serve/return
+    # sim (proj_kind="tennis") are genuine full Monte Carlo runs, same as MLB's "engine" — but
+    # confidence_score's method bonus only ever recognized "engine", silently docking both
+    # sports 10 points their entire time on the board. Must score identically to "engine" now.
+    base = {"model_prob": 0.7, "model_n": 20, "proj_kind": "model"}
+    assert (valuation.confidence_score({**base, "proj_kind": "engine"})
+            == valuation.confidence_score({**base, "proj_kind": "basketball"})
+            == valuation.confidence_score({**base, "proj_kind": "tennis"}))
+    # tennis's OWN fallback ("market" — fully deferred to the market line, no real model call)
+    # correctly stays at the lower bonus, same as MLB's "model"/empirical-average fallback.
+    assert (valuation.confidence_score({**base, "proj_kind": "market"})
+            == valuation.confidence_score({**base, "proj_kind": "model"})
+            < valuation.confidence_score({**base, "proj_kind": "engine"}))
 
 
 def test_simulation_object_and_valuation_bundle():
