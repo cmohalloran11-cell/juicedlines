@@ -404,7 +404,7 @@ const NAVGROUPS=[
   ['My Workspace',[['Portfolio','portfolio','folder','Pro'],['Watchlist','watchlist','star'],['Alerts','alerts','bell']]],
   ['Community',[['Leaderboards','leaderboards','trophy'],['Learn','learn','cap'],['Community','community','users','Soon']]],
 ];
-const NAVBOTTOM=[['Upgrade to Pro','upgrade','spark','Pro'],['Settings','settings','gear'],['Help & Support','help','life']];
+const NAVBOTTOM=[['Upgrade to Pro','upgrade','spark','Pro'],['Admin Panel','admin','shield'],['Settings','settings','gear'],['Help & Support','help','life']];
 const IC={grid:'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',bars:'M4 20V10M10 20V4M16 20v-7M20 20V8',flask:'M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3',spark:'M13 2L4 14h7l-1 8 9-12h-7z',wave:'M2 12c3-6 5 6 8 0s5 6 8 0',link:'M9 15l6-6M8 12l-2 2a3 3 0 004 4l2-2M16 12l2-2a3 3 0 00-4-4l-2 2',layers:'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5',trend:'M3 17l6-6 4 4 8-8M21 7v5h-5',plus:'M12 5v14M5 12h14',cloud:'M6 18a4 4 0 010-8 5 5 0 019.5-1A3.5 3.5 0 0118 18z',pulse:'M3 12h4l2-7 4 14 2-7h6',folder:'M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z',bell:'M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6M10 21h4',star:'M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19.2l1-5.8L3.5 9.2l5.9-.9z',book:'M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM19 3v18',trophy:'M8 4h8v4a4 4 0 01-8 0zM6 4H4v2a3 3 0 003 3M18 4h2v2a3 3 0 01-3 3M9 14h6v6H9z',users:'M9 11a3 3 0 100-6 3 3 0 000 6zM3 20a6 6 0 0112 0M17 11a3 3 0 100-6M21 20a6 6 0 00-4-5.7',cap:'M22 9L12 5 2 9l10 4 10-4zM6 11v5c0 1 3 3 6 3s6-2 6-3v-5',cal:'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',gear:'M4 7h10M18 7h2M4 17h6M14 17h6M14 5v4M8 13v4',life:'M12 3a9 9 0 100 18 9 9 0 000-18M9.4 9.2a2.6 2.6 0 015 .8c0 1.7-2.6 2-2.6 3.5M12 17h.01'};
 const svg=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="${p}"/></svg>`;
 const navLink=c=>([n,r,i,b])=>`<a class="${r===c?'active':''}" onclick="go('${r}')" title="${n}">${svg(IC[i])}<span>${n}</span>${b?`<span class="badge ${b==='Pro'?'pro':''}">${b}</span>`:''}</a>`;
@@ -985,6 +985,31 @@ async function vGames(){
   $('#view').innerHTML=`<div class="ph2"><div><h2>Games <span class="chip">${games.length}</span></h2><p>Today's slate — tap a game to open its top projected prop.</p></div></div>
    <div class="grid3">${games.length?games.map(g=>{const ps=(byT[g.team]||[]).sort((a,b)=>b.juiceScore-a.juiceScore);const top=ps[0];return `<div class="learn-card" style="cursor:pointer" onclick="goGame(${JSON.stringify(g.team).replace(/"/g,'&quot;')})"><div style="display:flex;align-items:center;gap:8px">${teamBadge(g,24)}<h4 style="margin:0">${g.team}${top&&top.opponent?` ${top.isHome?'vs':'@'} ${top.opponent}`:''}</h4><span class="chip" style="margin-left:auto">${timeOf(g.startTime)||g.sport}</span></div><p class="muted" style="margin:9px 0 0;font-size:12px">${ps.length} projected prop${ps.length===1?'':'s'}${top?` · top: <b style="color:var(--text)">${top.player}</b> ${cap(top.side)} ${fmt(top.line)} ${top.stat}`:''}</p></div>`}).join(''):`<div class="empty" style="grid-column:1/-1"><div class="em">${icon('cloud',30)}</div>No games on the board yet.</div>`}</div>`;
 }
+// ── Admin Panel — real system/model health, no synthetic ops metrics ──
+async function vAdmin(){
+  const [h,dh,bt,ver]=await Promise.all([
+    api('/api/model/health').catch(()=>({})),
+    api('/api/dashboard?sport=all').catch(()=>({})),
+    api('/api/backtest?sport=MLB').catch(()=>({})),
+    api('/api/version').catch(()=>({})),
+  ]);
+  const sports=h.sports||{}, health=dh.data_health||{}, cur=(bt.current||{}).overall||{};
+  const rows=Object.values(sports).map(s=>`<tr><td><b>${s.sport}</b></td><td class="mono">${(s.graded_props||0).toLocaleString()}</td><td class="mono">${s.hit_rate_vs_close!=null?(s.hit_rate_vs_close*100).toFixed(1)+'%':'—'}</td><td class="mono">${s.interval_widening_factor||'—'}</td><td>${s.beats_breakeven==null?'<span class="chip">unmeasured</span>':s.beats_breakeven?'<span class="chip g">beats breakeven</span>':'<span class="chip r">below breakeven</span>'}</td></tr>`).join('');
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Admin Panel</h2><p>Real system + model health — nothing here is a synthetic uptime number.</p></div></div>
+   <div class="kv" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+     <div class="b"><div class="l">Model Version</div><div class="v" style="font-size:15px">${ver.code_sha||'—'}</div></div>
+     <div class="b"><div class="l">Data Quality</div><div class="v">${health.quality_score??'—'}<span class="muted" style="font-size:12px">/100</span></div></div>
+     <div class="b"><div class="l">Projected Lines</div><div class="v" style="font-size:17px">${(health.projected_lines||0).toLocaleString()}</div></div>
+     <div class="b"><div class="l">Live Sources</div><div class="v" style="font-size:17px">${health.live_sources||0}</div></div>
+   </div>
+   <div class="panel"><div class="phead"><h3>Model Health by Sport</h3><span class="hint">from the graded CLV ledger</span></div>
+     ${rows?`<table class="drops" style="margin:0"><thead><tr><th>Sport</th><th>Graded</th><th>Hit Rate</th><th>Interval ×</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">No graded data yet.</div>'}</div>
+   <div class="two">
+     <div class="panel"><div class="phead"><h3>MLB Backtest (Current)</h3></div><div class="dsec" style="border:0"><div class="kv"><div class="b"><div class="l">n</div><div class="v">${cur.n||'—'}</div></div><div class="b"><div class="l">MAE</div><div class="v">${cur.mae??'—'}</div></div><div class="b"><div class="l">Hit Rate</div><div class="v">${cur.hit_rate!=null?(cur.hit_rate*100).toFixed(1)+'%':'—'}</div></div><div class="b"><div class="l">ECE</div><div class="v">${cur.ece??'—'}</div></div></div></div></div>
+     <div class="panel"><div class="phead"><h3>Data Errors</h3></div><div class="dsec" style="border:0">${health.source_errors&&Object.keys(health.source_errors).length?Object.entries(health.source_errors).map(([k,v])=>`<p style="margin:0 0 6px;font-size:12px"><b>${k}</b>: <span class="muted">${v}</span></p>`).join(''):'<p class="muted">No source errors reported.</p>'}</div></div>
+   </div>
+   <p class="muted" style="font-size:11px;margin-top:14px">Worker/API uptime and request-latency panels need live server metrics (not available on the static build) — not shown rather than faked.</p>`;
+}
 // ── Bottom group: Settings / Help / Upgrade ──
 async function vSettings(){let bk={};try{bk=await api('/api/books')}catch(e){}
   $('#view').innerHTML=`<div class="ph2"><div><h2>Settings</h2><p>Account, data sources, and preferences.</p></div></div>
@@ -1110,7 +1135,7 @@ async function vGamePage(team){
    </div>`;
 }
 
-const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade};
+const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade,admin:vAdmin};
 
 // ── prop detail drawer ──
 // Colors for the REAL confidence components (from valuation.confidence_factors). No fake weights.
