@@ -19,6 +19,7 @@ without a per-side price fall back to an even-money payout (D = 2.0).
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Optional
 
 
@@ -33,11 +34,31 @@ def _favored_side(model_prob: float, line: dict[str, Any]) -> tuple[str, float, 
     return "under", 1.0 - model_prob, line.get("under_implied")
 
 
-def _decimal_odds(implied: Optional[float]) -> float:
-    """Offered decimal odds from a vig-included implied prob; even-money fallback."""
+def _american_to_decimal(american: Any) -> Optional[float]:
+    try:
+        a = float(american)
+    except (TypeError, ValueError):
+        return None
+    if a > 0:
+        return 1.0 + a / 100.0
+    if a < 0:
+        return 1.0 + 100.0 / abs(a)
+    return None
+
+
+def _decimal_odds(implied: Optional[float], line: Optional[dict[str, Any]] = None) -> float:
+    """Offered decimal odds. Priority: a real per-side implied prob (Underdog/Sleeper) >
+    the book's flat pick'em price (PrizePicks standard legs — same payout on every leg
+    regardless of side, so it applies whichever side we favor) > even-money as a last resort
+    for the rare line with neither (previously the ONLY behavior — silently pricing every
+    PrizePicks leg at 0% vig instead of its real ~15pp pick'em vig)."""
     if implied and 0.0 < implied < 1.0:
         return 1.0 / implied
-    return 2.0  # pick'em / unknown price → even money
+    if line is not None:
+        d = _american_to_decimal(line.get("pickem_price"))
+        if d and d > 1.0:
+            return d
+    return 2.0  # genuinely unpriced (no per-side odds, no pick'em price) → even money
 
 
 def expected_value(model_prob: float, line: dict[str, Any]) -> Optional[float]:
@@ -46,7 +67,7 @@ def expected_value(model_prob: float, line: dict[str, Any]) -> Optional[float]:
     if model_prob is None:
         return None
     _side, p, implied = _favored_side(float(model_prob), line)
-    d = _decimal_odds(implied)
+    d = _decimal_odds(implied, line)
     return round(p * d - 1.0, 4)
 
 
@@ -56,7 +77,7 @@ def kelly_fraction(model_prob: float, line: dict[str, Any], cap: float = 0.25) -
     if model_prob is None:
         return None
     _side, p, implied = _favored_side(float(model_prob), line)
-    d = _decimal_odds(implied)
+    d = _decimal_odds(implied, line)
     if d <= 1.0:
         return 0.0
     f = (d * p - 1.0) / (d - 1.0)
@@ -148,6 +169,42 @@ def simulation_object(line: dict[str, Any]) -> Optional[dict]:
         "underProbability": (round(1.0 - float(prob_over), 3) if prob_over is not None else None),
         "sampleSize": line.get("model_n"),
         "sd_is_approximate": True,
+    }
+
+
+# Quality safeguard (spec: "flag/log/verify anything above a configurable threshold").
+# 15% by default, matching the product's own tier guide (0-2% very small … 12-15%
+# exceptional, >15% rare/review). Measured on the REAL user-facing pool — standard/boosted
+# odds_type only, 1,336 live props — this is a sane cutoff: mean EV +1.5%, median -0.4%,
+# only ~15% of props exceed it, 0% exceed 60%. (An earlier pass over ALL scored lines,
+# including demon/goblin, measured mean EV ~34% — that number was an artifact of scoring
+# unpriced demon/goblin legs, which are already excluded from everything a user sees
+# (dashboard._projected()) because the feed doesn't expose their real payout multiplier;
+# it was never the user-facing reality.) Tune via EV_REVIEW_THRESHOLD if desired.
+EV_REVIEW_THRESHOLD = float(os.getenv("EV_REVIEW_THRESHOLD", "0.15"))
+
+
+def audit_ev(line: dict[str, Any], threshold: Optional[float] = None) -> Optional[dict]:
+    """Flag a projection whose EV exceeds `threshold` (env EV_REVIEW_THRESHOLD by default).
+    Returns None when not flagged, else a dict with the reason and the exact inputs that
+    produced it — so a human reviewer can check projection / line / calibration without
+    re-deriving anything. Called per-line during the build; callers should log the result."""
+    th = EV_REVIEW_THRESHOLD if threshold is None else threshold
+    prob = line.get("model_prob")
+    if prob is None:
+        return None
+    ev = expected_value(prob, line)
+    if ev is None or ev <= th:
+        return None
+    side, p, implied = _favored_side(float(prob), line)
+    return {
+        "flagged": True, "ev": ev, "threshold": th, "side": side,
+        "model_prob_for_side": round(p, 4),
+        "implied_prob_used": implied if (implied and 0 < implied < 1) else None,
+        "used_pickem_fallback": not (implied and 0 < implied < 1),
+        "player": line.get("player"), "stat": line.get("stat_type"),
+        "line": line.get("line"), "projection": line.get("model_proj"),
+        "source": line.get("source"), "id": line.get("id"),
     }
 
 

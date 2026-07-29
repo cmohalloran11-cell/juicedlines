@@ -708,7 +708,7 @@ async function selectSim(x){
       <div class="b"><div class="l">Projection</div><div class="v">${fmt(mu)}</div></div>
       <div class="b"><div class="l">Line</div><div class="v">${fmt(x.line)}</div></div>
       <div class="b"><div class="l">Prob(Over)</div><div class="v">${prob(x.probability)}</div></div>
-      <div class="b"><div class="l">Edge %</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div>
+      <div class="b" title="${EV_TIP}"><div class="l">Expected Value <span class="muted" style="cursor:help">ⓘ</span></div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div>
     </div>
     <div class="two">
       <div><h5 style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:0 0 8px">Monte Carlo Distribution</h5><svg class="distbar" style="height:120px" id="sim-dist" viewBox="0 0 420 120" preserveAspectRatio="none"></svg></div>
@@ -959,7 +959,7 @@ async function vCommunity(){
    <div class="empty"><div class="em">${icon('users',30)}</div><b>Community is a post-launch social layer.</b><br><span class="muted" style="font-size:12px;max-width:520px;display:inline-block;margin-top:8px">It builds on the user + auth system that's already in place (accounts, watchlists, portfolios). It needs real signed-in users before it means anything, so it's intentionally deferred.</span></div>`;
 }
 async function vLearn(){
-  const cards=[['What is a Juice Score?','A 0–100 composite of how decisive the model is AND how confident — gated so a noisy line can\'t top the board.'],['Projections, not picks','Every number is a distribution with a floor, ceiling, and probability. We show the math on every prop.'],['Edge % vs the line','The prop\'s expected value as a percent. Positive means the model sees more value than the price implies.'],['Confidence','Blends sample size, how far the model is from a coin-flip, and whether a full engine run backed it.'],['CLV & honesty','We grade every projection against the closing line and publish the hit-rate. The board is measured, not vibes.'],['Correlation-aware combos','H/R/RBI move together — we re-pair simulated components so combo props have honest spread.']];
+  const cards=[['What is a Juice Score?','A 0–100 composite of how decisive the model is AND how confident — gated so a noisy line can\'t top the board.'],['Projections, not picks','Every number is a distribution with a floor, ceiling, and probability. We show the math on every prop.'],['Edge vs Expected Value','Edge is just Projection − Line (e.g. proj 8.2 vs line 7.5 = +0.7). Expected Value is different: the mathematical advantage from our calibrated probability vs. the book\'s implied probability. A small Edge can carry a real EV on a lopsided prop — that\'s not a bug, it\'s what the number means.'],['Confidence','Blends sample size, how far the model is from a coin-flip, and whether a full engine run backed it.'],['CLV & honesty','We grade every projection against the closing line and publish the hit-rate. The board is measured, not vibes.'],['Correlation-aware combos','H/R/RBI move together — we re-pair simulated components so combo props have honest spread.']];
   $('#view').innerHTML=`<div class="ph2"><div><h2>Learn</h2><p>How Juiced thinks about props.</p></div></div><div class="grid3">${cards.map(([h,p])=>`<div class="learn-card"><h4>${h}</h4><p>${p}</p></div>`).join('')}</div>`;
 }
 
@@ -1064,7 +1064,7 @@ function renderPPTab(){
   if(PPTAB==='overview'){
     body.innerHTML=`<div class="grid2"><div>
       <div class="panel"><div class="phead"><h3>${x.stat} <span class="hint">${cap(x.side)} ${fmt(x.line)}</span></h3>${bookLogo(x.source,20)}</div>
-        <div class="dsec" style="border:0"><div class="kv"><div class="b"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div><div class="b"><div class="l">Edge %</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div><div class="b"><div class="l">Over Probability</div><div class="v">${prob(x.probability)}</div></div><div class="b"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div></div></div>
+        <div class="dsec" style="border:0">${edgeEvKV(x)}</div>
         <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="pp-dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="pp-simkv"></div></div>
       </div>
       <div class="panel"><div class="phead"><h3>AI Juice Insight</h3></div><div class="dsec" style="border:0"><div class="aibox" id="pp-aibox">${AUTH.ai?'Generating…':'AI Juice is not configured.'}</div></div></div>
@@ -1153,6 +1153,22 @@ function confBreakdown(x){
   if(head>0.5)items.push(['Headroom',head,'#26311f']);
   return `<div class="dsec"><h5>What Drives This Confidence</h5><div style="display:flex;align-items:center;gap:16px">${donutSVG(items,Math.round(x.confidence)+'%','Confidence')}<div class="legend" style="flex:1">${f.map(z=>`<div class="row" title="${z.detail}"><span class="dot" style="background:${CFCOL[z.factor]||'#5c675a'}"></span>${z.factor}<span class="pct">${z.value} / ${z.max}</span></div>`).join('')}</div></div><p class="muted" style="font-size:10.5px;margin:8px 0 0">Real components of this prop's confidence score — not a fixed template.</p></div>`;
 }
+// Edge (raw Projection − Line) vs Expected Value (the calibrated-probability-based %) are
+// DIFFERENT numbers with different meanings — shown together so neither is mistaken for
+// the other. EV can be large on a small Edge for a lopsided-probability prop (a near-certain
+// "under 0.5" home runs, say) — that's not a bug, see the "i" tooltip.
+const EV_TIP='The estimated mathematical advantage based on Juiced\'s calibrated probability compared to the sportsbook\'s implied probability — not simply a percent of the projection\'s distance from the line.';
+function edgeEvKV(x){
+  const edge=x.edge!=null?x.edge:(x.projection!=null&&x.line!=null?+(x.projection-x.line).toFixed(2):null);
+  return `<div class="kv">
+    <div class="b"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div>
+    <div class="b"><div class="l">Line</div><div class="v">${fmt(x.line)}</div></div>
+    <div class="b" title="Projection − Line"><div class="l">Edge</div><div class="v ${edge>=0?'pos':'neg'}">${signed(edge)}</div></div>
+    <div class="b" title="${EV_TIP}"><div class="l">Expected Value <span class="muted" style="cursor:help">ⓘ</span></div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div>
+    <div class="b"><div class="l">Over Probability</div><div class="v">${prob(x.probability)}</div></div>
+    <div class="b"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div>
+  </div>`;
+}
 function whyBullets(x){const b=[];const over=(x.side||'over')==='over';
   if(x.projection!=null&&x.line!=null)b.push(`Model projects <b>${fmt(x.projection)}</b> vs a <b>${fmt(x.line)}</b> line — ${pct(x.edgePct)} edge`);
   if(x.probability!=null)b.push(`<b>${prob(over?x.probability:1-x.probability)}</b> model probability to ${x.side} the line`);
@@ -1171,7 +1187,7 @@ async function openProp(x,tab){
   const D=$('#drawer');$('#scrim').classList.add('open');D.classList.add('open');
   D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${x.player}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${x.team||''} · ${cap(x.side)} ${fmt(x.line)} ${x.stat}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
    <div class="dsec" style="border:0;padding-bottom:0"><button class="btn" style="width:100%;justify-content:center" onclick='goPlayer(${JSON.stringify(x.player).replace(/'/g,"&#39;")})'>${icon('user',13)} View Full Player Page</button></div>
-   <div class="dsec"><div class="kv"><div class="b"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div><div class="b"><div class="l">Edge %</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div><div class="b"><div class="l">Over Probability</div><div class="v">${prob(x.probability)}</div></div><div class="b"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div></div></div>
+   <div class="dsec">${edgeEvKV(x)}</div>
    <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="simkv"></div></div>
    ${confBreakdown(x)}
    <div class="dsec"><h5>Why the Model Likes This</h5><ul class="whylist">${whyBullets(x).map(b=>`<li><span class="ok">✓</span><span>${b}</span></li>`).join('')}</ul></div>

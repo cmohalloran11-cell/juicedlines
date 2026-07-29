@@ -20,6 +20,7 @@ from pathlib import Path
 import pullers
 import analytics
 import books
+import valuation
 
 # FAST refresh: rebuild only what actually changes minute-to-minute — the LINES (board.json)
 # and their movement (history.json). Measured 2026-07-19, a full build is 433s of which
@@ -153,6 +154,29 @@ def main() -> None:
         analytics.attach_projections(lines)
     except Exception as exc:
         errors["projections"] = str(exc)
+
+    # EV quality safeguard (Edge/EV audit): log any USER-FACING projection whose EV
+    # exceeds EV_REVIEW_THRESHOLD (env, default 60% — see valuation.py for why not 15%).
+    # Scoped to standard/boosted odds_type ONLY, matching dashboard._projected()'s own
+    # filter — demon/goblin legs are unpriced (no real payout multiplier exposed by the
+    # feed) and already excluded from everything a user can see, so auditing them just
+    # buries the real signal in noise nobody will ever act on. Best-effort; never blocks.
+    try:
+        std = [l for l in lines if (l.get("odds_type") or "standard").lower() in ("standard", "boosted")]
+        flagged = [f for f in (valuation.audit_ev(l) for l in std) if f]
+        if flagged:
+            print(f"::group::EV review — {len(flagged)} projections above "
+                  f"{valuation.EV_REVIEW_THRESHOLD:.0%}")
+            for f in sorted(flagged, key=lambda x: x["ev"], reverse=True)[:25]:
+                print(f"  {f['ev']:+.1%}  {f['player']} — {f['stat']} ({f['source']}) "
+                      f"{f['side']} {f['line']}, proj {f['projection']}, "
+                      f"model_p={f['model_prob_for_side']:.3f}"
+                      f"{' [pickem fallback]' if f['used_pickem_fallback'] else ''}")
+            if len(flagged) > 25:
+                print(f"  … and {len(flagged) - 25} more")
+            print("::endgroup::")
+    except Exception as exc:
+        errors["ev_audit"] = str(exc)
 
     slim = [{k: l[k] for k in _KEEP if l.get(k) is not None} for l in lines]
     updated = datetime.now(timezone.utc).isoformat(timespec="seconds")

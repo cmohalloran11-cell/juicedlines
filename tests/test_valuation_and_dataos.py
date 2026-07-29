@@ -27,6 +27,38 @@ def test_expected_value_negative_when_model_trails_price():
     assert valuation.expected_value(0.6, line) < 0
 
 
+def test_expected_value_uses_pickem_price_not_even_money():
+    # Regression: PrizePicks standard legs have NO over_implied/under_implied (the feed
+    # doesn't expose per-leg odds), so EV silently fell back to a 0%-vig 50/50 assumption
+    # instead of the real ~57.7%-implied 2-pick pick'em price (-137 American) the ingestion
+    # layer already computes and attaches as pickem_price. Every PrizePicks EV was too high.
+    line_with_pickem = {"pickem_price": -137}
+    ev = valuation.expected_value(0.70, line_with_pickem)
+    # decimal odds for -137 = 1 + 100/137 ≈ 1.7299 → EV = 0.70*1.7299-1 ≈ 0.2109
+    assert 0.20 < ev < 0.22
+    # a line with real per-side odds must still win over pickem_price (never used as fallback
+    # when we actually know the price)
+    line_with_real_odds = {"over_implied": 0.5, "pickem_price": -137}
+    assert valuation.expected_value(0.70, line_with_real_odds) == 0.4
+    # neither present → still degrades to the old even-money fallback, not a crash
+    assert valuation.expected_value(0.70, {}) == 0.4
+
+
+def test_audit_ev_flags_above_threshold_not_below():
+    # 95% model prob at the flat pick'em price (~57.7% implied) → EV ≈ +64%, well above
+    # any sane threshold — must be flagged with the exact inputs a reviewer needs.
+    hot = {"model_prob": 0.95, "pickem_price": -137, "player": "X", "stat_type": "Hits",
+           "line": 0.5, "model_proj": 1.2, "source": "prizepicks", "id": "abc"}
+    f = valuation.audit_ev(hot, threshold=0.15)
+    assert f is not None and f["ev"] > 0.15 and f["used_pickem_fallback"] is True
+    assert f["player"] == "X" and f["side"] == "over"
+    # a modest, realistic edge must NOT be flagged
+    mild = {"model_prob": 0.58, "over_implied": 0.524, "under_implied": 0.524}
+    assert valuation.audit_ev(mild, threshold=0.15) is None
+    # no probability at all → nothing to audit, not an error
+    assert valuation.audit_ev({}, threshold=0.15) is None
+
+
 def test_kelly_formula_and_cap():
     line = {"over_implied": 0.5, "under_implied": 0.5}   # decimal odds 2.0
     # f = (p - q)/(1 - q) = (0.6 - 0.5)/0.5 = 0.2
