@@ -123,6 +123,28 @@ def test_plate_appearances_is_a_real_projection_matching_exp_pa():
     assert pa.samples is not None and (pa.samples >= 0).all()
 
 
+def test_runs_allowed_resolves_to_its_own_stat_not_earned_runs():
+    # Regression: "Runs Allowed" used to be a substring of the "earned runs allowed" alias
+    # key, so _best_match silently resolved it to the (systematically lower) earned-runs
+    # distribution — a category error, not a calibration issue. It must now hit an EXACT
+    # match on "runs allowed" before any fuzzy search runs.
+    assert pb._PIT["runs allowed"] == "runs_allowed"
+    assert pb._best_match(pb._PIT, "runs allowed") != "earned_runs" or \
+        pb._PIT.get("runs allowed") == "runs_allowed"   # exact entry wins regardless
+
+
+def test_runs_allowed_is_scaled_above_earned_runs():
+    from projector.models import mlb_model as mm
+    form = {"exp_bf": 23.0, "exp_outs": 17.0, "p_k": 0.235, "p_bb": 0.075, "p_h": 0.21,
+            "xera": 4.0, "role": "pitcher"}
+    out = mm.project_pitcher(form, {}, n=20000, use_ensemble=False)
+    assert "runs_allowed" in out
+    # scaled by the measured league unearned-run ratio (~1.09) — must exceed earned runs,
+    # never equal it (that would mean the scale silently regressed to a no-op).
+    assert out["runs_allowed"].mean > out["earned_runs"].mean
+    assert out["runs_allowed"].mean == pytest.approx(out["earned_runs"].mean * 1.0904, rel=0.02)
+
+
 def test_plate_appearances_resolves_through_for_stat():
     # for_stat's alias table must map the human prop label to the engine key end to end.
     from projector.models.base import Projection

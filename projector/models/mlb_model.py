@@ -198,6 +198,18 @@ def project_pitcher(form: dict, ctx: dict, n: int = mc.N_SIMS,
     out["earned_runs"] = summarize(mc.negbinom_count(max(0.05, exp_er), 0.7, n),
                                    "earned_runs", drivers + [f"xERA {xera:.2f}"])
 
+    # total runs allowed = earned runs + unearned (errors/passed balls etc). The engine has
+    # no per-pitcher unearned-run signal (it's mostly bad luck / defense, not a pitcher skill),
+    # so scale by the CURRENT-SEASON league-wide total/earned ratio (measured live from
+    # statsapi team pitching totals: 14463/13264 = 1.0904, ~9% of runs are unearned). Before
+    # this, "Runs Allowed" props had no real mapping at all — the prop label's substring
+    # collided with "earned runs allowed" in the bridge's alias table and silently used the
+    # (systematically lower) earned-runs distribution, which measured as a -1.04 run bias.
+    _UNEARNED_RATIO = 1.0904
+    out["runs_allowed"] = summarize(
+        mc.negbinom_count(max(0.05, exp_er * _UNEARNED_RATIO), 0.7, n),
+        "runs_allowed", drivers + [f"xERA {xera:.2f} × unearned {_UNEARNED_RATIO:.3f}"])
+
     if use_ensemble:
         _apply_ensemble("mlb", out, form)
     return out

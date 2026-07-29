@@ -48,6 +48,10 @@ _BAT = {
 _PIT = {
     "strikeouts": "strikeouts", "pitcher strikeouts": "strikeouts",
     "earned runs": "earned_runs", "earned runs allowed": "earned_runs",
+    # exact entry so this can never fall through to _best_match's substring search — "runs
+    # allowed" IS a substring of "earned runs allowed" above, which used to silently resolve
+    # it to the (systematically lower) earned-runs distribution. See mlb_model.py.
+    "runs allowed": "runs_allowed", "team runs allowed": "runs_allowed",
     "hits allowed": "hits_allowed", "walks allowed": "walks_allowed",
     "pitcher walks": "walks_allowed", "outs recorded": "outs_recorded",
     "pitching outs": "outs_recorded", "innings pitched": "innings_pitched",
