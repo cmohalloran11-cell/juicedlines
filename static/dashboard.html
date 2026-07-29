@@ -523,7 +523,7 @@ let PROJ=[], PROJUP=null, SELID=null;
 // structurally inflated by design (that's how the boosted payout works), so mixed in they'd
 // swamp real priced props out of every top-N view. Lazy-loaded only when the filter is enabled.
 let BOOSTED=[], BOOSTED_LOADED=false;
-const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25,lineMode:'normal'};
+const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25,lineMode:'normal',side:'all'};
 const skelRows=(n=9,cols=14)=>Array.from({length:n},()=>`<tr class="skrow">${Array.from({length:cols},(_,i)=>`<td><span class="sk" style="width:${i?30+Math.floor(Math.random()*55):70}%"></span></td>`).join('')}</tr>`).join('');
 // Only books we actually pull. Logos via Google's favicon service (real brand marks, CORS-ok).
 const BOOKS=[
@@ -571,6 +571,7 @@ function renderFilters(){
   $('#filters').innerHTML=`<div class="fh"><h4>Filters</h4><span class="rst" onclick="resetPF()">Reset All</span></div>
    <div class="fg"><div class="gt">Sportsbooks</div>${BOOKS.map(([k,n])=>`<label class="chk"><input type="checkbox" ${PF.sources.has(k)?'checked':''} onchange="togSrc('${k}',this.checked)">${bookLogo(k,16)}${n}</label>`).join('')}</div>
    ${PF.sources.has('prizepicks')?`<div class="fg"><div class="gt">PrizePicks Lines</div><div class="segbar">${[['normal','Normal'],['demon','Demon'],['goblin','Goblin']].map(([k,n])=>`<span class="seg ${PF.lineMode===k?'on':''}" onclick="setLineMode('${k}')" title="${k==='normal'?'Standard/boosted PrizePicks lines (priced)':'PrizePicks boosted lines — no known payout multiplier, so no Edge %/EV, just the raw projection'}">${n}</span>`).join('')}</div></div>`:''}
+   <div class="fg"><div class="gt">Side</div><div class="segbar">${[['all','All'],['over','Over'],['under','Under']].map(([k,n])=>`<span class="seg ${PF.side===k?'on':''}" onclick="PF.side='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>
    <div class="fg"><div class="gt">Prop Categories <span style="color:var(--dim);font-weight:600;margin-left:4px">${PF.projSport==='all'?'All Sports':PF.projSport}</span></div>${shown.map(catRow).join('')||'<span class="muted" style="font-size:11px">—</span>'}${more>0?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=true;renderFilters()">+ ${more} more</span>`:(PF.catsExpanded&&all.length>10?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=false;renderFilters()">Show less</span>`:'')}</div>
    <div class="fg"><div class="gt">Juice Score</div><div class="frange"><div class="lab"><span>${PF.juiceMin}</span><span>100</span></div><input type="range" min="0" max="100" value="${PF.juiceMin}" oninput="PF.juiceMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value;applyProj()"></div></div>
    <div class="fg"><div class="gt">Confidence</div><div class="frange"><div class="lab"><span>${PF.confMin}%</span><span>100%</span></div><input type="range" min="0" max="100" value="${PF.confMin}" oninput="PF.confMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
@@ -593,7 +594,7 @@ async function setLineMode(mode){
   PF.page=1;renderFilters();applyProj();
 }
 function togCat(c,on){on?PF.catsOff.delete(c):PF.catsOff.add(c);PF.page=1;applyProj()}
-function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;PF.lineMode='normal';render()}
+function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;PF.lineMode='normal';PF.side='all';render()}
 function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move;
   const tile=(cap,big,cls,sub)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div></div>`;
   $('#ptiles').innerHTML=
@@ -623,6 +624,7 @@ function applyProj(){
   if(PF.catsOff.size)rows=rows.filter(p=>!PF.catsOff.has((p.stat||'').trim()));
   rows=rows.filter(p=>p.juiceScore>=PF.juiceMin && (p.confidence||0)>=PF.confMin && (p.edgePct==null||p.edgePct>=PF.edgeMin));
   if(PF.high)rows=rows.filter(p=>p.juiceScore>=80);
+  if(PF.side!=='all')rows=rows.filter(p=>p.side===PF.side);
   if(PF.onlyWatch)rows=rows.filter(p=>isWatched(p.id));
   if(PF.q){const q=PF.q.toLowerCase();rows=rows.filter(p=>(p.player||'').toLowerCase().includes(q))}
   const key={juice:p=>p.juiceScore,edge:p=>p.edgePct??-999,confidence:p=>p.confidence||0,projection:p=>p.projection||0,line:p=>p.line??0,probability:p=>p.probability??0,player:p=>(p.player||'').toLowerCase(),opp:p=>(p.opponent||'').toLowerCase()}[PF.sort]||(p=>p.juiceScore);
