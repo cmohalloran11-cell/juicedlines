@@ -665,11 +665,63 @@ async function vResearch(){
    <div class="panel"><div class="phead"><h3>Start from a top prop</h3></div>${propTable((p.projections||[]).slice(0,12))}</div>`;
 }
 async function vAI(){
-  const p=await api('/api/projections?sort=juice&limit=20');
+  const p=await api('/api/projections?sort=juice&limit=1000');
+  AI_ALL=p.projections||[];
   const banner=AUTH.ai?`<div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4 style="display:flex;align-items:center;gap:6px">AI Juice is connected ${icon('bolt',15,'var(--accent)')}</h4><p>Open any prop and hit “Explain with AI” for a grounded, cited breakdown — it may only reference that projection's own numbers, so it can't fabricate a stat.</p></div></div>`
-    :`<div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4>AI Juice isn't configured yet</h4><p>Set <b>ANTHROPIC_API_KEY</b> on the server to enable grounded slate summaries and per-prop explanations. Every projection below is fully model-driven regardless.</p></div></div>`;
+    :`<div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4>AI Juice isn't configured yet</h4><p>Set an AI API key on the server to enable grounded per-prop explanations. Every projection below is fully model-driven regardless.</p></div></div>`;
+  const sports=[...new Set(AI_ALL.map(x=>x.sport))].filter(Boolean);
   $('#view').innerHTML=`<div class="ph2"><div><h2>AI Juice</h2><p>Grounded, transparent AI analysis — cites only real model numbers.</p></div></div>${banner}
-   <div class="panel"><div class="phead"><h3>Explain a top prop</h3></div>${propTable((p.projections||[]).slice(0,12))}</div>`;
+   <div class="two" style="align-items:start">
+    <div class="panel" style="padding:16px">
+      <h3 style="margin:0 0 12px;font-size:14px">Query Builder</h3>
+      <div class="controls">
+        <select id="aiq-sport"><option value="">All Sports</option>${sports.map(s=>`<option>${s}</option>`).join('')}</select>
+        <input class="ctl" id="aiq-stat" placeholder="Stat contains… (e.g. Hits)">
+        <select id="aiq-book"><option value="">All Books</option>${BOOKS.map(([k,n])=>`<option value="${k}">${n}</option>`).join('')}</select>
+        <input class="ctl" id="aiq-juice" type="number" placeholder="Min Juice" style="width:100px">
+      </div>
+      <button class="btn pri" onclick="runAIQuery()">Run Query</button>
+      <div id="aiq-results" style="margin-top:16px"></div>
+    </div>
+    <div class="panel" style="padding:16px">
+      <h3 style="margin:0 0 4px;font-size:14px">Projection vs Line</h3>
+      <p class="muted" style="font-size:11px;margin:0 0 10px">Each dot is one queried prop — points above the diagonal are projected OVER the book's line.</p>
+      <svg viewBox="0 0 400 260" style="width:100%;height:260px" id="aiq-scatter"></svg>
+    </div>
+   </div>
+   <div class="panel" style="margin-top:16px"><div class="phead"><h3>Explain a top prop</h3><span class="hint">real, grounded, per-prop only — no free-form chat backend exists yet</span></div>${propTable(AI_ALL.slice(0,12))}</div>`;
+  runAIQuery();
+}
+let AI_ALL=[];
+function runAIQuery(){
+  const sport=$('#aiq-sport')?.value||'', stat=($('#aiq-stat')?.value||'').toLowerCase(),
+    book=$('#aiq-book')?.value||'', minJuice=+($('#aiq-juice')?.value||0);
+  const rows=AI_ALL.filter(x=>(!sport||x.sport===sport)&&(!stat||(x.stat||'').toLowerCase().includes(stat))
+    &&(!book||x.source===book)&&(x.juiceScore||0)>=minJuice);
+  const avg=arr=>arr.length?arr.reduce((s,v)=>s+v,0)/arr.length:null;
+  const avgProj=avg(rows.map(x=>x.projection).filter(v=>v!=null));
+  const avgEdge=avg(rows.map(x=>x.edgePct).filter(v=>v!=null));
+  const avgConf=avg(rows.map(x=>x.confidence).filter(v=>v!=null));
+  const hitR=avg(rows.map(x=>x.probability).filter(v=>v!=null));
+  $('#aiq-results').innerHTML=`<div class="kv" style="grid-template-columns:repeat(4,1fr)">
+    <div class="b"><div class="l">Props</div><div class="v" style="font-size:17px">${rows.length}</div></div>
+    <div class="b"><div class="l">Avg Proj</div><div class="v" style="font-size:17px">${avgProj!=null?avgProj.toFixed(2):'—'}</div></div>
+    <div class="b"><div class="l">Avg Edge</div><div class="v" style="font-size:17px">${avgEdge!=null?pct(avgEdge):'—'}</div></div>
+    <div class="b"><div class="l">Avg P(over)</div><div class="v" style="font-size:17px">${hitR!=null?prob(hitR):'—'}</div></div>
+   </div>`;
+  drawAIScatter(rows);
+}
+function drawAIScatter(rows){
+  const S=$('#aiq-scatter');if(!S)return;
+  const pts=rows.filter(x=>x.line!=null&&x.projection!=null).slice(0,300);
+  if(!pts.length){S.innerHTML=`<text x="200" y="130" text-anchor="middle" fill="#5c675a" font-size="12">No props match this query</text>`;return}
+  const W=400,H=260,pad=30;
+  const allV=pts.flatMap(p=>[p.line,p.projection]);
+  const mn=Math.min(...allV,0),mx=Math.max(...allV)||1;
+  const X=v=>pad+(v-mn)/(mx-mn||1)*(W-2*pad), Y=v=>H-pad-(v-mn)/(mx-mn||1)*(H-2*pad);
+  let dots='';pts.forEach(p=>{const over=p.projection>p.line;dots+=`<circle cx="${X(p.line).toFixed(1)}" cy="${Y(p.projection).toFixed(1)}" r="3.2" fill="${over?'#c6f24e':'#ff6b6b'}" opacity="0.75"><title>${p.player} ${p.stat}: line ${p.line}, proj ${p.projection}</title></circle>`});
+  S.innerHTML=`<line x1="${X(mn)}" y1="${Y(mn)}" x2="${X(mx)}" y2="${Y(mx)}" stroke="#273222" stroke-dasharray="3 3"/>
+    <text x="${pad}" y="${H-8}" fill="#5c675a" font-size="9">line →</text><text x="6" y="${pad}" fill="#5c675a" font-size="9">proj ↑</text>${dots}`;
 }
 async function vCorrelations(){
   $('#view').innerHTML=`<div class="ph2"><div><h2>Correlations</h2><p>Why combo props aren't just their parts multiplied together.</p></div></div>
