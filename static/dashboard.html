@@ -158,6 +158,25 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 .rtable td{padding:8px;vertical-align:middle;white-space:nowrap}
 .rtable tr:not(:last-child) td{border-bottom:1px solid #14190f}.rtable tbody tr{cursor:pointer}.rtable tbody tr:hover td{background:#0f150d}
 .rtable tr.sel td{background:#101a0d;box-shadow:inset 2px 0 0 var(--accent)}
+/* ── player / game pages ── */
+.pp-head{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.pp-head img{width:64px;height:64px;border-radius:50%;border:2px solid var(--line2);background:#0a0e09;object-fit:cover}
+.pp-head .nm{font-size:22px;font-weight:900;letter-spacing:-.4px;display:flex;align-items:center;gap:8px}
+.pp-head .meta{color:var(--muted);font-size:12.5px;margin-top:2px;display:flex;align-items:center;gap:6px}
+.pp-badges{margin-left:auto;display:flex;gap:10px}
+.pp-badge{text-align:center;border:1px solid var(--line);border-radius:12px;padding:8px 16px;background:#0e130d;min-width:76px}
+.pp-badge .v{font-size:20px;font-weight:900}.pp-badge .l{color:var(--muted);font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+.pp-tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
+.pp-tab{padding:9px 14px;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.pp-tab:hover{color:var(--text)}.pp-tab.on{color:var(--accent);border-color:var(--accent)}
+.ringwrap{position:relative;width:84px;height:84px;flex:0 0 84px}
+.ringwrap .rv{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900}
+.gh-teams{display:flex;align-items:center;justify-content:center;gap:18px;padding:6px 0 16px}
+.gh-teams .t{display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:800;font-size:14px}
+.gh-teams .vs{color:var(--dim);font-size:11px;font-weight:700}
+.winbar{display:flex;height:22px;border-radius:8px;overflow:hidden;font-size:11px;font-weight:800}
+.winbar span{display:flex;align-items:center;justify-content:center;color:#0a120a}
+.winbar .a{background:var(--accent)}.winbar .b{background:var(--down);color:#fff}
 .book{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:10px;color:#fff}
 .book.pp{background:#7c3aed}.book.ud{background:#f59e0b;color:#101}.book.sl{background:#f57b1f}.book.dk{background:#147a3d}.book.cb{background:#3b82f6}.book.pl{background:#e11d48}
 .jspill{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:26px;padding:0 7px;border-radius:8px;font-weight:800;font-size:12px;border:1.5px solid}
@@ -812,7 +831,7 @@ async function vPlayers(){
   const byP={};rows.forEach(p=>{(byP[p.player||'—']=byP[p.player||'—']||[]).push(p)});
   const players=Object.entries(byP).map(([name,ps])=>({name,team:ps[0].team,sport:ps[0].sport,headshot:ps[0].headshot,n:ps.length,best:ps.reduce((a,b)=>b.juiceScore>a.juiceScore?b:a)})).sort((a,b)=>b.best.juiceScore-a.best.juiceScore);
   $('#view').innerHTML=`<div class="ph2"><div><h2>Players <span class="chip">${players.length}</span></h2><p>Every player with a projected prop today, ranked by their best Juice Score.</p></div></div>
-   <div class="panel">${players.length?`<table class="drops"><thead><tr><th>Player</th><th>Team</th><th>Props</th><th>Best Prop</th><th>Juice</th></tr></thead><tbody>${players.slice(0,150).map(pl=>`<tr onclick='openProp(${JSON.stringify(pl.best).replace(/'/g,"&#39;")})'><td><div class="pl"><img src="${ph(pl.headshot)}"><div><div class="nm">${pl.name}</div><div class="tm">${teamBadge(pl,14)} ${pl.team||''}</div></div></div></td><td>${pl.team||''}</td><td class="mono">${pl.n}</td><td class="muted">${cap(pl.best.side)} ${fmt(pl.best.line)} ${pl.best.stat}</td><td><span class="js" style="color:${jColor(pl.best.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(pl.best.juiceScore)}55">${pl.best.juiceScore}</span></td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('user',30)}</div>No players on the board yet today.</div>`}</div>`;
+   <div class="panel">${players.length?`<table class="drops"><thead><tr><th>Player</th><th>Team</th><th>Props</th><th>Best Prop</th><th>Juice</th></tr></thead><tbody>${players.slice(0,150).map(pl=>`<tr onclick='goPlayer(${JSON.stringify(pl.name).replace(/'/g,"&#39;")})'><td><div class="pl"><img src="${ph(pl.headshot)}"><div><div class="nm">${pl.name}</div><div class="tm">${teamBadge(pl,14)} ${pl.team||''}</div></div></div></td><td>${pl.team||''}</td><td class="mono">${pl.n}</td><td class="muted">${cap(pl.best.side)} ${fmt(pl.best.line)} ${pl.best.stat}</td><td><span class="js" style="color:${jColor(pl.best.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(pl.best.juiceScore)}55">${pl.best.juiceScore}</span></td></tr>`).join('')}</tbody></table>`:`<div class="empty"><div class="em">${icon('user',30)}</div>No players on the board yet today.</div>`}</div>`;
 }
 async function vTeams(){
   const pr=await api('/api/projections?sort=juice&limit=1000');const rows=pr.projections||[];
@@ -846,6 +865,87 @@ async function vUpgrade(){const free=['Live projections board','Juice Scores & e
    </div>`;
 }
 function upgradeClick(){if(AUTH.user)toast('Pro is free during beta — you are all set');else openLogin();}
+
+// ══════════════════════ PLAYER PAGE ══════════════════════
+const goPlayer=name=>{location.hash='/player/'+encodeURIComponent(name)};
+let PPTAB='overview';
+async function vPlayerPage(name){
+  if(!name){$('#view').innerHTML=`<div class="empty">${icon('user',30)}<br>No player specified.</div>`;return}
+  const pr=await api('/api/projections?sort=juice&limit=1000');
+  const rows=(pr.projections||[]).filter(p=>p.player===name);
+  if(!rows.length){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('user',30)}</div>No live props for <b>${name}</b> right now.</div>`;return}
+  const top=rows.reduce((a,b)=>b.juiceScore>a.juiceScore?b:a);
+  PP_ROWS=rows; PP_TOP=top;
+  $('#view').innerHTML=`
+   <div class="pp-head"><img src="${ph(top.headshot)}">
+     <div><div class="nm">${name} ${teamBadge(top,20)}</div><div class="meta">${top.team||''} ${top.position?'· '+top.position:''} ${leagueLogo(top.sport,14)} ${top.sport||''}</div></div>
+     <div class="pp-badges">
+       <div class="pp-badge"><div class="v" style="color:${jColor(top.juiceScore)}">${top.juiceScore}</div><div class="l">Juice Score</div></div>
+       <div class="pp-badge"><div class="v">${Math.round(top.confidence)}</div><div class="l">Confidence</div></div>
+     </div>
+     <button class="btn" onclick="toggleWatch(${JSON.stringify(top).replace(/"/g,'&quot;')});render()">${starIcon(isWatched(top.id))} Watch</button>
+   </div>
+   <div class="pp-tabs" id="pp-tabs">${[['overview','Overview'],['projections','Projections'],['trends','Trends'],['matchup','Matchup'],['gamelog','Game Log'],['splits','Splits'],['news','News']]
+     .map(([k,n])=>`<span class="pp-tab ${PPTAB===k?'on':''}" onclick="ppGo('${k}')">${n}</span>`).join('')}</div>
+   <div id="pp-body"></div>`;
+  renderPPTab();
+}
+function ppGo(t){PPTAB=t;renderPPTab()}
+const PP_TAB_KEYS=['overview','projections','trends','matchup','gamelog','splits','news'];
+function renderPPTab(){
+  const tabs=[...document.querySelectorAll('#pp-tabs .pp-tab')];
+  tabs.forEach(el=>el.classList.remove('on'));
+  const idx=PP_TAB_KEYS.indexOf(PPTAB);
+  if(tabs[idx])tabs[idx].classList.add('on');
+  const body=$('#pp-body'); const x=PP_TOP;
+  if(PPTAB==='overview'){
+    body.innerHTML=`<div class="grid2"><div>
+      <div class="panel"><div class="phead"><h3>${x.stat} <span class="hint">${cap(x.side)} ${fmt(x.line)}</span></h3>${bookLogo(x.source,20)}</div>
+        <div class="dsec" style="border:0"><div class="kv"><div class="b"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div><div class="b"><div class="l">Edge %</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div><div class="b"><div class="l">Over Probability</div><div class="v">${prob(x.probability)}</div></div><div class="b"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div></div></div>
+        <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="pp-dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="pp-simkv"></div></div>
+      </div>
+      <div class="panel"><div class="phead"><h3>AI Juice Insight</h3></div><div class="dsec" style="border:0"><div class="aibox" id="pp-aibox">${AUTH.ai?'Generating…':'AI Juice is not configured.'}</div></div></div>
+     </div>
+     <div>
+      <div class="panel"><div class="phead"><h3>Hit Rate vs Line</h3></div><div class="dsec" style="border:0;display:flex;justify-content:center" id="pp-hitring"><p class="muted">Loading…</p></div></div>
+      <div class="panel"><div class="phead"><h3>Matchup Insight</h3></div><div class="dsec" style="border:0" id="pp-matchup"><p class="muted">Loading…</p></div></div>
+      <div class="panel"><div class="phead"><h3>Recent Games</h3></div><div id="pp-recent" style="padding:0 4px 8px"></div></div>
+     </div></div>`;
+    loadSim(x,'#pp-dist','#pp-simkv'); loadAIExplain(x,'#pp-aibox'); loadRecent(x,'#pp-recent'); loadPPMatchup(x);
+  } else if(PPTAB==='projections'){
+    body.innerHTML=`<div class="panel">${propTable(PP_ROWS)}</div>`;
+  } else if(PPTAB==='trends'){
+    body.innerHTML=`<div class="panel"><div class="phead"><h3>Projection Trend</h3><span class="hint">line movement vs the model</span></div><div style="padding:6px 12px 14px"><svg class="spark" id="pp-spark" viewBox="0 0 520 150" preserveAspectRatio="none"></svg></div></div>`;
+    (async()=>{try{const h=(await api('/api/lines/history?id='+encodeURIComponent(x.id)+'&limit=40')).history||[];
+      const v=h.map(p=>p.line_value).filter(p=>p!=null);drawSpark('#pp-spark',v.length>1?v:[x.line,x.line],x.projection,x.line)}catch(e){}})();
+  } else if(PPTAB==='matchup'){
+    body.innerHTML=`<div class="panel"><div class="phead"><h3>Matchup Insight</h3></div><div class="dsec" style="border:0" id="pp-matchup2"><p class="muted">Loading…</p></div></div>`;
+    loadPPMatchup(x,'#pp-matchup2');
+  } else if(PPTAB==='gamelog'){
+    body.innerHTML=`<div class="panel"><div class="phead"><h3>Game Log</h3></div><div id="pp-recent2" style="padding:0 4px 8px"></div></div>`;
+    loadRecent(x,'#pp-recent2');
+  } else if(PPTAB==='splits'){
+    body.innerHTML=`<div class="empty"><div class="em">${icon('layers',28)}</div>Home/away and vs-hand splits need a dedicated data source — not modeled yet.</div>`;
+  } else if(PPTAB==='news'){
+    body.innerHTML=`<div class="empty"><div class="em">${icon('bell',28)}</div>No news feed connected yet — injuries flagged from lineup data show on the Injuries page.</div>`;
+  }
+}
+async function loadPPMatchup(x,sel='#pp-matchup'){const box=$(sel);if(!box)return;
+  const ring=$('#pp-hitring');
+  try{const r=await api('/api/analytics?id='+encodeURIComponent(x.id));const a=r.analytics||{};
+    if(ring){
+      const hr=a.hit_rate;
+      ring.innerHTML=hr?`<div class="ringwrap">${donutSVG([['over',hr.over_pct,'#c6f24e'],['under',100-hr.over_pct,'#26311f']],hr.over_pct+'%','over')}</div><p class="muted" style="margin-left:14px;align-self:center">${hr.over}/${hr.n} games over ${fmt(hr.line)} ${hr.stat||''}</p>`
+        :'<p class="muted">Not enough graded history yet.</p>';
+    }
+    if(!a.available){box.innerHTML='<p class="muted">No matchup data for this prop yet.</p>';return}
+    const bits=[];
+    if(a.opponent&&a.opponent.name)bits.push(`Next opponent: <b style="color:var(--text)">${a.opponent.name}</b>`);
+    if(a.vs_pitcher&&a.vs_pitcher.pitcher)bits.push(`Facing <b style="color:var(--text)">${a.vs_pitcher.pitcher.name}</b>`);
+    if(a.season_games)bits.push(`${a.season_games} games this season`);
+    box.innerHTML=bits.length?bits.map(b=>`<p style="margin:0 0 8px;font-size:12.5px">${b}</p>`).join(''):'<p class="muted">No matchup notes for this prop.</p>';
+  }catch(e){box.innerHTML='<p class="muted">Could not load matchup data.</p>'}}
+let PP_ROWS=[],PP_TOP=null;
 
 const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade};
 
@@ -882,6 +982,7 @@ async function openProp(x,tab){
   SELID=x.id; if(cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}
   const D=$('#drawer');$('#scrim').classList.add('open');D.classList.add('open');
   D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${x.player}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${x.team||''} · ${cap(x.side)} ${fmt(x.line)} ${x.stat}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
+   <div class="dsec" style="border:0;padding-bottom:0"><button class="btn" style="width:100%;justify-content:center" onclick='goPlayer(${JSON.stringify(x.player).replace(/'/g,"&#39;")})'>${icon('user',13)} View Full Player Page</button></div>
    <div class="dsec"><div class="kv"><div class="b"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div><div class="b"><div class="l">Edge %</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${pct(x.edgePct)}</div></div><div class="b"><div class="l">Over Probability</div><div class="v">${prob(x.probability)}</div></div><div class="b"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div></div></div>
    <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="simkv"></div></div>
    ${confBreakdown(x)}
@@ -895,7 +996,7 @@ async function openProp(x,tab){
 }
 function renderDrawerBtns(x){const b=$('#wbtn');if(b){b.className='btn '+(isWatched(x.id)?'':'pri');b.textContent=isWatched(x.id)?'Watching':'Add to Watchlist'}}
 function addPlay(x){DATA.portfolio.add({line_id:x.id,player:x.player,sport:x.sport,team:x.team,stat_type:x.stat,side:x.side,line_value:x.line,juiceScore:x.juiceScore,confidence:x.confidence,source:x.source}).then(()=>toast('Added to portfolio'))}
-async function loadSim(x){try{const r=await api('/api/simulation?id='+encodeURIComponent(x.id));let s=r.simulation,v=r.valuation||{};
+async function loadSim(x,distSel='#dist',kvSel='#simkv'){try{const r=await api('/api/simulation?id='+encodeURIComponent(x.id));let s=r.simulation,v=r.valuation||{};
   if(!s){  // static build (no server): synthesize the distribution from the prop's own fields
     const mu=x.projection,lo=x.floor,hi=x.ceiling;
     const sd=(hi!=null&&lo!=null&&hi>lo)?(hi-lo)/2.5631:Math.max(0.5,Math.abs(mu||1)*0.5);
@@ -905,10 +1006,11 @@ async function loadSim(x){try{const r=await api('/api/simulation?id='+encodeURIC
     v={available:x.edgePct!=null,side:x.side,
        expectedValue:x.edgePct!=null?x.edgePct/100:null,kellyFraction:null};
   }
-  drawDist(s,x.line);
-  $('#simkv').innerHTML=`<div class="kv" style="margin-top:12px"><div class="b"><div class="l">Over Prob</div><div class="v">${prob(s.overProbability)}</div></div><div class="b"><div class="l">Floor–Ceiling</div><div class="v" style="font-size:15px">${fmt(s.floor)} – ${fmt(s.ceiling)}</div></div><div class="b"><div class="l">Expected Value</div><div class="v ${v.expectedValue>=0?'pos':'neg'}">${v.expectedValue!=null?(v.expectedValue*100).toFixed(1)+'%':'—'}</div></div><div class="b"><div class="l">Kelly Stake</div><div class="v">${v.kellyFraction!=null?(v.kellyFraction*100).toFixed(1)+'%':'—'}</div></div></div><p class="muted" style="font-size:11px;margin:10px 0 0">Favored side: <b style="color:var(--text)">${cap(v.side)}</b> · sample ${s.sampleSize||'—'} games · ${s.sd_is_approximate?'SD approximated from the p10–p90 band':''}</p>`;
-}catch(e){$('#simkv').innerHTML='<p class="muted">Could not load simulation.</p>'}}
-function drawDist(s,line){const S=$('#dist');if(!S||s.mean==null)return;const mu=s.mean,sd=s.standardDeviation||Math.max(0.5,(s.ceiling-s.floor)/4)||1,W=420,H=90,lo=Math.min(s.floor??mu-3*sd,line),hi=Math.max(s.ceiling??mu+3*sd,line),X=v=>((v-lo)/((hi-lo)||1))*W;let bars='';const N=40;for(let i=0;i<N;i++){const v=lo+(i+.5)*(hi-lo)/N,y=Math.exp(-.5*((v-mu)/sd)**2),h=y*(H-14),over=v>line;bars+=`<rect x="${i*W/N}" y="${H-h}" width="${W/N-1}" height="${h}" fill="${over?'#c6f24e':'#3a4a30'}" opacity="${over?.85:.7}"/>`}
+  drawDist(s,x.line,distSel);
+  const kv=$(kvSel);if(!kv)return;
+  kv.innerHTML=`<div class="kv" style="margin-top:12px"><div class="b"><div class="l">Over Prob</div><div class="v">${prob(s.overProbability)}</div></div><div class="b"><div class="l">Floor–Ceiling</div><div class="v" style="font-size:15px">${fmt(s.floor)} – ${fmt(s.ceiling)}</div></div><div class="b"><div class="l">Expected Value</div><div class="v ${v.expectedValue>=0?'pos':'neg'}">${v.expectedValue!=null?(v.expectedValue*100).toFixed(1)+'%':'—'}</div></div><div class="b"><div class="l">Kelly Stake</div><div class="v">${v.kellyFraction!=null?(v.kellyFraction*100).toFixed(1)+'%':'—'}</div></div></div><p class="muted" style="font-size:11px;margin:10px 0 0">Favored side: <b style="color:var(--text)">${cap(v.side)}</b> · sample ${s.sampleSize||'—'} games · ${s.sd_is_approximate?'SD approximated from the p10–p90 band':''}</p>`;
+}catch(e){const kv=$(kvSel);if(kv)kv.innerHTML='<p class="muted">Could not load simulation.</p>'}}
+function drawDist(s,line,sel='#dist'){const S=$(sel);if(!S||s.mean==null)return;const mu=s.mean,sd=s.standardDeviation||Math.max(0.5,(s.ceiling-s.floor)/4)||1,W=420,H=90,lo=Math.min(s.floor??mu-3*sd,line),hi=Math.max(s.ceiling??mu+3*sd,line),X=v=>((v-lo)/((hi-lo)||1))*W;let bars='';const N=40;for(let i=0;i<N;i++){const v=lo+(i+.5)*(hi-lo)/N,y=Math.exp(-.5*((v-mu)/sd)**2),h=y*(H-14),over=v>line;bars+=`<rect x="${i*W/N}" y="${H-h}" width="${W/N-1}" height="${h}" fill="${over?'#c6f24e':'#3a4a30'}" opacity="${over?.85:.7}"/>`}
   S.innerHTML=bars+`<line x1="${X(line)}" y1="0" x2="${X(line)}" y2="${H}" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${X(line)+4}" y="12" fill="#ff6b6b" font-size="10" font-weight="700">line ${fmt(line)}</text>`}
 // On static there's no server/DB to look up the prop by id, so pass the grounded context
 // (only the prop's own numbers) to the Vercel function — it can't fabricate a stat.
@@ -917,13 +1019,13 @@ function aiContext(x){const cf={};(x.confidenceFactors||[]).forEach(f=>cf[f.fact
   return {player:x.player,team:x.team,sport:x.sport,stat:x.stat,line:x.line,projection:x.projection,
     edge:x.edge,edgePct:x.edgePct,probability:x.probability,floor:x.floor,ceiling:x.ceiling,
     confidence:x.confidence,side:x.side,sample_games:m?+m[1]:null};}
-async function loadAIExplain(x){const box=$('#aibox');box.textContent='Generating a grounded explanation…';
+async function loadAIExplain(x,sel='#aibox'){const box=$(sel);if(!box)return;box.textContent='Generating a grounded explanation…';
   try{const r=STATIC?await api('/api/ai/explain',{method:'POST',body:aiContext(x)})
                     :await api('/api/ai/explain?id='+encodeURIComponent(x.id));
     if(r.ai&&r.ai.available){box.className='aibox filled';box.textContent=r.ai.explanation}
     else{box.className='aibox';box.textContent=(r.ai&&r.ai.reason)||'AI unavailable.'}}catch(e){box.textContent='AI request failed.'}}
 // Real recent-games + hit-rate from /api/analytics (replaces the old raw-JSON dump).
-async function loadRecent(x){const box=$('#recentbox');if(!box)return;
+async function loadRecent(x,sel='#recentbox'){const box=$(sel);if(!box)return;
   try{const r=await api('/api/analytics?id='+encodeURIComponent(x.id));const a=r.analytics||{};
     if(!a.available){box.innerHTML='<p class="muted" style="font-size:11.5px">No game logs for this prop yet — a full engine run needs recent games.</p>';return}
     const hr=a.hit_rate,rec=a.recent||[],line=x.line;
@@ -937,9 +1039,12 @@ function loadResearch(x){const b=$('#recentbox');if(b)b.scrollIntoView({behavior
 function closeDrawer(){$('#scrim').classList.remove('open');$('#drawer').classList.remove('open');const was=SELID;SELID=null;if(was&&cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}}
 
 // ── router ──
-async function render(){renderNav();const r=cur();const fn=ROUTES[r]||vDashboard;
+async function render(){renderNav();const r=cur();
+  let fn=ROUTES[r],arg=null;
+  if(!fn){const pm=r.match(/^player\/(.+)$/);if(pm){fn=vPlayerPage;arg=decodeURIComponent(pm[1])}}
+  fn=fn||vDashboard;
   $('#greet').style.display=r==='dashboard'?'':'none';$('#subgreet').style.display=r==='dashboard'?'':'none';
-  try{await fn()}catch(e){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load this page.<br><span class="muted">${e}</span><br><button class="btn pri" style="margin-top:14px" onclick="render()">Retry</button></div>`}}
+  try{await fn(arg)}catch(e){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load this page.<br><span class="muted">${e}</span><br><button class="btn pri" style="margin-top:14px" onclick="render()">Retry</button></div>`}}
 window.addEventListener('hashchange',()=>{closeDrawer();closeSide();render()});
 $('#globalsearch').addEventListener('keydown',e=>{if(e.key==='Enter'){go('projections');setTimeout(()=>{const f=$('#f-stat');if(f){f.value=e.target.value;f.dispatchEvent(new Event('input'))}},100)}});
 
