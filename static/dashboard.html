@@ -772,13 +772,38 @@ function drawAIScatter(rows){
   S.innerHTML=`<line x1="${X(mn)}" y1="${Y(mn)}" x2="${X(mx)}" y2="${Y(mx)}" stroke="#273222" stroke-dasharray="3 3"/>
     <text x="${pad}" y="${H-8}" fill="#5c675a" font-size="9">line →</text><text x="6" y="${pad}" fill="#5c675a" font-size="9">proj ↑</text>${dots}`;
 }
+function corrGraphSVG(){
+  const nodes=[['Hits',210,110],['Runs',110,220],['RBIs',310,220]];
+  const edges=[['Hits','Runs',0.59],['Hits','RBIs',0.49],['Runs','RBIs',0.55]];
+  const pos=Object.fromEntries(nodes.map(([n,x,y])=>[n,[x,y]]));
+  const lines=edges.map(([a,b,c])=>{const[x1,y1]=pos[a],[x2,y2]=pos[b];const mx=(x1+x2)/2,my=(y1+y2)/2;
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#c6f24e" stroke-width="${1+c*3}" opacity="${.35+c*.5}"/>
+      <rect x="${mx-16}" y="${my-9}" width="32" height="16" rx="4" fill="#0a0e09"/><text x="${mx}" y="${my+3}" text-anchor="middle" fill="#c6f24e" font-size="10" font-weight="800">${c}</text>`}).join('');
+  const circles=nodes.map(([n,x,y])=>`<circle cx="${x}" cy="${y}" r="30" fill="#141b11" stroke="#31401f" stroke-width="1.5"/><text x="${x}" y="${y+4}" text-anchor="middle" fill="#e9f0e6" font-size="12" font-weight="800">${n}</text>`).join('');
+  return `<svg viewBox="0 0 420 280" style="width:100%;height:260px">${lines}${circles}</svg>`;
+}
 async function vCorrelations(){
   $('#view').innerHTML=`<div class="ph2"><div><h2>Correlations</h2><p>Why combo props aren't just their parts multiplied together.</p></div></div>
+   <div class="two" style="align-items:start">
    <div class="panel" style="padding:18px"><h3 style="margin:0 0 8px">Correlation-aware combo simulation</h3>
-   <p class="muted" style="max-width:720px">A player's Hits, Runs, and RBIs move together — a big game lifts all three. Treating them as independent makes a combo prop (e.g. H+R+RBI) look ~40% narrower than reality. Juiced re-pairs the simulated components using each player's own historical dependence (an Iman-Conover copula), so the combo's spread is honest while every single-stat probability is unchanged.</p>
-   <div class="kv" style="margin-top:16px;max-width:520px"><div class="b"><div class="l">Default H · R corr</div><div class="v">0.59</div></div><div class="b"><div class="l">Default H · RBI corr</div><div class="v">0.49</div></div><div class="b"><div class="l">Default R · RBI corr</div><div class="v">0.55</div></div><div class="b"><div class="l">Shrinkage</div><div class="v">→ per-player</div></div></div>
-   <p class="muted" style="margin-top:16px;font-size:11.5px">These priors are shrunk toward each player's own game-log correlations when a combo is simulated, so every combo's spread reflects that player's real dependence. Open any H/R/RBI combo prop to see the priors in its drawer.</p></div>`;
-
+   <p class="muted" style="max-width:560px;font-size:12.5px">A player's Hits, Runs, and RBIs move together — a big game lifts all three. Treating them as independent makes a combo prop (e.g. H+R+RBI) look ~40% narrower than reality. Juiced re-pairs the simulated components using each player's own historical dependence (an Iman-Conover copula), so the combo's spread is honest while every single-stat probability is unchanged.</p>
+   <p class="muted" style="margin-top:12px;font-size:11.5px">These are the DEFAULT priors below, shrunk toward each player's own game-log correlations when a combo is actually simulated.</p></div>
+   <div class="panel" style="padding:18px"><h3 style="margin:0 0 10px">Default Dependency Graph</h3>${corrGraphSVG()}</div>
+   </div>
+   <div class="panel" style="padding:18px" id="corr-live"><h3 style="margin:0 0 8px">Live Example</h3><p class="muted skel">Looking for a real H+R+RBI combo on today's board…</p></div>`;
+  loadCorrLive();
+}
+async function loadCorrLive(){
+  const box=$('#corr-live');if(!box)return;
+  try{
+    const pr=await api('/api/projections?limit=1000');const rows=pr.projections||[];
+    const combo=rows.find(p=>/hits.*runs.*rbi|hits\+runs\+rbi/i.test(p.stat||''));
+    if(!combo){box.innerHTML='<h3 style="margin:0 0 8px">Live Example</h3><p class="muted">No H+R+RBI combo prop is on the board right now — check back once the slate posts.</p>';return}
+    const parts=['Hits','Runs','RBIs'].map(s=>rows.find(p=>p.player===combo.player&&(p.stat||'').toLowerCase()===s.toLowerCase()));
+    const rowsHtml=[combo,...parts].map((p,i)=>p?`<tr ${i===0?'style="background:#101a0d"':''}><td>${i===0?'<b>Combo</b>':p.stat}</td><td class="mono">${fmt(p.line)}</td><td class="mono">${fmt(p.projection)}</td><td class="mono">${prob(p.probability)}</td></tr>`:'').join('');
+    box.innerHTML=`<h3 style="margin:0 0 4px">Live Example</h3><p class="muted" style="font-size:11.5px;margin:0 0 12px"><b style="color:var(--text)">${combo.player}</b> — the combo's own simulated probability already accounts for how these three move together; it is NOT the product of the three individual probabilities.</p>
+     <table class="drops" style="margin:0"><thead><tr><th>Stat</th><th>Line</th><th>Proj</th><th>P(Over)</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+  }catch(e){box.innerHTML='<h3 style="margin:0 0 8px">Live Example</h3><p class="muted">Could not load a live example.</p>'}
 }
 function demoTable(kind,cols,rows,emptyEm,emptyMsg){
   return rows.length?`<table class="drops"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows}</tbody></table>`
