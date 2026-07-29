@@ -442,13 +442,16 @@ const cur=()=>location.hash.slice(2)||'dashboard';
 
 // ══════════════════════════ VIEWS ══════════════════════════
 let sport='all';
+let DASH_D=null;
 async function vDashboard(){
   const d=await api('/api/dashboard?sport='+sport);
+  DASH_D=d;
   const t=d.tiles||{},dh=d.data_health||{};
   const tile=(cap,big,cls,sub,pho)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div>${pho?`<img class="ph" src="${ph(pho)}">`:''}</div>`;
   const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move,bv=t.best_value;
   $('#view').innerHTML=`
    <div class="tabs" id="tabs"></div>
+   <div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4>AI Briefing</h4><p id="ai-summary" class="skel">Checking AI Juice…</p></div><button class="btn" onclick="go('ai-juice')">Open AI Juice</button></div>
    <div class="grid2"><div>
     <div class="tiles">
       ${tile('Juice Score Leader',jl?jl.value:'—','',jl?`<b>${jl.player}</b><br>${cap(jl.side)} ${fmt(jl.line)} ${jl.stat}`:'—',jl&&jl.headshot)}
@@ -462,7 +465,6 @@ async function vDashboard(){
       <div class="panel"><div class="phead"><h3>Line Movement</h3><span class="hint" id="tsub"></span></div><div style="padding:6px 12px 14px"><svg class="spark" id="spark" viewBox="0 0 520 150" preserveAspectRatio="none"></svg></div></div>
       <div class="panel"><div class="phead"><h3>Confidence Breakdown <span class="hint">top drop · real components</span></h3></div><div class="donutwrap"><svg width="150" height="150" viewBox="0 0 150 150" id="donut"></svg><div class="legend" id="legend"></div></div></div>
     </div>
-    <div class="ai-sum"><div class="orb">AI</div><div><h4>Today's AI Slate Summary</h4><p id="ai-summary" class="skel">Checking AI Juice…</p></div><button class="btn" onclick="go('ai-juice')">Open AI Juice</button></div>
    </div>
    <div><div class="rcard"><div class="rhead"><h4>Alerts <span class="n" id="aln"></span></h4><span class="lnk" onclick="go('alerts')">View All</span></div><div id="ralerts"></div></div>
     <div class="rcard"><div class="rhead"><h4>Top Movers</h4><span class="lnk" onclick="go('movers')">View All</span></div><div class="mtabs" id="mtabs"><span class="mtab active" data-k="proj_up">PROJ UP</span><span class="mtab" data-k="proj_down">PROJ DOWN</span><span class="mtab" data-k="line_moves">LINE MOVES</span></div><div id="movers"></div></div>
@@ -1100,7 +1102,18 @@ async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}
 }
 document.addEventListener('click',e=>{if(!e.target.closest('#avatar')&&!e.target.closest('#umenu'))$('#umenu').classList.remove('open')});
 // fill dashboard AI summary after render
-const _r2=render;render=async function(){await _r2();if(cur()==='dashboard'){const p=$('#ai-summary');if(p){p.className='';p.textContent=AUTH.ai?'AI Juice is connected — open any prop for a grounded, cited explanation of the projection.':'AI Juice is not configured yet — set ANTHROPIC_API_KEY on the server to enable grounded slate summaries. Every projection is still fully model-driven.'}}};
+// Grounded in the SAME numbers already on the page (data_health + the visible top drops) —
+// no market-wide claim we can't back up (drops is only the top-12 slate, so counts here are
+// scoped to "today's top picks", not "the whole board").
+function aiBriefingText(){
+  const d=DASH_D,dh=(d&&d.data_health)||{},drops=(d&&d.drops)||[];
+  const hiJuice=drops.filter(x=>x.juiceScore>=80).length;
+  const base=`Tracking ${(dh.projected_lines||0).toLocaleString()} projected props from ${dh.live_sources||0} live source${dh.live_sources===1?'':'s'} today`+
+    (hiJuice?`, including ${hiJuice} of today's top picks at 80+ Juice`:'')+'.';
+  return AUTH.ai ? base+' Open any prop for a grounded, cited AI explanation.'
+                 : base+' AI-written recaps need an API key configured — every number here is still fully model-driven.';
+}
+const _r2=render;render=async function(){await _r2();if(cur()==='dashboard'){const p=$('#ai-summary');if(p){p.className='';p.textContent=aiBriefingText()}}};
 boot();
 </script>
 </body>
