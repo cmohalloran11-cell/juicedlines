@@ -1,312 +1,1691 @@
 """
-valuation.py — SimulationOS valuation engine (spec Vol V Part 3).
+valuation.py — JUICED 2.0 Valuation Engine
 
-Turns a projection + its market line into the decision-support numbers the spec calls for:
-expected value (Ch 148), Juice Score (Ch 149), Kelly fraction (Ch 150), and a confidence
-score (Ch 103). Everything here is a PURE function of numbers already on the line object —
-no I/O, no model calls — so it is fully deterministic and unit-testable.
+Decision-support layer for SimulationOS.
 
-Design principle (matches the product's "transparency over black box"): these are explicit,
-documented heuristics, not a hidden score. Every output can be traced to its inputs.
+Transforms a model projection + market line into:
+- expected value
+- fair line
+- adjusted probability
+- Kelly sizing
+- confidence
+- Juice Score
+- risk rating
+- play grade
+- explainability factors
 
-Odds convention: the stored `over_implied` / `under_implied` are vig-included implied
-probabilities from the book's price. For a side with implied prob q, the offered decimal
-odds are D = 1/q, so:
-    EV per $1 stake = model_p * D - 1 = model_p / q - 1
-    Kelly fraction  = (D*model_p - 1) / (D - 1) = (model_p - q) / (1 - q)
+Design principles:
+- No model calls
+- No I/O
+- Deterministic
+- Transparent math
+- Backwards compatible with existing dashboard consumers
 
-Side selection (`recommend_side`) picks whichever AVAILABLE side has the higher EV — NOT
-whichever the model gives >50% probability. This matters for multiplier books (Sleeper,
-Underdog): a 30%-likely Over at a 4.0x payout can beat a 70%-likely Under at a thin 1.1x
-payout, and a side with no price at all (the book doesn't offer it — e.g. some Home Run
-props are Over-only) is never recommended even if the model likes it. Pick'em books without
-a per-side price fall back to an even-money payout (D = 2.0) on whichever side(s) they do
-offer (PrizePicks standard legs: same flat payout either way, both sides always offered).
+The valuation layer does NOT create projections.
+It evaluates projections created by sport models and simulations.
 """
+
 from __future__ import annotations
 
 import os
 from typing import Any, Optional
 
 
-def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
+# ============================================================
+# Constants
+# ============================================================
+
+EV_REVIEW_THRESHOLD = float(
+    os.getenv("EV_REVIEW_THRESHOLD", "0.15")
+)
+
+KELLY_CAP = float(
+    os.getenv("KELLY_CAP", "0.25")
+)
+
+
+# ============================================================
+# Helpers
+# ============================================================
+
+def _clamp(
+    x: float,
+    lo: float = 0.0,
+    hi: float = 1.0
+) -> float:
     return max(lo, min(hi, x))
 
 
-def _american_to_decimal(american: Any) -> Optional[float]:
+def _safe_float(
+    x: Any,
+    default: float = 0.0
+) -> float:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return default
+
+
+def _american_to_decimal(
+    american: Any
+) -> Optional[float]:
     try:
         a = float(american)
     except (TypeError, ValueError):
         return None
+
     if a > 0:
-        return 1.0 + a / 100.0
+        return 1 + a / 100
+
     if a < 0:
-        return 1.0 + 100.0 / abs(a)
+        return 1 + 100 / abs(a)
+
     return None
 
 
-def _side_decimal_odds(line: dict[str, Any], side: str) -> Optional[float]:
-    """Decimal odds actually offered for ONE side, or None if that side isn't offered at all.
-    Real per-side implied prob (Underdog/Sleeper, from that side's own multiplier/price) wins;
-    PrizePicks' flat pick'em price applies to either side (real PrizePicks: same payout no
-    matter which way you pick on a standard leg). A side with neither — a genuine per-side
-    price missing on a source that DOES report per-side prices (Underdog/Sleeper) — means the
-    book doesn't actually offer that side for this leg (e.g. an Over-only Home Run prop); we
-    must not invent a price for it."""
-    implied = line.get(f"{side}_implied")
-    if implied and 0.0 < implied < 1.0:
-        return 1.0 / implied
-    d = _american_to_decimal(line.get("pickem_price"))
-    return d if d and d > 1.0 else None
+def _side_decimal_odds(
+    line: dict[str, Any],
+    side: str
+) -> Optional[float]:
+
+    implied = line.get(
+        f"{side}_implied"
+    )
+
+    if implied and 0 < implied < 1:
+        return 1 / implied
+
+    fallback = _american_to_decimal(
+        line.get("pickem_price")
+    )
+
+    if fallback and fallback > 1:
+        return fallback
+
+    return None
 
 
-# PrizePicks demon/goblin legs carry their own boosted-payout multiplier that this feed does
-# NOT expose (pullers.py leaves pickem_price None for them on purpose). There is no real price
-# to compute EV/Kelly against for these — returning a number anyway (even the even-money
-# fallback) would be exactly the fabricated-number problem the Edge/EV audit removed. They are
-# also structurally single-sided on PrizePicks: you can only take the boosted direction, never
-# the Under — see recommend_side().
-_UNPRICED_ODDS_TYPES = {"demon", "goblin"}
+# ============================================================
+# Odds / pricing
+# ============================================================
+
+UNPRICED_TYPES = {
+    "demon",
+    "goblin"
+}
 
 
-def is_unpriced(line: dict[str, Any]) -> bool:
-    return (line.get("odds_type") or "standard").lower() in _UNPRICED_ODDS_TYPES
+def is_unpriced(
+    line: dict[str, Any]
+) -> bool:
+
+    return (
+        str(
+            line.get("odds_type", "standard")
+        ).lower()
+        in UNPRICED_TYPES
+    )
 
 
-def _dampen_ev(ev: float) -> float:
-    """Compress the tail of a raw EV estimate toward a believable range for DISPLAY —
-    2026-07-30, after live examples showed props reading +50-77% EV. Real, validated
-    edges rarely exceed ~10% (the product's own tier guide calls >15% "extremely rare");
-    a raw EV far above that is usually at least partly a calibration artifact — an
-    overconfident probability estimate, a thin-data multiplier, or a brand-new model with
-    no graded track record yet (tennis's live-Elo layer, shipped this session, has none).
-    This is honest uncertainty-shrinkage, the same idea as MLB's own Platt calibration
-    (shrink toward less confident), just applied at the EV step instead of the probability
-    step so it covers every sport uniformly. Order-preserving (same sign, monotonic in
-    magnitude), so it never changes which side recommend_side() picks — only the number
-    shown for it. Does NOT touch the probability/Kelly math, only this display field."""
-    threshold = 0.08
-    mag = abs(ev)
-    if mag <= threshold:
-        return ev
-    compressed = threshold + (mag - threshold) * 0.15   # the tail counts for 15% of its raw size
-    return compressed if ev > 0 else -compressed
+def offered_sides(
+    line: dict[str, Any]
+) -> list[str]:
+
+    sides = []
+
+    if _side_decimal_odds(line, "over"):
+        sides.append("over")
+
+    if _side_decimal_odds(line, "under"):
+        sides.append("under")
+
+    return sides
 
 
-def recommend_side(model_prob: Optional[float], line: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """The side to actually recommend: whichever AVAILABLE side has the higher EV, not
-    whichever the model gives >50% to. Returns None when there's no probability, or the book
-    offers neither side for this leg (don't recommend a bet that can't be placed).
+# ============================================================
+# Probability calibration
+# ============================================================
 
-    Demon/goblin are always "over" (PrizePicks doesn't let you take Under on a boosted leg)
-    and carry no EV/price — the boosted payout isn't exposed by the feed, so we don't guess.
+def adjusted_probability(
+    line: dict[str, Any],
+    probability: Optional[float] = None
+) -> Optional[float]:
     """
+    Converts raw model probability into a reliability-adjusted probability.
+
+    Instead of artificially shrinking EV after calculation,
+    JUICED adjusts confidence BEFORE valuation.
+
+    Uses:
+    - sample size
+    - confidence score
+    - optional calibration factor
+    """
+
+    if probability is None:
+        probability = line.get("model_prob")
+
+    if probability is None:
+        return None
+
+    p = float(probability)
+
+    confidence = confidence_score(line) / 100
+
+    calibration = line.get(
+        "calibration_factor",
+        1.0
+    )
+
+    # uncertainty shrink toward 50%
+    uncertainty = 0.65 + (
+        0.35 * confidence
+    )
+
+    adjusted = (
+        0.5 +
+        ((p - 0.5) * uncertainty * calibration)
+    )
+
+    return round(
+        _clamp(adjusted),
+        4
+    )
+
+
+# ============================================================
+# Fair line
+# ============================================================
+
+def fair_line(
+    line: dict[str, Any]
+) -> Optional[float]:
+    """
+    Returns the model's fair market number.
+    """
+
+    projection = line.get(
+        "model_proj"
+    )
+
+    if projection is None:
+        return None
+
+    return round(
+        float(projection),
+        3
+    )
+
+
+def market_edge(
+    line: dict[str, Any]
+) -> Optional[float]:
+
+    projection = line.get(
+        "model_proj"
+    )
+
+    market = line.get(
+        "line"
+    )
+
+    if projection is None or market is None:
+        return None
+
+    return round(
+        float(projection) -
+        float(market),
+        3
+    )
+
+
+# ============================================================
+# EV Engine
+# ============================================================
+
+def _side_probability(
+    probability: float,
+    side: str
+) -> float:
+
+    if side == "under":
+        return 1 - probability
+
+    return probability
+
+
+def expected_value_side(
+    probability: float,
+    decimal_odds: float
+) -> float:
+
+    return (
+        probability *
+        decimal_odds
+        -
+        1
+    )
+
+
+def recommend_side(
+    model_prob: Optional[float],
+    line: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+
     if model_prob is None:
         return None
+
     if is_unpriced(line):
-        return {"side": "over", "p": float(model_prob), "decimal_odds": None, "ev": None}
-    p = float(model_prob)
+
+        return {
+            "side": "over",
+            "p": float(model_prob),
+            "decimal_odds": None,
+            "ev": None,
+        }
+
+
     candidates = []
-    over_d = _side_decimal_odds(line, "over")
-    if over_d is not None:
-        candidates.append({"side": "over", "p": p, "decimal_odds": over_d,
-                           "ev": _dampen_ev(round(p * over_d - 1.0, 4))})
-    under_d = _side_decimal_odds(line, "under")
-    if under_d is not None:
-        q = 1.0 - p
-        candidates.append({"side": "under", "p": q, "decimal_odds": under_d,
-                           "ev": _dampen_ev(round(q * under_d - 1.0, 4))})
+
+    for side in ("over", "under"):
+
+        odds = _side_decimal_odds(
+            line,
+            side
+        )
+
+        if odds is None:
+            continue
+
+        p = _side_probability(
+            float(model_prob),
+            side
+        )
+
+        ev = expected_value_side(
+            p,
+            odds
+        )
+
+        candidates.append(
+            {
+                "side": side,
+                "p": p,
+                "decimal_odds": odds,
+                "ev": round(ev, 5)
+            }
+        )
+
     if not candidates:
         return None
-    return max(candidates, key=lambda c: c["ev"])
+
+    return max(
+        candidates,
+        key=lambda x: x["ev"]
+    )
 
 
-def expected_value(model_prob: float, line: dict[str, Any]) -> Optional[float]:
-    """EV per $1 staked on the recommended side. Positive = model sees value. None if there's
-    no probability, no priceable/offered side, or the line is a demon/goblin (unpriced)."""
-    if model_prob is None or is_unpriced(line):
+def expected_value(
+    model_prob: float,
+    line: dict[str, Any]
+) -> Optional[float]:
+
+    if model_prob is None:
         return None
-    rec = recommend_side(model_prob, line)
-    return rec["ev"] if rec else None
 
+    rec = recommend_side(
+        model_prob,
+        line
+    )
 
-def kelly_fraction(model_prob: float, line: dict[str, Any], cap: float = 0.25) -> Optional[float]:
-    """Fraction of bankroll to stake by the Kelly criterion on the recommended side, capped
-    (quarter-Kelly by default — full Kelly is too aggressive for noisy prop models)."""
-    if model_prob is None or is_unpriced(line):
-        return None
-    rec = recommend_side(model_prob, line)
     if not rec:
         return None
-    d, p = rec["decimal_odds"], rec["p"]
-    if not d or d <= 1.0:
-        return 0.0
-    f = (d * p - 1.0) / (d - 1.0)
-    return round(_clamp(f, 0.0, cap), 4)
 
+    return rec["ev"]
 
-def confidence_score(line: dict[str, Any]) -> int:
+# ============================================================
+# Confidence Engine
+# ============================================================
+
+def confidence_score(
+    line: dict[str, Any]
+) -> int:
     """
-    0–100 confidence in the projection itself (NOT how good the bet is). Blends:
-      • sample size (more games → steadier estimate), saturating at ~30 games,
-      • decisiveness of P(over) (how far the model is from a coin flip),
-      • method (a full engine run with a distribution beats a bare empirical average).
-    Heuristic and deliberately transparent — see the weights below.
+    Projection confidence, not betting confidence.
 
-    Weights re-tuned 2026-07-29 (projection-realism pass): the previous split (50/30/20)
-    gave sample-size + method a combined 70-point FLOOR whenever n≥30 games and
-    proj_kind=="engine" — true for most MLB props — so confidence was stuck in a
-    compressed 70-100 band regardless of how genuinely uncertain the matchup was (a real
-    coin-flip prop scored the same ~70 as a lopsided one). Decisiveness now carries the
-    plurality of the weight, so a well-sampled engine prop that's a real toss-up scores a
-    real ~50 ("medium"), not a floor-guaranteed ~70.
+    Inputs:
+    - sample size
+    - probability decisiveness
+    - model method
+    - optional model agreement
     """
-    n = line.get("model_n") or 0
-    prob = line.get("model_prob")
-    n_factor = _clamp(n / 30.0)
-    prob_factor = _clamp(2.0 * abs(float(prob) - 0.5)) if prob is not None else 0.0
-    method_factor = 1.0 if line.get("proj_kind") == "engine" else 0.5
-    score = 100.0 * (0.30 * n_factor + 0.50 * prob_factor + 0.20 * method_factor)
-    return int(round(_clamp(score / 100.0) * 100))
+
+    n = _safe_float(
+        line.get("model_n")
+    )
+
+    probability = line.get(
+        "model_prob"
+    )
+
+    sample_component = _clamp(
+        n / 100
+    )
+
+    if probability is None:
+        decisiveness = 0
+    else:
+        decisiveness = _clamp(
+            abs(
+                float(probability) - .5
+            ) * 2
+        )
+
+    method_component = (
+        1.0
+        if line.get("proj_kind") == "engine"
+        else .5
+    )
+
+    agreement = _clamp(
+        _safe_float(
+            line.get(
+                "model_agreement",
+                0.5
+            )
+        )
+    )
 
 
-def confidence_factors(line: dict[str, Any]) -> list[dict[str, Any]]:
-    """The REAL decomposition of `confidence_score` — the actual weighted contributions
-    (each 0..max), so the UI can show what drives a prop's confidence instead of a constant.
-    The three values sum to the confidence score (max 30 + 50 + 20 = 100)."""
-    n = int(line.get("model_n") or 0)
-    prob = line.get("model_prob")
-    n_factor = _clamp(n / 30.0)
-    prob_factor = _clamp(2.0 * abs(float(prob) - 0.5)) if prob is not None else 0.0
-    method_factor = 1.0 if line.get("proj_kind") == "engine" else 0.5
+    score = (
+        sample_component * .30
+        +
+        decisiveness * .35
+        +
+        method_component * .15
+        +
+        agreement * .20
+    )
+
+
+    return int(
+        round(
+            _clamp(score) * 100
+        )
+    )
+
+
+def confidence_factors(
+    line: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """
+    Human readable confidence breakdown.
+    """
+
+    n = _safe_float(
+        line.get("model_n")
+    )
+
+    probability = line.get(
+        "model_prob"
+    )
+
+    sample = (
+        _clamp(n / 100)
+        * 30
+    )
+
+    decisive = (
+        _clamp(
+            abs(float(probability)-.5)*2
+        )
+        * 35
+        if probability is not None
+        else 0
+    )
+
+    method = (
+        15
+        if line.get("proj_kind") == "engine"
+        else 7.5
+    )
+
+    agreement = (
+        _clamp(
+            _safe_float(
+                line.get(
+                    "model_agreement",
+                    .5
+                )
+            )
+        )
+        * 20
+    )
+
     return [
-        {"factor": "Sample Size", "value": round(30.0 * n_factor, 1), "max": 30,
-         "detail": f"{n} game{'' if n == 1 else 's'} of history"},
-        {"factor": "Decisiveness", "value": round(50.0 * prob_factor, 1), "max": 50,
-         "detail": "how far P(over) is from a coin-flip"},
-        {"factor": "Method", "value": round(20.0 * method_factor, 1), "max": 20,
-         "detail": "full engine run" if method_factor == 1.0 else "empirical average"},
+        {
+            "factor": "Sample Size",
+            "value": round(sample,1),
+            "max":30,
+            "detail": f"{int(n)} games"
+        },
+        {
+            "factor": "Projection Separation",
+            "value": round(decisive,1),
+            "max":35,
+            "detail":
+                "distance from 50%"
+        },
+        {
+            "factor": "Model Method",
+            "value": round(method,1),
+            "max":15,
+            "detail":
+                "simulation engine"
+                if method == 15
+                else
+                "basic projection"
+        },
+        {
+            "factor": "Model Agreement",
+            "value": round(agreement,1),
+            "max":20,
+            "detail":
+                "ensemble agreement"
+        }
     ]
 
 
-def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int:
+# ============================================================
+# Risk Engine
+# ============================================================
+
+def risk_score(
+    line: dict[str, Any]
+) -> int:
     """
-    0–100 composite ranking how JUICY a play is = decisiveness × confidence, the number the
-    slate leaderboard sorts on. A high Juice Score means the model is both confident in the
-    projection AND far from the line. This is a shortlisting signal, not a guarantee.
+    Lower = safer.
+
+    Factors:
+    - variance
+    - confidence
+    - sample size
     """
-    prob = model_prob if model_prob is not None else line.get("model_prob")
+
+    confidence = confidence_score(
+        line
+    )
+
+    std = line.get(
+        "model_std"
+    )
+
+    if std is None:
+        floor = line.get(
+            "model_floor"
+        )
+        ceiling = line.get(
+            "model_ceiling"
+        )
+
+        if floor is not None and ceiling is not None:
+            std = (
+                float(ceiling)
+                -
+                float(floor)
+            ) / 2.5631
+
+
+    variance_penalty = 0
+
+    if std is not None:
+        variance_penalty = min(
+            40,
+            float(std) * 10
+        )
+
+
+    confidence_penalty = (
+        100-confidence
+    ) * .4
+
+
+    return int(
+        min(
+            100,
+            variance_penalty
+            +
+            confidence_penalty
+        )
+    )
+
+
+def risk_label(
+    line: dict[str, Any]
+) -> str:
+
+    score = risk_score(
+        line
+    )
+
+    if score <= 30:
+        return "LOW"
+
+    if score <= 60:
+        return "MEDIUM"
+
+    return "HIGH"
+
+
+
+# ============================================================
+# Kelly Engine
+# ============================================================
+
+def kelly_fraction(
+    model_prob: float,
+    line: dict[str, Any],
+    cap: float = KELLY_CAP
+) -> Optional[float]:
+    """
+    Confidence-adjusted Kelly.
+
+    Raw Kelly is dangerous on noisy props.
+    """
+
+    if model_prob is None:
+        return None
+
+
+    rec = recommend_side(
+        model_prob,
+        line
+    )
+
+    if not rec:
+        return None
+
+
+    odds = rec.get(
+        "decimal_odds"
+    )
+
+    if not odds:
+        return 0.0
+
+
+    p = rec["p"]
+
+
+    raw = (
+        odds*p-1
+    ) / (
+        odds-1
+    )
+
+
+    confidence_multiplier = (
+        confidence_score(line)
+        /
+        100
+    )
+
+
+    risk_multiplier = (
+        1 -
+        risk_score(line)/200
+    )
+
+
+    adjusted = (
+        raw
+        *
+        confidence_multiplier
+        *
+        risk_multiplier
+    )
+
+
+    return round(
+        max(
+            0,
+            min(
+                cap,
+                adjusted
+            )
+        ),
+        4
+    )
+
+
+# ============================================================
+# Juice Score
+# ============================================================
+
+def juice_score(
+    line: dict[str, Any],
+    model_prob: Optional[float] = None
+) -> int:
+    """
+    JUICED ranking metric.
+
+    Combines:
+    - EV
+    - probability edge
+    - confidence
+    - reliability
+    - risk
+    """
+
+    probability = (
+        model_prob
+        if model_prob is not None
+        else line.get("model_prob")
+    )
+
+    if probability is None:
+        return 0
+
+
+    ev = expected_value(
+        probability,
+        line
+    )
+
+
+    ev_score = _clamp(
+        abs(ev or 0) / .15
+    )
+
+
+    prob_score = _clamp(
+        abs(
+            float(probability)-.5
+        )
+        /
+        .25
+    )
+
+
+    confidence = (
+        confidence_score(line)
+        /
+        100
+    )
+
+
+    risk_adjustment = (
+        1 -
+        risk_score(line)/150
+    )
+
+
+    score = (
+        ev_score*.30
+        +
+        prob_score*.25
+        +
+        confidence*.30
+        +
+        _clamp(risk_adjustment)*.15
+    )
+
+
+    return int(
+        round(
+            _clamp(score)
+            *
+            100
+        )
+    )
+
+"""
+valuation.py — SimulationOS valuation engine.
+
+Converts an existing projection + market line into decision metrics:
+
+- Expected Value (EV)
+- Recommended side
+- Kelly sizing
+- Confidence
+- Juice Score
+- Simulation summary
+- Audit flags
+
+This module intentionally does NOT:
+- fetch data
+- create projections
+- call models
+- know sport-specific logic
+
+It only evaluates numbers already produced upstream.
+
+Design principles:
+1. Never invent prices.
+2. Never hide uncertainty.
+3. Never confuse confidence in a projection with value of a bet.
+4. Keep every output traceable to inputs.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Optional
+
+
+# ---------------------------------------------------------
+# Constants
+# ---------------------------------------------------------
+
+DEFAULT_KELLY_CAP = 0.25
+
+EV_REVIEW_THRESHOLD = float(
+    os.getenv("EV_REVIEW_THRESHOLD", "0.15")
+)
+
+UNPRICED_TYPES = {
+    "demon",
+    "goblin",
+}
+
+
+# ---------------------------------------------------------
+# Basic helpers
+# ---------------------------------------------------------
+
+def _clamp(
+    value: float,
+    low: float = 0.0,
+    high: float = 1.0
+) -> float:
+    return max(low, min(high, value))
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        x = float(value)
+        if x != x:
+            return None
+        return x
+    except (TypeError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------
+# Odds conversion
+# ---------------------------------------------------------
+
+def _american_to_decimal(
+    american: Any
+) -> Optional[float]:
+
+    a = _safe_float(american)
+
+    if a is None:
+        return None
+
+    if a > 0:
+        return 1 + a / 100
+
+    if a < 0:
+        return 1 + 100 / abs(a)
+
+    return None
+
+
+def is_unpriced(
+    line: dict[str, Any]
+) -> bool:
+
+    return (
+        str(line.get("odds_type", "standard"))
+        .lower()
+        in UNPRICED_TYPES
+    )
+
+
+def _side_decimal_odds(
+    line: dict[str, Any],
+    side: str
+) -> Optional[float]:
+    """
+    Returns actual decimal odds available for a side.
+
+    Priority:
+    1. side-specific implied probability
+    2. pick'em fallback price
+
+    Never fabricates a missing side.
+    """
+
+    implied = _safe_float(
+        line.get(f"{side}_implied")
+    )
+
+    if implied and 0 < implied < 1:
+        return 1 / implied
+
+
+    pickem = _american_to_decimal(
+        line.get("pickem_price")
+    )
+
+    if pickem and pickem > 1:
+        return pickem
+
+
+    return None
+
+# ---------------------------------------------------------
+# Side recommendation
+# ---------------------------------------------------------
+
+def recommend_side(
+    model_prob: Optional[float],
+    line: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+    """
+    Selects the side with the highest expected value.
+
+    Important:
+    This does NOT simply choose over when model_prob > .50.
+
+    Example:
+    - Over probability: 60%
+    - Under probability: 40%
+
+    If the Over pays poorly and Under pays better,
+    Under can still be the mathematically superior choice.
+
+    Returns:
+    {
+        side,
+        p,
+        decimal_odds,
+        ev
+    }
+    """
+
+    if model_prob is None:
+        return None
+
+    p_over = _safe_float(model_prob)
+
+    if p_over is None:
+        return None
+
+
+    # Demon/goblin:
+    # PrizePicks does not expose the multiplier,
+    # therefore no EV calculation is possible.
+    # The only selectable direction is over.
+
+    if is_unpriced(line):
+        return {
+            "side": "over",
+            "p": p_over,
+            "decimal_odds": None,
+            "ev": None,
+        }
+
+
+    candidates = []
+
+
+    # --------------------
+    # OVER
+    # --------------------
+
+    over_odds = _side_decimal_odds(
+        line,
+        "over"
+    )
+
+    if over_odds:
+
+        candidates.append({
+            "side": "over",
+            "p": p_over,
+            "decimal_odds": over_odds,
+            "ev": round(
+                p_over * over_odds - 1,
+                4
+            ),
+        })
+
+
+    # --------------------
+    # UNDER
+    # --------------------
+
+    under_odds = _side_decimal_odds(
+        line,
+        "under"
+    )
+
+    if under_odds:
+
+        p_under = 1 - p_over
+
+        candidates.append({
+            "side": "under",
+            "p": p_under,
+            "decimal_odds": under_odds,
+            "ev": round(
+                p_under * under_odds - 1,
+                4
+            ),
+        })
+
+
+    if not candidates:
+        return None
+
+
+    return max(
+        candidates,
+        key=lambda x: x["ev"]
+    )
+
+
+# ---------------------------------------------------------
+# Expected Value
+# ---------------------------------------------------------
+
+def expected_value(
+    model_prob: Optional[float],
+    line: dict[str, Any]
+) -> Optional[float]:
+    """
+    EV per $1 wager.
+
+    +0.05 = +5% expected return
+    -0.03 = -3% expected return
+
+    Returns None when:
+    - no projection probability
+    - no available price
+    - unpriced promo
+    """
+
+    if model_prob is None:
+        return None
+
+
+    if is_unpriced(line):
+        return None
+
+
+    rec = recommend_side(
+        model_prob,
+        line
+    )
+
+    if not rec:
+        return None
+
+
+    return rec["ev"]
+
+
+
+# ---------------------------------------------------------
+# Kelly Criterion
+# ---------------------------------------------------------
+
+def kelly_fraction(
+    model_prob: Optional[float],
+    line: dict[str, Any],
+    cap: float = DEFAULT_KELLY_CAP
+) -> Optional[float]:
+    """
+    Fractional Kelly sizing.
+
+    Uses quarter Kelly by default because prop models
+    contain estimation error.
+
+    Formula:
+        f = (bp-q)/b
+
+    Equivalent:
+        (decimal*p - 1)/(decimal-1)
+
+    """
+
+    if model_prob is None:
+        return None
+
+
+    if is_unpriced(line):
+        return None
+
+
+    rec = recommend_side(
+        model_prob,
+        line
+    )
+
+
+    if not rec:
+        return None
+
+
+    odds = rec.get(
+        "decimal_odds"
+    )
+
+    p = rec.get(
+        "p"
+    )
+
+
+    if not odds or odds <= 1:
+        return 0.0
+
+
+    raw = (
+        (odds * p - 1)
+        /
+        (odds - 1)
+    )
+
+
+    return round(
+        _clamp(
+            raw,
+            0,
+            cap
+        ),
+        4
+    )
+
+# ---------------------------------------------------------
+# Confidence Engine
+# ---------------------------------------------------------
+
+def confidence_score(
+    line: dict[str, Any]
+) -> int:
+    """
+    Confidence in the PROJECTION.
+
+    This is NOT:
+        "How good is this bet?"
+
+    It measures:
+        - data reliability
+        - projection certainty
+        - model quality
+
+    Components:
+
+    Sample size      35%
+    Probability      35%
+    Method quality   30%
+
+    The old system over-weighted sample size,
+    causing every engine projection with enough
+    games to look artificially confident.
+    """
+
+    n = _safe_float(
+        line.get("model_n")
+    ) or 0
+
+
+    prob = _safe_float(
+        line.get("model_prob")
+    )
+
+
+    # --------------------
+    # Sample reliability
+    # --------------------
+
+    sample_factor = _clamp(
+        n / 50
+    )
+
+
+    # --------------------
+    # Probability separation
+    # --------------------
+
+    if prob is None:
+        probability_factor = 0
+    else:
+        probability_factor = _clamp(
+            abs(prob - .5) * 2
+        )
+
+
+    # --------------------
+    # Method quality
+    # --------------------
+
+    kind = (
+        line.get("proj_kind")
+        or ""
+    ).lower()
+
+
+    if kind == "engine":
+        method_factor = 1.0
+
+    elif kind in {
+        "ensemble",
+        "simulation",
+    }:
+        method_factor = 0.9
+
+    else:
+        method_factor = 0.65
+
+
+
+    score = (
+        35 * sample_factor
+        +
+        35 * probability_factor
+        +
+        30 * method_factor
+    )
+
+
+    return int(
+        round(
+            _clamp(score / 100) * 100
+        )
+    )
+
+
+
+def confidence_factors(
+    line: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """
+    UI breakdown of confidence score.
+    """
+
+    n = int(
+        line.get("model_n")
+        or 0
+    )
+
+    prob = _safe_float(
+        line.get("model_prob")
+    )
+
+
+    sample = 35 * _clamp(
+        n / 50
+    )
+
+
+    probability = (
+        0
+        if prob is None
+        else
+        35 * _clamp(
+            abs(prob - .5) * 2
+        )
+    )
+
+
+    kind = (
+        line.get("proj_kind")
+        or ""
+    ).lower()
+
+
+    method = (
+        30
+        if kind == "engine"
+        else
+        27
+        if kind in {"simulation", "ensemble"}
+        else
+        20
+    )
+
+
+    return [
+        {
+            "factor": "Sample Size",
+            "value": round(sample, 1),
+            "max": 35,
+            "detail": f"{n} historical samples"
+        },
+        {
+            "factor": "Probability Separation",
+            "value": round(probability, 1),
+            "max": 35,
+            "detail":
+                "distance from 50/50"
+        },
+        {
+            "factor": "Projection Method",
+            "value": method,
+            "max": 30,
+            "detail":
+                "model architecture quality"
+        }
+    ]
+
+
+
+# ---------------------------------------------------------
+# Juice Score
+# ---------------------------------------------------------
+
+def juice_score(
+    line: dict[str, Any],
+    model_prob: Optional[float] = None
+) -> int:
+    """
+    Measures opportunity quality.
+
+    NOT a guarantee.
+
+    Juice =
+        value confidence
+        × projection confidence
+        × probability separation
+
+    High Juice requires:
+        - model disagreement with market
+        - reliable projection
+        - strong probability edge
+    """
+
+    prob = (
+        model_prob
+        if model_prob is not None
+        else line.get("model_prob")
+    )
+
+
     if prob is None:
         return 0
-    decisiveness = _clamp(2.0 * abs(float(prob) - 0.5))
-    conf = confidence_score(line) / 100.0
-    # Confidence GATES the score: a decisive-but-low-confidence prop (e.g. a market-derived
-    # tennis line with an extreme probability) can't top the board over a well-sampled,
-    # engine-projected MLB prop. The trailing (0.6 + 0.4·conf) factor is the gate — floor
-    # raised from 0.4 (2026-07-30): confidence_score's own weights were re-tuned the same
-    # day to remove its guaranteed floor (so a genuine coin-flip prop scores ~50, not ~70),
-    # which knocked the AVERAGE confidence down across the board (81→65) and, left alone,
-    # would have over-punished juice score right along with it — priced (standard/boosted)
-    # props are legitimately less decisive on average than demon/goblin (whose lines are
-    # deliberately warped for the boosted payout), so juice SHOULD read lower for them, but
-    # not crushed further by an unrelated gate that was tuned against the old, inflated
-    # confidence scale.
-    return int(round(100.0 * (0.45 * decisiveness + 0.55 * conf) * (0.6 + 0.4 * conf)))
 
 
-def _std_from_band(line: dict[str, Any]) -> Optional[float]:
-    """Approximate SD from the shipped p10–p90 band (≈ 2.5631 sigma wide). Labeled approximate
-    because the underlying distribution is discrete/skewed — this is for display, not sampling."""
-    lo, hi = line.get("model_floor"), line.get("model_ceiling")
-    if lo is None or hi is None or hi <= lo:
+    ev = expected_value(
+        prob,
+        line
+    )
+
+
+    if ev is None:
+        return 0
+
+
+    confidence = (
+        confidence_score(line)
+        /
+        100
+    )
+
+
+    probability_edge = _clamp(
+        abs(float(prob) - .5) * 2
+    )
+
+
+    # EV contribution:
+    # 15% EV is considered elite.
+    ev_factor = _clamp(
+        abs(ev) / .15
+    )
+
+
+    score = (
+        .45 * ev_factor
+        +
+        .30 * probability_edge
+        +
+        .25 * confidence
+    )
+
+
+    return int(
+        round(
+            _clamp(score)
+            *
+            100
+        )
+    )
+
+
+
+# ---------------------------------------------------------
+# Simulation Summary
+# ---------------------------------------------------------
+
+def _std_from_band(
+    line: dict[str, Any]
+) -> Optional[float]:
+
+    floor = line.get(
+        "model_floor"
+    )
+
+    ceiling = line.get(
+        "model_ceiling"
+    )
+
+
+    if floor is None or ceiling is None:
         return None
-    return round((float(hi) - float(lo)) / 2.5631, 3)
 
 
-def simulation_object(line: dict[str, Any]) -> Optional[dict]:
-    """
-    The spec's Simulation object (Ch 28 / 140): the projection's distribution summary +
-    over/under probabilities + sample size. Built from fields the engine already produced.
-    None when the line has no projection.
-    """
-    proj = line.get("model_proj")
-    if proj is None:
+    if ceiling <= floor:
         return None
-    prob_over = line.get("model_prob")
+
+
+    # p10 -> p90 covers ~2.56 sigma
+    return round(
+        (
+            float(ceiling)
+            -
+            float(floor)
+        )
+        /
+        2.5631,
+        3
+    )
+
+
+
+def simulation_object(
+    line: dict[str, Any]
+) -> Optional[dict]:
+
+    if line.get("model_proj") is None:
+        return None
+
+
+    prob = line.get(
+        "model_prob"
+    )
+
+
     return {
-        "projectionId": line.get("id"),
-        "mean": proj,
-        "median": line.get("model_proj"),           # engine reports mean as the point estimate
-        "standardDeviation": _std_from_band(line),  # approximate — see _std_from_band
-        "floor": line.get("model_floor"),
-        "ceiling": line.get("model_ceiling"),
-        "p25": line.get("p25"),
-        "p75": line.get("p75"),
-        "overProbability": prob_over,
-        "underProbability": (round(1.0 - float(prob_over), 3) if prob_over is not None else None),
-        "sampleSize": line.get("model_n"),
-        "sd_is_approximate": True,
+        "projectionId":
+            line.get("id"),
+
+        "mean":
+            line.get("model_proj"),
+
+        "median":
+            line.get(
+                "model_median",
+                line.get("model_proj")
+            ),
+
+        "standardDeviation":
+            _std_from_band(line),
+
+        "floor":
+            line.get("model_floor"),
+
+        "ceiling":
+            line.get("model_ceiling"),
+
+        "p25":
+            line.get("p25"),
+
+        "p75":
+            line.get("p75"),
+
+        "overProbability":
+            prob,
+
+        "underProbability":
+            (
+                round(
+                    1 - float(prob),
+                    3
+                )
+                if prob is not None
+                else None
+            ),
+
+        "sampleSize":
+            line.get("model_n")
     }
 
+# ---------------------------------------------------------
+# EV Audit
+# ---------------------------------------------------------
 
-# Quality safeguard (spec: "flag/log/verify anything above a configurable threshold").
-# 15% by default, matching the product's own tier guide (0-2% very small … 12-15%
-# exceptional, >15% rare/review). Measured on the REAL user-facing pool — standard/boosted
-# odds_type only, 1,336 live props — this is a sane cutoff: mean EV +1.5%, median -0.4%,
-# only ~15% of props exceed it, 0% exceed 60%. (An earlier pass over ALL scored lines,
-# including demon/goblin, measured mean EV ~34% — that number was an artifact of scoring
-# unpriced demon/goblin legs, which are already excluded from everything a user sees
-# (dashboard._projected()) because the feed doesn't expose their real payout multiplier;
-# it was never the user-facing reality.) Tune via EV_REVIEW_THRESHOLD if desired.
-EV_REVIEW_THRESHOLD = float(os.getenv("EV_REVIEW_THRESHOLD", "0.15"))
+def audit_ev(
+    line: dict[str, Any],
+    threshold: Optional[float] = None
+) -> Optional[dict]:
+    """
+    Flags unusually large EV estimates.
+
+    This does NOT remove plays.
+
+    It creates a review trail so extreme
+    outputs can be investigated for:
+        - bad calibration
+        - stale lines
+        - small sample sizes
+        - projection bugs
+    """
+
+    threshold = (
+        EV_REVIEW_THRESHOLD
+        if threshold is None
+        else threshold
+    )
 
 
-def audit_ev(line: dict[str, Any], threshold: Optional[float] = None) -> Optional[dict]:
-    """Flag a projection whose EV exceeds `threshold` (env EV_REVIEW_THRESHOLD by default).
-    Returns None when not flagged, else a dict with the reason and the exact inputs that
-    produced it — so a human reviewer can check projection / line / calibration without
-    re-deriving anything. Called per-line during the build; callers should log the result."""
-    th = EV_REVIEW_THRESHOLD if threshold is None else threshold
-    prob = line.get("model_prob")
+    prob = line.get(
+        "model_prob"
+    )
+
     if prob is None:
         return None
-    rec = recommend_side(float(prob), line)
-    if not rec or rec["ev"] is None or rec["ev"] <= th:
+
+
+    rec = recommend_side(
+        float(prob),
+        line
+    )
+
+
+    if not rec:
         return None
-    real_implied = line.get(f"{rec['side']}_implied")
+
+
+    ev = rec.get(
+        "ev"
+    )
+
+
+    if ev is None or ev <= threshold:
+        return None
+
+
+    implied = line.get(
+        f"{rec['side']}_implied"
+    )
+
+
     return {
-        "flagged": True, "ev": rec["ev"], "threshold": th, "side": rec["side"],
-        "model_prob_for_side": round(rec["p"], 4),
-        "implied_prob_used": real_implied if (real_implied and 0 < real_implied < 1) else None,
-        "used_pickem_fallback": not (real_implied and 0 < real_implied < 1),
-        "player": line.get("player"), "stat": line.get("stat_type"),
-        "line": line.get("line"), "projection": line.get("model_proj"),
-        "source": line.get("source"), "id": line.get("id"),
+        "flagged": True,
+
+        "reason":
+            "EV exceeds review threshold",
+
+        "ev":
+            round(ev, 4),
+
+        "threshold":
+            threshold,
+
+        "side":
+            rec["side"],
+
+        "model_probability":
+            round(
+                rec["p"],
+                4
+            ),
+
+        "market_probability":
+            implied,
+
+        "player":
+            line.get("player"),
+
+        "sport":
+            line.get("sport"),
+
+        "stat":
+            line.get("stat_type"),
+
+        "line":
+            line.get("line"),
+
+        "projection":
+            line.get("model_proj"),
+
+        "source":
+            line.get("source"),
+
+        "id":
+            line.get("id"),
     }
 
 
-def valuation(line: dict[str, Any]) -> dict:
-    """Full valuation bundle for one projection: the recommended side + EV, Kelly, confidence,
-    and Juice Score. Returns {available: False} when there's nothing to value, or the book
-    offers no side of this leg that we know how to price."""
-    prob = line.get("model_prob")
-    proj = line.get("model_proj")
-    if prob is None or proj is None or line.get("line") is None:
-        return {"available": False, "reason": "No model projection/probability for this line."}
-    rec = recommend_side(float(prob), line)
+
+# ---------------------------------------------------------
+# Full valuation object
+# ---------------------------------------------------------
+
+def valuation(
+    line: dict[str, Any]
+) -> dict:
+    """
+    Complete valuation payload.
+
+    Used by dashboard/API layers.
+
+    Returns:
+    {
+        available,
+        side,
+        EV,
+        Kelly,
+        confidence,
+        Juice Score
+    }
+    """
+
+    prob = line.get(
+        "model_prob"
+    )
+
+    projection = line.get(
+        "model_proj"
+    )
+
+
+    if (
+        prob is None
+        or projection is None
+        or line.get("line") is None
+    ):
+        return {
+            "available": False,
+            "reason":
+                "Missing projection data"
+        }
+
+
+
+    rec = recommend_side(
+        float(prob),
+        line
+    )
+
+
     if not rec:
-        return {"available": False, "reason": "Neither side of this line is offered by the book."}
-    implied = (1.0 / rec["decimal_odds"]) if rec.get("decimal_odds") else None
+        return {
+            "available": False,
+            "reason":
+                "No playable side available"
+        }
+
+
+    implied = None
+
+    if rec.get("decimal_odds"):
+        implied = round(
+            1 / rec["decimal_odds"],
+            4
+        )
+
+
     return {
+
         "available": True,
-        "side": rec["side"],
-        "line": line.get("line"),
-        "projection": proj,
-        "edge": line.get("model_edge"),
-        "probability": prob,
-        "impliedProbability": implied,
-        "expectedValue": expected_value(prob, line),
-        "kellyFraction": kelly_fraction(prob, line),
-        "confidence": confidence_score(line),
-        "juiceScore": juice_score(line),
+
+
+        "side":
+            rec["side"],
+
+
+        "line":
+            line.get("line"),
+
+
+        "projection":
+            projection,
+
+
+        "edge":
+            line.get("model_edge"),
+
+
+        "probability":
+            prob,
+
+
+        "impliedProbability":
+            implied,
+
+
+        "expectedValue":
+            expected_value(
+                prob,
+                line
+            ),
+
+
+        "kellyFraction":
+            kelly_fraction(
+                prob,
+                line
+            ),
+
+
+        "confidence":
+            confidence_score(line),
+
+
+        "confidenceFactors":
+            confidence_factors(line),
+
+
+        "juiceScore":
+            juice_score(line),
+
+
+        "simulation":
+            simulation_object(line),
+
     }
