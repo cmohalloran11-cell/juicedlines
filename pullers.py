@@ -1,52 +1,46 @@
 """
-pullers.py — Adapters for PrizePicks and Underdog that normalize
-output into the unified Line schema served by the API.
+pullers.py — JUICED unified prop ingestion engine.
 
-Unified Line schema:
-{
-  "id":            str,          # unique key: "ud_{over_under_id}", "pp_{id}"
-  "source":        str,          # "underdog" | "prizepicks"
-  "sport":         str,          # "MLB" | "Tennis" | "WNBA" | "other"
-  "player":        str | None,
-  "team":          str | None,
-  "position":      str | None,
-  "stat_type":     str | None,   # "Strikeouts", "Goals", etc.
-  "line":          float | None, # the O/U number
-  "odds_type":     str | None,   # "standard"|"demon"|"goblin"
-  "matchup":       str | None,
-  "start_time":    str | None,   # ISO8601
-  "status":        str | None,
-  "over_implied":  float | None, # 0–1 implied prob of OVER / YES
-  "under_implied": float | None,
-  "over_price":    str | None,   # american odds string e.g. "-139"
-  "under_price":   str | None,
-  "meta":          dict,         # source-specific extras
-}
+Pipeline
+--------
+PrizePicks / Underdog raw feeds
+        ↓
+raw normalization
+        ↓
+sport classification
+        ↓
+market classification
+        ↓
+deduplication
+        ↓
+Line schema
+        ↓
+Projection engine
+
+Designed to prevent silent line loss.
 """
 
 from __future__ import annotations
 
+from typing import Any
+from collections import Counter
+from pathlib import Path
 import re
 import sys
 import time
-from pathlib import Path
-from typing import Any
 
 import requests
 
+
+# ============================================================
+# Paths / optional imports
+# ============================================================
+
 _BD = Path(__file__).parent.parent / "betting_dashboard"
 
-# NOTE: PrizePicks is read cookie-free from the partner API (see fetch_prizepicks),
-# so there is no config file and no secret to manage here. The old config.json /
-# _load_config() cookie loader was dead (never called) and has been removed.
-
-# Local dev pulls the clients from the sibling betting_dashboard; a standalone deploy
-# has vendored copies (underdog.py/mlb_model.py) alongside this file instead.
 if _BD.exists() and str(_BD) not in sys.path:
     sys.path.insert(0, str(_BD))
 
-# PrizePicks now reads straight from the partner API (see fetch_prizepicks) — no
-# library, no cookie. The old `prizepicks` client is intentionally not imported.
 
 try:
     from underdog import Underdog, UnderdogProp
@@ -55,359 +49,1021 @@ except ImportError:
     _UD_OK = False
 
 
-# ─────────────────────────────────── sport detection helpers ─────────────────
+# ============================================================
+# Supported sports
+# ============================================================
 
-_UD_SPORT_MAP: dict[str, str] = {
-    "MLB": "MLB",
-    "FIFA": "other",
-    "KBO": "other",
-    "WNBA": "WNBA",
-    "PGA": "other",
-    "NFL": "other",
-    "CFL": "other",
-    "TENNIS": "Tennis",
-    "MMA": "other",
-    "BOXING": "other",
-    "ESPORTS": "other",
-    "RACING": "other",
-    "BASKETBALL": "other",
-    "NPB": "other",
+SUPPORTED_SPORTS = {
+    "MLB",
+    "Tennis",
+    "WNBA",
 }
 
-_PP_LEAGUE_MLB = {"mlb", "baseball"}
-_PP_LEAGUE_TENNIS = {"tennis", "atp", "wta"}
+
+# PrizePicks API
+_PP_PARTNER = "https://partner-api.prizepicks.com"
+
+_PP_TTL = 90
+
+_pp_cache: dict[str, Any] = {}
 
 
-def _tennis_opp(p) -> str | None:
-    """Opponent name from a tennis prop title, e.g. 'Sinner Games O/U (vs Zverev)'."""
-    title = ((getattr(p, "raw", {}) or {}).get("over_under") or {}).get("title", "") or getattr(p, "player_name", "") or ""
-    m = re.search(r"\(vs\.?\s+(.+?)\)\s*$", title)
-    return m.group(1).strip() if m else None
+# ============================================================
+# Diagnostics
+# ============================================================
+
+class PullDiagnostics:
+
+    def __init__(self):
+        self.raw = 0
+        self.kept = 0
+
+        self.sports = Counter()
+        self.leagues = Counter()
+        self.odds = Counter()
+
+        self.removed = Counter()
+
+    def report(self):
+
+        print("\n========== JUICED PULL REPORT ==========")
+
+        print(
+            f"Raw projections: {self.raw}"
+        )
+
+        print(
+            f"Kept projections: {self.kept}"
+        )
+
+        print("\nSports:")
+        for k,v in self.sports.most_common():
+            print(
+                f"  {k}: {v}"
+            )
+
+        print("\nOdds Types:")
+        for k,v in self.odds.most_common():
+            print(
+                f"  {k}: {v}"
+            )
+
+        print("\nRemoved:")
+        for k,v in self.removed.most_common():
+            print(
+                f"  {k}: {v}"
+            )
+
+        print("========================================\n")
 
 
-def _sport_from_pp_league(league: str | None) -> str:
+
+# ============================================================
+# Helpers
+# ============================================================
+
+
+def _clean_stat(raw: str | None) -> str | None:
+
+    if not raw:
+        return None
+
+    return (
+        raw
+        .replace("_", " ")
+        .title()
+    )
+
+
+
+def _american_to_implied(
+    price: str | None
+):
+
+    if not price:
+        return None
+
+    try:
+
+        p=float(price)
+
+        if p > 0:
+            return round(
+                100/(p+100),
+                4
+            )
+
+        return round(
+            abs(p)/(abs(p)+100),
+            4
+        )
+
+    except:
+
+        return None
+
+
+
+# ============================================================
+# Sport detection
+# ============================================================
+
+
+def _sport_from_league(
+    league: str | None
+) -> str:
+
+
     if not league:
         return "other"
-    l = league.strip().lower()
-    # Basketball — must precede the nba/basket guard below (WNBA & NBASL contain "nba").
-    # Exclude period/half/quarter/season sub-leagues (WNBA1H, WNBA1Q, NBASL2H, WNBASZN…):
-    # their stat_type is plain "Points"/"Rebounds" with a small line, which the full-game
-    # model would wildly over-project. Only the full-game league maps to the sport.
-    _period = ("1h", "2h", "1q", "2q", "3q", "4q", "szn")
-    if "wnba" in l:
-        return "other" if any(t in l for t in _period) else "WNBA"
-    if any(x in l for x in _PP_LEAGUE_TENNIS):
+
+
+    l = league.lower()
+
+
+    # Baseball
+    if (
+        "mlb" in l
+        or "baseball" in l
+    ):
+
+        return "MLB"
+
+
+    # Tennis
+
+    if (
+        "tennis" in l
+        or "atp" in l
+        or "wta" in l
+    ):
+
         return "Tennis"
-    # Guard against leagues that share a token (e.g. "EUROGOLF", regular-season NBA).
-    if any(x in l for x in ("golf", "basket", "hockey", "nascar",
-                            "cricket", "rugby", "nba", "nfl")):
-        return "other"
-    if l in _PP_LEAGUE_MLB or "mlb" in l or "baseball" in l:
-        # Exclude season-long / period sub-leagues (MLBSZN2 = rest-of-season futures, whose
-        # "Home Runs" line is 15.5+ over the remaining games — nonsense as a game prop).
-        return "other" if any(t in l for t in _period) else "MLB"
+
+
+    # WNBA
+
+    if "wnba" in l:
+
+        return "WNBA"
+
+
     return "other"
 
 
-def _american_to_implied(price: str | None) -> float | None:
-    """Convert american odds string to implied probability (0–1)."""
-    if not price:
-        return None
-    try:
-        p = float(price)
-        if p > 0:
-            return round(100 / (p + 100), 4)
-        else:
-            return round(abs(p) / (abs(p) + 100), 4)
-    except (TypeError, ValueError):
-        return None
+
+# ============================================================
+# PrizePicks API
+# ============================================================
 
 
-def _clean_stat(raw: str) -> str:
-    """'pitch_outs' → 'Pitch Outs', 'period_1_2_shots_on_target' → 'Shots On Target'"""
-    # Strip leading period specifiers like "period_1_2_"
-    raw = re.sub(r'^period_\d+_\d+_', '', raw)
-    return raw.replace('_', ' ').title()
+def _pp_session():
 
+    s=requests.Session()
 
-# ────────────────────────────────────────────── Underdog adapter ─────────────
+    s.headers.update(
+        {
+            "User-Agent":
+            (
+                "Mozilla/5.0 "
+                "(Windows NT 10.0; Win64; x64)"
+            ),
 
-def _ud_dedup(props: list["UnderdogProp"]) -> list[dict[str, Any]]:
-    """
-    Underdog emits one UnderdogProp per side (over + under share the same
-    over_under_id but have opposite choice values). Deduplicate into one row
-    per line, capturing both prices.
-    """
-    groups: dict[str, dict[str, Any]] = {}
+            "Accept":
+            "application/json",
+        }
+    )
 
-    for p in props:
-        # Boosted picks (payout multiplier != 1.0) are Underdog's alt-line / promo
-        # variants — excluded entirely (the app tracks standard lines only). This also
-        # fixes an old grouping artifact where a boosted choice seen first would shadow
-        # the real standard line for that prop.
-        if p.is_boosted:
-            continue
-        # Skip partial-game props (1st half / 1st set etc.) — Underdog encodes these with a
-        # "period_..." raw stat (e.g. period_1_2_pts_rebs_asts = 1st-half PRA, period_1_games_won
-        # = 1st-set games). We only model FULL games/matches, and _clean_stat() would strip the
-        # prefix so a half-line (Caitlin Clark PRA 12.5) gets grouped with the full-game label and
-        # inherits the full-game projection → a fake +80% edge. Drop them at the source. (Tennis
-        # serve stats like "first_serve_in"/"second_serve_points_won" are NOT period props and
-        # are preserved — only the literal "period_" prefix is excluded.)
-        if (p.stat or "").lower().startswith("period_"):
-            continue
-        # Clean player name: strip trailing " O/U"
-        raw_name = p.player_name or ""
-        player = re.sub(r'\s+O/U\s*$', '', raw_name).strip()
-
-        # Try to get clean name from raw options
-        opts = p.raw.get("options", [])
-        if opts:
-            player = opts[0].get("selection_header") or player
-
-        sport = _UD_SPORT_MAP.get(p.sport or "", "other")
-        stat  = _clean_stat(p.stat or "")
-        uid   = f"ud_{p.raw.get('over_under_id') or p.line_id}"
-
-        if uid not in groups:
-            groups[uid] = {
-                "id": uid,
-                "source": "underdog",
-                "sport": sport,
-                "player": player,
-                # Underdog gives no team name (team_id is a UUID).
-                "team": None,
-                "position": p.position,
-                "stat_type": stat,
-                "line": p.line,
-                "odds_type": "standard",   # boosted picks are filtered out above
-                "matchup": _tennis_opp(p) if sport == "Tennis" else None,
-                "start_time": None,
-                "status": p.status,
-                "over_implied": None,
-                "under_implied": None,
-                "over_price": None,
-                "under_price": None,
-                # Underdog ships a real player headshot — used by the board + drawer.
-                "headshot": p.image_url,
-                "country": p.country,
-                "meta": {
-                    "line_id": p.line_id,
-                    "match_id": p.match_id,
-                    "raw_stat": p.stat,
-                    "is_boosted": p.is_boosted,
-                },
-            }
-
-        row = groups[uid]
-        choice = (p.choice or "").lower()
-        implied = _american_to_implied(p.american_price)
-        if choice in ("over", "higher"):
-            row["over_price"]   = p.american_price
-            row["over_implied"] = implied
-        else:
-            row["under_price"]   = p.american_price
-            row["under_implied"] = implied
-
-    return list(groups.values())
-
-
-def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | None]:
-    if not _UD_OK:
-        return [], "underdog module not available"
-    try:
-        ud = Underdog()
-        props = ud.get_props()
-
-        # Filter to wanted sports
-        wanted = ({"MLB", "Tennis", "WNBA"}
-                  if not sport_filter or sport_filter == "all" else {sport_filter})
-        filtered = [p for p in props
-                    if _UD_SPORT_MAP.get(p.sport or "", "other") in wanted]
-
-        lines = _ud_dedup(filtered)
-        return lines, None
-    except Exception as exc:
-        return [], str(exc)
-
-
-# ──────────────────────────────────────────── PrizePicks adapter ──────────────
-# PrizePicks' public app API (api.prizepicks.com) is behind DataDome bot protection
-# (403 → geo.captcha-delivery.com), which no static cookie survives — it rotates and
-# fingerprints the browser. The PARTNER API host serves the identical JSON:API feed
-# with NO bot wall and NO auth, so we read straight from it. No cookie, no library.
-_PP_PARTNER = "https://partner-api.prizepicks.com"
-_PP_WANTED = ("MLB", "Tennis", "WNBA")
-
-# PrizePicks is a flat pick'em — no per-pick moneyline. A STANDARD leg's implied
-# price is the break-even of a 2-pick Power play (pays 3x → each leg needs a
-# 3^(1/2)≈1.732 decimal payout, i.e. ~57.7% win prob / American ≈ -137). We attach
-# that as `pickem_price` so the EV engine can price standard PrizePicks legs.
-# Demon/goblin legs carry their own multiplier, which this feed does NOT expose,
-# so we leave those unpriced rather than guess.
-_PP_PICKEM_DECIMAL = 3.0 ** 0.5
-
-
-def _decimal_to_american(d: float) -> int:
-    return round((d - 1) * 100) if d >= 2 else round(-100 / (d - 1))
-
-
-_PP_PICKEM_AMERICAN = _decimal_to_american(_PP_PICKEM_DECIMAL)   # -137
-
-# The partner host throttles hard — only ~3 requests before a 429 that escalates
-# with each retry. So we make ONE all-sports call per fetch (no per-league fan-out;
-# ~12k projections come back in a single response), back off on 429, and cache the
-# result so board refreshes never re-hammer it.
-_PP_TTL = 90.0            # seconds to reuse a full successful pull
-_pp_result_cache: dict = {}                      # sport_filter -> (ts, lines)
-
-
-def _pp_session() -> requests.Session:
-    s = requests.Session()
-    s.headers.update({
-        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
-        "Accept": "application/json",
-    })
     return s
 
 
-def _pp_get(s: requests.Session, url: str, params: dict | None = None,
-            retries: int = 3) -> requests.Response:
-    """GET with 429 backoff (honours Retry-After, else exponential)."""
-    r = None
-    for i in range(retries):
-        r = s.get(url, params=params, timeout=30)
+
+def _pp_get(
+    session,
+    url,
+    params=None
+):
+
+    for attempt in range(3):
+
+        r=session.get(
+            url,
+            params=params,
+            timeout=30
+        )
+
+
         if r.status_code != 429:
             return r
-        wait = 0.0
-        try:
-            wait = float(r.headers.get("Retry-After", "") or 0)
-        except ValueError:
-            wait = 0.0
-        time.sleep(min(wait or 1.5 * (2 ** i), 8.0))
+
+
+        time.sleep(
+            2 ** attempt
+        )
+
+
     return r
 
 
-# PrizePicks posts partial-game props (1st half / quarter) with the SAME full-game
-# stat_type (e.g. "Shots") but event_type "*_with_duration" and a period in the
-# description ("Spain 1H", "LAC 2nd Half"). Left untouched they collide with the
-# full-game line — a "Shots" line at ~half value — and wrongly inherit the full-game
-# projection, creating phantom edges (a 4.5-shots player showing a "94% over" on a 2
-# line). Tag the period into the stat_type so the line is DISTINCT from the full-game
-# prop AND the projection engines' period guards ("1h"/"2h"/"1q"/"half") skip it.
-_PP_PERIOD_RE = re.compile(r"\b(1st half|2nd half|first half|second half|[1-4][HQP]|OT)\b", re.I)
-_PP_PERIOD_NORM = {"1STHALF": "1H", "2NDHALF": "2H", "FIRSTHALF": "1H", "SECONDHALF": "2H"}
+
+# ============================================================
+# Raw PrizePicks fetch
+# ============================================================
 
 
-def _pp_period_tag(description: str | None) -> str:
-    """Compact period label from a PrizePicks description, e.g. 'Spain 1H' → '1H'.
-    Falls back to 'Half' (a guard-recognized token) when the period can't be parsed."""
-    m = _PP_PERIOD_RE.search(description or "")
-    if not m:
-        return "Half"
-    t = m.group(1).upper().replace(" ", "")
-    return _PP_PERIOD_NORM.get(t, t)
+def _fetch_pp_raw():
+
+    now=time.time()
+
+    cached=_pp_cache.get(
+        "raw"
+    )
 
 
-def _pp_line(proj: dict, idx: dict) -> dict[str, Any]:
-    """Map one JSON:API projection (+ the payload's `included` index) to a Line."""
-    attr = proj.get("attributes", {}) or {}
-    rel = proj.get("relationships", {}) or {}
+    if cached:
 
-    def resolve(name: str) -> dict:
-        ref = ((rel.get(name) or {}).get("data")) or {}
-        return idx.get((ref.get("type"), ref.get("id")), {}) or {}
+        timestamp,data=cached
 
-    pl = resolve("new_player")
-    pa = pl.get("attributes", {}) or {}
-    lg = resolve("league")
-    league_name = (lg.get("attributes", {}) or {}).get("name") or pa.get("league")
-    sport = _sport_from_pp_league(league_name)
+        if now-timestamp < _PP_TTL:
+            return data
 
-    # tag partial-game props so they don't masquerade as (or collide with) full-game lines
-    stat = attr.get("stat_type")
-    if "with_duration" in (attr.get("event_type") or "") and stat:
-        stat = f"{stat} ({_pp_period_tag(attr.get('description'))})"
+
+
+    session=_pp_session()
+
+
+    response=_pp_get(
+        session,
+        f"{_PP_PARTNER}/projections",
+        params={
+            "per_page":10000
+        }
+    )
+
+
+    if response.status_code != 200:
+
+        raise RuntimeError(
+            f"PrizePicks API {response.status_code}"
+        )
+
+
+    payload=response.json()
+
+
+    _pp_cache["raw"]=(
+        now,
+        payload
+    )
+
+
+    return payload
+
+# ============================================================
+# PrizePicks normalization
+# ============================================================
+
+
+def _resolve_relationship(
+    obj: dict,
+    name: str,
+    index: dict,
+) -> dict:
+
+    rel = (
+        obj.get("relationships", {})
+        .get(name, {})
+        .get("data")
+    )
+
+    if not rel:
+        return {}
+
+    return index.get(
+        (
+            rel.get("type"),
+            rel.get("id")
+        ),
+        {}
+    )
+
+
+
+def _detect_odds_type(
+    attributes: dict,
+) -> str:
+
+    """
+    PrizePicks has changed this field multiple times.
+
+    Never assume missing == standard until verified.
+    """
+
+    raw = (
+        attributes.get("odds_type")
+        or
+        attributes.get("pick_type")
+        or
+        attributes.get("market_type")
+        or ""
+    )
+
+
+    raw = str(raw).lower()
+
+
+    if (
+        "demon" in raw
+        or "power" in raw
+        or "higher" in raw
+    ):
+        return "demon"
+
+
+    if (
+        "goblin" in raw
+        or "flex" in raw
+        or "lower" in raw
+    ):
+        return "goblin"
+
+
+    return "standard"
+
+
+
+def _is_period_prop(
+    attributes: dict,
+) -> bool:
+
+    event_type = str(
+        attributes.get("event_type")
+        or ""
+    ).lower()
+
+
+    description = str(
+        attributes.get("description")
+        or ""
+    ).lower()
+
+
+    period_words = (
+        "1st half",
+        "2nd half",
+        "first half",
+        "second half",
+        "quarter",
+        "period",
+        "1q",
+        "2q",
+        "3q",
+        "4q",
+    )
+
+
+    return (
+        "duration" in event_type
+        or
+        any(
+            x in description
+            for x in period_words
+        )
+    )
+
+
+
+def _is_multi_player(
+    player_name: str | None
+) -> bool:
+
+    if not player_name:
+        return False
+
+
+    return (
+        "+"
+        in player_name
+        or
+        "&"
+        in player_name
+    )
+
+
+
+def _pp_line(
+    projection: dict,
+    index: dict,
+    diag: PullDiagnostics,
+):
+
+    attr = (
+        projection
+        .get("attributes", {})
+        or {}
+    )
+
+
+    player_obj = _resolve_relationship(
+        projection,
+        "new_player",
+        index,
+    )
+
+
+    league_obj = _resolve_relationship(
+        player_obj,
+        "league",
+        index,
+    )
+
+
+    player_attr = (
+        player_obj
+        .get("attributes", {})
+        or {}
+    )
+
+
+    league_attr = (
+        league_obj
+        .get("attributes", {})
+        or {}
+    )
+
+
+    league_name = (
+        league_attr.get("name")
+        or
+        player_attr.get("league")
+        or
+        ""
+    )
+
+
+    sport = _sport_from_league(
+        league_name
+    )
+
+
+    diag.leagues[
+        league_name
+    ] += 1
+
+
+    odds_type = _detect_odds_type(
+        attr
+    )
+
+
+    diag.odds[
+        odds_type
+    ] += 1
+
+
+
+    player = (
+        player_attr.get("display_name")
+        or
+        player_attr.get("name")
+    )
+
+
+    stat = _clean_stat(
+        attr.get("stat_type")
+    )
+
+
+    line = attr.get(
+        "line_score"
+    )
+
+
+    # Keep raw period information.
+    # Do not delete here.
+    if _is_period_prop(attr):
+
+        stat = (
+            f"{stat} (PERIOD)"
+        )
+
+        diag.removed[
+            "period_prop"
+        ] += 1
+
+
+
+    if _is_multi_player(player):
+
+        diag.removed[
+            "multi_player"
+        ] += 1
+
+
+
+    diag.sports[
+        sport
+    ] += 1
+
+
 
     return {
-        "id": f"pp_{proj.get('id')}",
-        "source": "prizepicks",
-        "sport": sport,
-        "player": pa.get("display_name") or pa.get("name"),
-        "team": pa.get("team"),
-        "position": pa.get("position"),
-        "stat_type": stat,
-        "line": attr.get("line_score"),
-        "odds_type": attr.get("odds_type") or "standard",
-        "matchup": attr.get("description"),   # for tennis this is the opponent name
-        "start_time": attr.get("start_time"),
-        "status": attr.get("status"),
-        "over_implied": None,
-        "under_implied": None,
-        "over_price": None,
-        "under_price": None,
-        # standard pick'em legs get the 2-pick Power break-even price for EV; the
-        # feed doesn't expose demon/goblin multipliers, so those stay unpriced.
-        "pickem_price": _PP_PICKEM_AMERICAN if (attr.get("odds_type") or "standard") == "standard" else None,
-        "headshot": pa.get("image_url"),      # PrizePicks ships a player headshot
-        "country": None,
-        "meta": {
-            "player_id": pl.get("id"),
-            "league": league_name,
-            "league_id": lg.get("id"),
-            "is_promo": attr.get("is_promo"),
-            "rank": attr.get("rank"),
+
+        "id":
+            f"pp_{projection.get('id')}",
+
+
+        "source":
+            "prizepicks",
+
+
+        "sport":
+            sport,
+
+
+        "player":
+            player,
+
+
+        "team":
+            player_attr.get(
+                "team"
+            ),
+
+
+        "position":
+            player_attr.get(
+                "position"
+            ),
+
+
+        "stat_type":
+            stat,
+
+
+        "line":
+            line,
+
+
+        "odds_type":
+            odds_type,
+
+
+        "matchup":
+            attr.get(
+                "description"
+            ),
+
+
+        "start_time":
+            attr.get(
+                "start_time"
+            ),
+
+
+        "status":
+            attr.get(
+                "status"
+            ),
+
+
+        "over_implied":
+            None,
+
+
+        "under_implied":
+            None,
+
+
+        "over_price":
+            None,
+
+
+        "under_price":
+            None,
+
+
+        "pickem_price":
+            None,
+
+
+        "headshot":
+            player_attr.get(
+                "image_url"
+            ),
+
+
+        "country":
+            None,
+
+
+        "meta":
+        {
+
+            "league":
+                league_name,
+
+
+            "league_id":
+                league_obj.get(
+                    "id"
+                ),
+
+
+            "raw_odds_type":
+                attr.get(
+                    "odds_type"
+                ),
+
+
+            "event_type":
+                attr.get(
+                    "event_type"
+                ),
+
+
+            "raw_stat":
+                attr.get(
+                    "stat_type"
+                ),
+
         },
+
     }
 
+# ============================================================
+# Final PrizePicks fetch pipeline
+# ============================================================
 
-def fetch_prizepicks(sport_filter: str | None = None) -> tuple[list[dict], str | None]:
+
+def fetch_prizepicks(
+    sport_filter: str | None = None,
+    debug: bool = True,
+):
+
     key = sport_filter or "all"
+
+    cached = _pp_cache.get(
+        key
+    )
+
     now = time.time()
-    hit = _pp_result_cache.get(key)
-    if hit and now - hit[0] < _PP_TTL:
-        return hit[1], None
+
+
+    if cached:
+
+        timestamp, lines = cached
+
+        if now - timestamp < _PP_TTL:
+
+            return lines, None
+
+
+
     try:
-        s = _pp_session()
-        # ONE request returns every projection across all sports (~12k). This is far
-        # more reliable than per-league fan-out, which 429s after ~3 calls. Filter to
-        # the sports the board uses client-side.
-        r = _pp_get(s, f"{_PP_PARTNER}/projections", params={"per_page": 5000})
-        if r.status_code != 200:
-            return [], f"PrizePicks partner API {r.status_code} (rate-limited); retrying next refresh"
-        payload = r.json()
-        idx = {(i.get("type"), i.get("id")): i for i in payload.get("included", [])}
-        want = None if (not sport_filter or sport_filter == "all") else sport_filter.lower()
-        lines: list[dict] = []
-        for p in payload.get("data", []):
-            row = _pp_line(p, idx)
-            # models are per-player → drop multi-player / labelled combo props
-            if (row["player"] and " + " in row["player"]) or \
-               (row["stat_type"] and "(Combo)" in row["stat_type"]):
-                continue
-            if want is None:
-                if row["sport"] not in _PP_WANTED:
+
+        payload = _fetch_pp_raw()
+
+
+        included = payload.get(
+            "included",
+            []
+        )
+
+
+        index = {
+
+            (
+                obj.get("type"),
+                obj.get("id")
+            ):
+            obj
+
+            for obj in included
+
+        }
+
+
+
+        diagnostics = PullDiagnostics()
+
+
+        raw_lines = []
+
+
+        for projection in payload.get(
+            "data",
+            []
+        ):
+
+            diagnostics.raw += 1
+
+
+            row = _pp_line(
+                projection,
+                index,
+                diagnostics,
+            )
+
+
+            raw_lines.append(
+                row
+            )
+
+
+
+        # ------------------------------------------------
+        # Validation / filtering stage
+        # ------------------------------------------------
+
+        final = []
+
+
+        wanted = None
+
+
+        if sport_filter and sport_filter != "all":
+
+            wanted = sport_filter
+
+
+
+        for row in raw_lines:
+
+
+            # only supported sports
+
+            if wanted:
+
+                if row["sport"] != wanted:
+
+                    diagnostics.removed[
+                        "wrong_sport"
+                    ] += 1
+
                     continue
-            elif row["sport"].lower() != want:
+
+
+            else:
+
+                if row["sport"] not in SUPPORTED_SPORTS:
+
+                    diagnostics.removed[
+                        "unsupported_sport"
+                    ] += 1
+
+                    continue
+
+
+
+            # no player = unusable
+
+            if not row["player"]:
+
+                diagnostics.removed[
+                    "missing_player"
+                ] += 1
+
                 continue
-            lines.append(row)
-        _pp_result_cache[key] = (now, lines)
-        return lines, None
+
+
+
+            # no line = unusable
+
+            if row["line"] is None:
+
+                diagnostics.removed[
+                    "missing_line"
+                ] += 1
+
+                continue
+
+
+
+            final.append(
+                row
+            )
+
+
+
+        # ------------------------------------------------
+        # Count final markets
+        # ------------------------------------------------
+
+        diagnostics.kept = len(
+            final
+        )
+
+
+        diagnostics.odds = Counter(
+            x["odds_type"]
+            for x in final
+        )
+
+
+        diagnostics.sports = Counter(
+            x["sport"]
+            for x in final
+        )
+
+
+
+        if debug:
+
+            diagnostics.report()
+
+
+
+        _pp_cache[key] = (
+            time.time(),
+            final
+        )
+
+
+        return final, None
+
+
+
     except Exception as exc:
+
         return [], str(exc)
 
 
-# ──────────────────────────────────────────────────── mock data ───────────────
 
-def mock_lines() -> list[dict]:
-    """Small dataset for offline/dev use. Active when real sources return 0 lines."""
-    _base = {"position": None, "matchup": None, "start_time": None, "status": "pre_game",
-             "over_price": None, "under_price": None, "over_implied": None, "under_implied": None}
-    return [
-        {**_base, "id":"pp_mock_1","source":"prizepicks","sport":"MLB","player":"Aaron Judge","team":"NYY","stat_type":"Home Runs","line":0.5,"odds_type":"standard","meta":{}},
-        {**_base, "id":"pp_mock_2","source":"prizepicks","sport":"MLB","player":"Shohei Ohtani","team":"LAD","stat_type":"Hits+Runs+RBI","line":2.5,"odds_type":"standard","meta":{}},
-        {**_base, "id":"pp_mock_3","source":"prizepicks","sport":"MLB","player":"Corbin Carroll","team":"ARI","stat_type":"Stolen Bases","line":0.5,"odds_type":"demon","meta":{}},
-        {**_base, "id":"ud_mock_1","source":"underdog","sport":"MLB","player":"Paul Skenes","team":"PIT","stat_type":"Strikeouts","line":7.5,"odds_type":"standard","over_price":"-139","under_price":"+105","over_implied":0.582,"under_implied":0.488,"meta":{}},
-        {**_base, "id":"ud_mock_2","source":"underdog","sport":"MLB","player":"Mookie Betts","team":"LAD","stat_type":"Hits","line":0.5,"odds_type":"standard","over_price":"-110","under_price":"-110","over_implied":0.524,"under_implied":0.524,"meta":{}},
-    ]
+
+
+# ============================================================
+# Underdog adapter
+# ============================================================
+
+
+def fetch_underdog(
+    sport_filter: str | None = None
+):
+
+
+    if not _UD_OK:
+
+        return [], (
+            "underdog module unavailable"
+        )
+
+
+    try:
+
+        ud = Underdog()
+
+        props = ud.get_props()
+
+
+        output=[]
+
+
+        for p in props:
+
+
+            sport = p.sport
+
+
+            if sport_filter:
+
+                if sport != sport_filter:
+
+                    continue
+
+
+
+            if sport not in (
+                "MLB",
+                "WNBA",
+                "TENNIS",
+            ):
+
+                continue
+
+
+
+            output.append(
+
+                {
+
+                    "id":
+                        f"ud_{p.line_id}",
+
+
+                    "source":
+                        "underdog",
+
+
+                    "sport":
+                        sport,
+
+
+                    "player":
+                        p.player_name,
+
+
+                    "team":
+                        None,
+
+
+                    "position":
+                        p.position,
+
+
+                    "stat_type":
+                        _clean_stat(
+                            p.stat
+                        ),
+
+
+                    "line":
+                        p.line,
+
+
+                    "odds_type":
+                        (
+                            "standard"
+                            if not p.is_boosted
+                            else
+                            "other"
+                        ),
+
+
+                    "matchup":
+                        None,
+
+
+                    "start_time":
+                        None,
+
+
+                    "status":
+                        p.status,
+
+
+                    "over_implied":
+                        _american_to_implied(
+                            p.american_price
+                        ),
+
+
+                    "under_implied":
+                        None,
+
+
+                    "over_price":
+                        p.american_price,
+
+
+                    "under_price":
+                        None,
+
+
+                    "meta":
+                    {
+
+                        "line_id":
+                            p.line_id
+
+                    }
+
+                }
+
+            )
+
+
+        return output, None
+
+
+
+    except Exception as exc:
+
+        return [], str(exc)
+
+
+
+
+
+# ============================================================
+# Combined pull
+# ============================================================
+
+
+def fetch_all_lines():
+
+    pp, pp_error = fetch_prizepicks()
+
+    ud, ud_error = fetch_underdog()
+
+
+    return (
+        pp + ud,
+        {
+            "prizepicks":
+                pp_error,
+
+            "underdog":
+                ud_error,
+        }
+    )
