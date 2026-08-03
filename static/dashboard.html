@@ -420,17 +420,18 @@ function toggleSide(){const open=$('.side').classList.toggle('open');$('#sidescr
 function closeSide(){$('.side').classList.remove('open');$('#sidescrim').classList.remove('open')}
 
 // ── shared prop table + rows ──
-// Projection is the mean — real and informative, but on a skewed stat it can sit above
-// the line while the model still leans Under (median/probability say otherwise). Surface
-// the median inline whenever it meaningfully diverges, so "Proj 0.62, Under" doesn't read
-// as a contradiction in the compact table (the full breakdown is always in the drawer).
-const medHint=x=>(x.median!=null&&Math.abs(x.median-(x.projection??0))>0.05)
-  ?`<div class="p2" style="font-size:9.5px;font-weight:600" title="Median — the typical-game outcome, which is what actually drives the Over/Under call">med ${fmt(x.median)}</div>`:'';
+// Projection (mean) and median can disagree on a skewed low-count stat (mean above the
+// line while the typical/modal game is 0). Rather than show both — which read as a
+// contradiction in a compact table ("Proj 0.62, Under") — show ONE blended number: the
+// average of mean and median. Not itself a distinct statistic, just an honest, clearly-
+// computed simplification for display; EV%, Kelly, and Juice Score are all still computed
+// from the real mean (model_proj) server-side and are untouched by this.
+const dispProj=x=>x.median!=null?(x.projection+x.median)/2:x.projection;
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
   <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.team||''} ${x.position?'· '+x.position:''}</div></div></div></td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${x.stat||''}</div></td>
   <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${x.team||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${x.opponent}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
-  <td class="mono" style="font-weight:800">${fmt(x.projection)}${medHint(x)}</td>
+  <td class="mono" style="font-weight:800" title="Average of the model's mean and median projection">${fmt(dispProj(x))}</td>
   <td class="mono muted">${fmt(x.line)}</td>
   <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${x.unpriced?'<span class="muted" style="font-weight:600;font-size:10.5px">not priced</span>':pct(x.edgePct)}</td>
   <td><span class="js" style="color:${jColor(x.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(x.juiceScore)}55">${x.juiceScore}</span></td>
@@ -647,7 +648,7 @@ const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${x.stat||''}</div></td>
   <td>${bookLogo(x.source,22)}</td>
   <td class="mono muted">${fmt(x.line)}</td>
-  <td class="mono" style="font-weight:800">${fmt(x.projection)}${medHint(x)}</td>
+  <td class="mono" style="font-weight:800" title="Average of the model's mean and median projection">${fmt(dispProj(x))}</td>
   <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800" title="${x.unpriced?'PrizePicks doesn\'t expose this boosted line\'s real payout, so EV can\'t be honestly computed.':''}">${x.unpriced?'<span class="muted" style="font-weight:600;font-size:10.5px">not priced</span>':pct(x.edgePct)}</td>
   <td><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66">${x.juiceScore}</span></td>
   <td><div class="conf"><div class="track"><i style="width:${Math.round(x.confidence)}%"></i></div><b class="mono">${Math.round(x.confidence)}%</b></div></td>
@@ -1344,13 +1345,13 @@ function confBreakdown(x){
 // "under 0.5" home runs, say) — that's not a bug, see the "i" tooltip.
 const EV_TIP='The estimated mathematical advantage based on Juiced\'s calibrated probability compared to the sportsbook\'s implied probability — not simply a percent of the projection\'s distance from the line.';
 function edgeEvKV(x){
-  const edge=x.edge!=null?x.edge:(x.projection!=null&&x.line!=null?+(x.projection-x.line).toFixed(2):null);
+  const dp=dispProj(x);
+  const edge=(dp!=null&&x.line!=null)?+(dp-x.line).toFixed(2):null;
   const evTitle=x.unpriced?'PrizePicks doesn\'t expose this boosted line\'s real payout multiplier, so EV can\'t be honestly computed.':EV_TIP;
   const evVal=x.unpriced?'<span class="muted" style="font-size:15px;font-weight:700">not priced</span>':pct(x.edgePct);
-  const medTitle='The median outcome — often more informative than the mean on a low-count stat (a bench player can average 0.6 while the TYPICAL game is 0), and the number that actually explains an Under lean.';
+  const projTitle='The average of the model\'s mean and median projection — a single honest number instead of two that can disagree on a skewed stat (a bench player can average 0.6 while the TYPICAL game is 0).';
   return `<div class="kv">
-    <div class="b" title="Mean — the informative expected value, differentiates players even at the same line"><div class="l">Projection</div><div class="v">${fmt(x.projection)}</div></div>
-    <div class="b" title="${medTitle}"><div class="l">Median</div><div class="v">${x.median!=null?fmt(x.median):'—'}</div></div>
+    <div class="b" title="${projTitle}"><div class="l">Projection</div><div class="v">${fmt(dp)}</div></div>
     <div class="b"><div class="l">Line</div><div class="v">${fmt(x.line)} ${oddsTypeBadge(x)}</div></div>
     <div class="b" title="Projection − Line"><div class="l">Edge</div><div class="v ${edge>=0?'pos':'neg'}">${signed(edge)}</div></div>
     <div class="b" title="${evTitle}"><div class="l">Expected Value <span class="muted" style="cursor:help">ⓘ</span></div><div class="v ${x.unpriced?'':(x.edgePct>=0?'pos':'neg')}">${evVal}</div></div>
@@ -1359,7 +1360,7 @@ function edgeEvKV(x){
   </div>`;
 }
 function whyBullets(x){const b=[];const over=(x.side||'over')==='over';
-  if(x.projection!=null&&x.line!=null)b.push(`Model projects <b>${fmt(x.projection)}</b> vs a <b>${fmt(x.line)}</b> line — ${pct(x.edgePct)} edge`);
+  if(x.projection!=null&&x.line!=null)b.push(`Model projects <b>${fmt(dispProj(x))}</b> vs a <b>${fmt(x.line)}</b> line — ${pct(x.edgePct)} edge`);
   if(x.probability!=null)b.push(`<b>${prob(over?x.probability:1-x.probability)}</b> model probability to ${x.side} the line`);
   if(x.confidence!=null)b.push(`<b>${Math.round(x.confidence)}%</b> confidence — ${x.confidence>=75?'high':x.confidence>=55?'moderate':'lower'} conviction`);
   if(x.proj_kind==='engine'||x.juiceScore)b.push(`Full Monte-Carlo engine run on recent game logs`);
