@@ -132,87 +132,100 @@ def _clean_stat(raw: str) -> str:
 
 # ────────────────────────────────────────────── Underdog adapter ─────────────
 
-def _ud_dedup(props: list["UnderdogProp"]) -> list[dict[str, Any]]:
+def _ud_dedup(props: list["UnderdogProp"]) -> tuple[list[dict[str, Any]], int]:
     """
     Underdog emits one UnderdogProp per side (over + under share the same
     over_under_id but have opposite choice values). Deduplicate into one row
-    per line, capturing both prices.
+    per line, capturing both prices. Returns (rows, skipped_count) — one
+    malformed prop (unexpected None/shape from the library) is isolated and
+    skipped rather than aborting the whole ~thousands-of-props pull; see
+    fetch_underdog for why that isolation matters.
     """
     groups: dict[str, dict[str, Any]] = {}
+    skipped = 0
 
     for p in props:
-        # Boosted picks (payout multiplier != 1.0) are Underdog's alt-line / promo
-        # variants — excluded entirely (the app tracks standard lines only). This also
-        # fixes an old grouping artifact where a boosted choice seen first would shadow
-        # the real standard line for that prop.
-        if p.is_boosted:
+        try:
+            # Boosted picks (payout multiplier != 1.0) are Underdog's alt-line / promo
+            # variants — excluded entirely (the app tracks standard lines only). This also
+            # fixes an old grouping artifact where a boosted choice seen first would shadow
+            # the real standard line for that prop.
+            if p.is_boosted:
+                continue
+            # Skip partial-game props (1st half / 1st set etc.) — Underdog encodes these with a
+            # "period_..." raw stat (e.g. period_1_2_pts_rebs_asts = 1st-half PRA, period_1_games_won
+            # = 1st-set games). We only model FULL games/matches, and _clean_stat() would strip the
+            # prefix so a half-line (Caitlin Clark PRA 12.5) gets grouped with the full-game label and
+            # inherits the full-game projection → a fake +80% edge. Drop them at the source. (Tennis
+            # serve stats like "first_serve_in"/"second_serve_points_won" are NOT period props and
+            # are preserved — only the literal "period_" prefix is excluded.)
+            if (p.stat or "").lower().startswith("period_"):
+                continue
+            # Clean player name: strip trailing " O/U"
+            raw_name = p.player_name or ""
+            player = re.sub(r'\s+O/U\s*$', '', raw_name).strip()
+
+            # Try to get clean name from raw options
+            opts = p.raw.get("options", [])
+            if opts:
+                player = opts[0].get("selection_header") or player
+
+            sport = _UD_SPORT_MAP.get(p.sport or "", "other")
+            stat  = _clean_stat(p.stat or "")
+            uid   = f"ud_{p.raw.get('over_under_id') or p.line_id}"
+
+            if uid not in groups:
+                groups[uid] = {
+                    "id": uid,
+                    "source": "underdog",
+                    "sport": sport,
+                    "player": player,
+                    # Underdog gives no team name (team_id is a UUID).
+                    "team": None,
+                    "position": p.position,
+                    "stat_type": stat,
+                    "line": p.line,
+                    "odds_type": "standard",   # boosted picks are filtered out above
+                    "matchup": _tennis_opp(p) if sport == "Tennis" else None,
+                    "start_time": None,
+                    "status": p.status,
+                    "over_implied": None,
+                    "under_implied": None,
+                    "over_price": None,
+                    "under_price": None,
+                    # Underdog ships a real player headshot — used by the board + drawer.
+                    "headshot": p.image_url,
+                    "country": p.country,
+                    "meta": {
+                        "line_id": p.line_id,
+                        "match_id": p.match_id,
+                        "raw_stat": p.stat,
+                        "is_boosted": p.is_boosted,
+                    },
+                }
+
+            row = groups[uid]
+            choice = (p.choice or "").lower()
+            implied = _american_to_implied(p.american_price)
+            if choice in ("over", "higher"):
+                row["over_price"]   = p.american_price
+                row["over_implied"] = implied
+            else:
+                row["under_price"]   = p.american_price
+                row["under_implied"] = implied
+        except Exception:
+            skipped += 1
             continue
-        # Skip partial-game props (1st half / 1st set etc.) — Underdog encodes these with a
-        # "period_..." raw stat (e.g. period_1_2_pts_rebs_asts = 1st-half PRA, period_1_games_won
-        # = 1st-set games). We only model FULL games/matches, and _clean_stat() would strip the
-        # prefix so a half-line (Caitlin Clark PRA 12.5) gets grouped with the full-game label and
-        # inherits the full-game projection → a fake +80% edge. Drop them at the source. (Tennis
-        # serve stats like "first_serve_in"/"second_serve_points_won" are NOT period props and
-        # are preserved — only the literal "period_" prefix is excluded.)
-        if (p.stat or "").lower().startswith("period_"):
-            continue
-        # Clean player name: strip trailing " O/U"
-        raw_name = p.player_name or ""
-        player = re.sub(r'\s+O/U\s*$', '', raw_name).strip()
 
-        # Try to get clean name from raw options
-        opts = p.raw.get("options", [])
-        if opts:
-            player = opts[0].get("selection_header") or player
-
-        sport = _UD_SPORT_MAP.get(p.sport or "", "other")
-        stat  = _clean_stat(p.stat or "")
-        uid   = f"ud_{p.raw.get('over_under_id') or p.line_id}"
-
-        if uid not in groups:
-            groups[uid] = {
-                "id": uid,
-                "source": "underdog",
-                "sport": sport,
-                "player": player,
-                # Underdog gives no team name (team_id is a UUID).
-                "team": None,
-                "position": p.position,
-                "stat_type": stat,
-                "line": p.line,
-                "odds_type": "standard",   # boosted picks are filtered out above
-                "matchup": _tennis_opp(p) if sport == "Tennis" else None,
-                "start_time": None,
-                "status": p.status,
-                "over_implied": None,
-                "under_implied": None,
-                "over_price": None,
-                "under_price": None,
-                # Underdog ships a real player headshot — used by the board + drawer.
-                "headshot": p.image_url,
-                "country": p.country,
-                "meta": {
-                    "line_id": p.line_id,
-                    "match_id": p.match_id,
-                    "raw_stat": p.stat,
-                    "is_boosted": p.is_boosted,
-                },
-            }
-
-        row = groups[uid]
-        choice = (p.choice or "").lower()
-        implied = _american_to_implied(p.american_price)
-        if choice in ("over", "higher"):
-            row["over_price"]   = p.american_price
-            row["over_implied"] = implied
-        else:
-            row["under_price"]   = p.american_price
-            row["under_implied"] = implied
-
-    return list(groups.values())
+    return list(groups.values()), skipped
 
 
 def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | None]:
+    # Per-record isolation: one malformed prop (a shape the `underdog` library didn't
+    # expect) used to raise inside a list comprehension or _ud_dedup and, caught only by
+    # the OUTER try/except below, drop the ENTIRE pull — every sport, every book, for
+    # this whole refresh cycle — over a single bad record. Filtering and dedup now
+    # isolate failures per-prop so one bad record just gets skipped and counted.
     if not _UD_OK:
         return [], "underdog module not available"
     try:
@@ -222,11 +235,19 @@ def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | N
         # Filter to wanted sports
         wanted = ({"MLB", "Tennis", "WNBA"}
                   if not sport_filter or sport_filter == "all" else {sport_filter})
-        filtered = [p for p in props
-                    if _UD_SPORT_MAP.get(p.sport or "", "other") in wanted]
+        filtered = []
+        filter_skipped = 0
+        for p in props:
+            try:
+                if _UD_SPORT_MAP.get(p.sport or "", "other") in wanted:
+                    filtered.append(p)
+            except Exception:
+                filter_skipped += 1
 
-        lines = _ud_dedup(filtered)
-        return lines, None
+        lines, dedup_skipped = _ud_dedup(filtered)
+        skipped = filter_skipped + dedup_skipped
+        err = f"skipped {skipped} malformed prop(s) of {len(props)}" if skipped else None
+        return lines, err
     except Exception as exc:
         return [], str(exc)
 
@@ -363,6 +384,11 @@ def _pp_line(proj: dict, idx: dict) -> dict[str, Any]:
 
 
 def fetch_prizepicks(sport_filter: str | None = None) -> tuple[list[dict], str | None]:
+    # Per-record isolation (2026-08): `_pp_line` used to run unguarded inside this loop,
+    # so ONE malformed projection out of the ~12,000 in a single all-sports response
+    # (a missing relationship, an unexpected None) raised out to the OUTER try/except
+    # and dropped the entire response — every sport, every line, for this whole refresh
+    # cycle. Isolate per-record so one bad projection is skipped and counted instead.
     key = sport_filter or "all"
     now = time.time()
     hit = _pp_result_cache.get(key)
@@ -380,20 +406,26 @@ def fetch_prizepicks(sport_filter: str | None = None) -> tuple[list[dict], str |
         idx = {(i.get("type"), i.get("id")): i for i in payload.get("included", [])}
         want = None if (not sport_filter or sport_filter == "all") else sport_filter.lower()
         lines: list[dict] = []
-        for p in payload.get("data", []):
-            row = _pp_line(p, idx)
-            # models are per-player → drop multi-player / labelled combo props
-            if (row["player"] and " + " in row["player"]) or \
-               (row["stat_type"] and "(Combo)" in row["stat_type"]):
-                continue
-            if want is None:
-                if row["sport"] not in _PP_WANTED:
+        data = payload.get("data", [])
+        skipped = 0
+        for p in data:
+            try:
+                row = _pp_line(p, idx)
+                # models are per-player → drop multi-player / labelled combo props
+                if (row["player"] and " + " in row["player"]) or \
+                   (row["stat_type"] and "(Combo)" in row["stat_type"]):
                     continue
-            elif row["sport"].lower() != want:
-                continue
-            lines.append(row)
+                if want is None:
+                    if row["sport"] not in _PP_WANTED:
+                        continue
+                elif row["sport"].lower() != want:
+                    continue
+                lines.append(row)
+            except Exception:
+                skipped += 1
         _pp_result_cache[key] = (now, lines)
-        return lines, None
+        err = f"skipped {skipped} malformed projection(s) of {len(data)}" if skipped else None
+        return lines, err
     except Exception as exc:
         return [], str(exc)
 
