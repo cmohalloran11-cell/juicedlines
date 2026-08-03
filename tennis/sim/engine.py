@@ -58,7 +58,7 @@ def simulate(rates_a, rates_b, surface, base, best_of=3,
         tb = active & (ga == 6) & (gb == 6) & ~(is_final & final_set_advantage)
         if tb.any():
             a_tb = tb & (rng.random(n) < tb_a)
-            b_tb = tb & ~(rng.random(n) < tb_a) if False else (tb & ~a_tb)
+            b_tb = tb & ~a_tb
             ga[a_tb] += 1; tga[a_tb] += 1; sa[a_tb] += 1
             gb[b_tb] += 1; tgb[b_tb] += 1; sb[b_tb] += 1
             ga[tb] = 0; gb[tb] = 0

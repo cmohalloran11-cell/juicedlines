@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from tennis.model.matchup import race_prob, hold_prob, set_win_prob, match_from_set, clamp_p
+from tennis.model.matchup import race_prob, hold_prob, set_win_prob, match_from_set, clamp_p, tiebreak_prob
 from tennis.model.rates import PlayerRates, TourBaselines
 from tennis.sim.engine import simulate, prob_over
 from tennis.value.finder import implied_prob, to_decimal, value_row
@@ -41,6 +41,57 @@ def test_set_and_match_prob_sane():
 
 def test_clamp():
     assert clamp_p(0.99) == 0.85 and clamp_p(0.10) == 0.50
+
+
+def test_tiebreak_prob_matches_independent_monte_carlo():
+    # 2026-08 regression guard: tiebreak_prob used to average A's serve/return win
+    # probabilities into one constant and reuse the single-server race formula -- a
+    # DIFFERENT process from the real alternating-server tiebreak, not an approximation of
+    # it. Validate the exact DP against an independent brute-force Monte Carlo simulation of
+    # the real point-by-point alternating process (deliberately NOT reusing any production
+    # code, including the shared server_is_a helper, so this can't share a bug with it).
+    rng = np.random.default_rng(7)
+
+    def mc_tiebreak(psa, psb, n=200_000):
+        pa = np.zeros(n, int); pb = np.zeros(n, int)
+        done = np.zeros(n, bool); a_wins = np.zeros(n, bool)
+        for point in range(200):  # far more points than any real tiebreak needs
+            active = ~done
+            if not active.any():
+                break
+            total = pa + pb
+            # A serves point 1 (total==0), else alternates in pairs starting with B
+            a_serves = (total == 0) | (((total - 1) // 2) % 2 == 1)
+            p_a = np.where(a_serves, psa, 1.0 - psb)
+            a_scores = active & (rng.random(n) < p_a)
+            pa += a_scores; pb += (active & ~a_scores)
+            newly_a = active & (pa >= 7) & (pa - pb >= 2)
+            newly_b = active & (pb >= 7) & (pb - pa >= 2)
+            a_wins |= newly_a
+            done |= newly_a | newly_b
+        return float(a_wins.mean())
+
+    for psa, psb in [(0.68, 0.62), (0.70, 0.55), (0.75, 0.50), (0.6, 0.6)]:
+        exact = tiebreak_prob(psa, psb)
+        mc = mc_tiebreak(psa, psb)
+        assert abs(exact - mc) < 0.01, (psa, psb, exact, mc)
+
+
+def test_tiebreak_prob_beats_the_old_averaged_approximation():
+    # The old formula (kept here inline, not imported, so this test can't accidentally start
+    # passing again if someone reintroduces it elsewhere) systematically differs from the
+    # correct alternating-server DP whenever the two players' serve/return splits are
+    # asymmetric -- confirming the fix is a real, directionally-consistent change, not a
+    # rounding-level tweak.
+    def old_broken_tiebreak(psa, psb):
+        return race_prob((psa + (1 - psb)) / 2, 7)
+
+    for psa, psb in [(0.68, 0.62), (0.70, 0.55), (0.75, 0.50)]:
+        old = old_broken_tiebreak(psa, psb)
+        new = tiebreak_prob(psa, psb)
+        assert abs(new - old) > 0.003, "fix should meaningfully move an asymmetric matchup"
+    # symmetric matchups are the one case where both formulas agree (both reduce to 0.5)
+    assert abs(tiebreak_prob(0.6, 0.6) - old_broken_tiebreak(0.6, 0.6)) < 1e-9
 
 
 def test_sim_matches_closed_form_match_prob():

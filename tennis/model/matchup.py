@@ -41,9 +41,56 @@ def hold_prob(p_srv: float) -> float:
     return race_prob(p_srv, 4)
 
 
-def tiebreak_prob(psa: float, psb: float) -> float:
-    """A wins a tiebreak; approximate iid per-point prob = mean of A-serve and A-return."""
-    return race_prob((psa + (1 - psb)) / 2, 7)
+def tiebreak_prob(psa: float, psb: float, a_serves_first: bool = True) -> float:
+    """A wins a 7-point (win-by-2) tiebreak.
+
+    2026-08 fix: this used to average A's serve-point and return-point win probabilities
+    into ONE constant and hand it to `race_prob` (the same closed form used for a service
+    game) -- but a tiebreak isn't a race at one stationary probability. It alternates
+    server every 1-2 points (A serves point 1; then players alternate serving two points
+    at a time), and A's true per-point win prob is `psa` on A's serve points and `1-psb`
+    on B's -- two different, known values, not a single averaged guess. Averaging them and
+    reusing the single-server race formula is not an approximation of that process, it's a
+    different (and provably not equal) process. This is now an exact DP over the real
+    alternating-server sequence.
+
+    `a_serves_first` is a simplification shared with `set_win_prob`'s default: within one
+    set, parity guarantees whoever served game 1 also serves the tiebreak first (12 games
+    played before 6-6 is always even), so this only needs to match that same assumption --
+    it does not track which player opens each SET's serve, which alternates set to set in
+    real tennis and isn't modelled anywhere else in this engine either.
+
+    Solved bottom-up (not naive top-down recursion): a near-even matchup can stay tied at
+    depth deep enough to blow Python's recursion limit before either side reaches a 2-point
+    lead, even though the probability of that path is astronomically small. `MAX_POINTS`
+    bounds the table at a score no realistic tiebreak reaches (P(tied at 60-60) is
+    negligible for any per-point probability bounded away from exactly 0.5); the boundary
+    value there is never actually read for a real input.
+    """
+    def server_is_a(points_played: int) -> bool:
+        if points_played == 0:
+            return a_serves_first
+        first_server_again = ((points_played - 1) // 2) % 2 == 1
+        return a_serves_first if first_server_again else not a_serves_first
+
+    MAX_POINTS = 60
+    f: dict[tuple[int, int], float] = {}
+    for total in range(2 * MAX_POINTS, -1, -1):
+        lo = max(0, total - MAX_POINTS)
+        hi = min(total, MAX_POINTS)
+        for pa in range(lo, hi + 1):
+            pb = total - pa
+            if pa >= 7 and pa - pb >= 2:
+                f[(pa, pb)] = 1.0
+            elif pb >= 7 and pb - pa >= 2:
+                f[(pa, pb)] = 0.0
+            elif pa >= MAX_POINTS or pb >= MAX_POINTS:
+                f[(pa, pb)] = 0.5   # unreachable boundary; never read for a real match
+            else:
+                p_a_wins_point = psa if server_is_a(total) else (1.0 - psb)
+                f[(pa, pb)] = (p_a_wins_point * f[(pa + 1, pb)]
+                               + (1.0 - p_a_wins_point) * f[(pa, pb + 1)])
+    return f[(0, 0)]
 
 
 def set_win_prob(ha: float, hb: float, tb_a: float, a_serves_first: bool = True) -> float:
