@@ -4,8 +4,12 @@ middleware.py — backend hardening (spec Vol III Ch 60-62).
 Three small, non-breaking pieces:
   • RequestContextMiddleware — assigns each request an X-Request-ID and logs
     method / path / status / duration (Ch 62 logging).
-  • RateLimitMiddleware — optional per-IP token bucket over /api/* (Ch 61). OFF by default
-    (RATE_LIMIT_RPM=0) so it never surprises the local board; set the env to enable.
+  • RateLimitMiddleware — per-IP sliding-window limiter over /api/* (Ch 61). ON by default
+    (RATE_LIMIT_RPM=300 — 5 req/s/IP, generous for a real browser tab's polling/page-load
+    burst) since a production-readiness audit found several endpoints (/api/backtest with a
+    replay count, /api/model/dashboard) do multi-second full-ledger scans with no other
+    throttle — unauthenticated and unlimited, that's a legitimate-use DoS vector, not just a
+    theoretical one. Set RATE_LIMIT_RPM=0 to disable entirely (e.g. for a load test).
   • install_error_handler — wraps UNHANDLED exceptions (500s only) in the spec's error
     envelope {error:{code,message,request_id}} (Ch 60). HTTPExceptions keep FastAPI's shape
     so existing 401/404 clients are unaffected.
@@ -24,7 +28,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 log = logging.getLogger("juiced.request")
 
-RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "0"))  # 0 = disabled
+RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "300"))  # 0 = disabled
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
