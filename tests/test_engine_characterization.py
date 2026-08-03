@@ -188,6 +188,76 @@ def test_runs_allowed_is_scaled_above_earned_runs():
     assert out["runs_allowed"].mean == pytest.approx(out["earned_runs"].mean * 1.0904, rel=0.02)
 
 
+def test_two_stage_uncertainty_widens_batter_intervals_for_thin_samples_not_means():
+    # 2026-08: every stat used to draw its outcome from a rate treated as a FIXED constant
+    # across all n Monte Carlo trials -- only outcome (sampling) variance was represented.
+    # form["_eff_pa"] (mlb_features.py's shrinkage denominator: real PA + prior pseudo-PA)
+    # now drives a per-trial Gamma rate-uncertainty multiplier BEFORE each outcome draw, so a
+    # thin sample (a rookie's first week) gets a genuinely wider distribution than a deep one
+    # (a 500-PA regular) at the SAME point estimate -- the textbook two-stage decomposition.
+    from projector.models import mlb_model as mm
+    base = {"role": "batter", "p_hit": 0.26, "p_hr": 0.035, "p_bb": 0.08, "p_k": 0.22,
+            "p_1b": 0.16, "p_2b": 0.06, "p_3b": 0.005, "exp_pa": 4.2,
+            "exp_rbi": 0.5, "exp_runs": 0.5, "exp_sb": 0.05}
+    thin = {**base, "_eff_pa": 8}          # ~no real data, almost pure prior
+    deep = {**base, "_eff_pa": 200_000}    # effectively zero parameter uncertainty left
+
+    # average several seeds -- a single seed's SD estimate is itself noisy at n=40000
+    sd_thin = np.mean([mm.project_batter(thin, {}, n=40000, use_ensemble=False, seed=s)
+                       ["hits"].std for s in range(6)])
+    sd_deep = np.mean([mm.project_batter(deep, {}, n=40000, use_ensemble=False, seed=s)
+                       ["hits"].std for s in range(6)])
+    assert sd_thin > sd_deep * 1.02, "a near-zero-evidence rate must carry more spread"
+
+    # the MEAN must stay essentially unchanged -- this is a spread fix, not a bias fix
+    # (E[theta] = 1 regardless of eff_pa).
+    mean_thin = mm.project_batter(thin, {}, n=40000, use_ensemble=False, seed=0)["hits"].mean
+    mean_deep = mm.project_batter(deep, {}, n=40000, use_ensemble=False, seed=0)["hits"].mean
+    assert mean_thin == pytest.approx(mean_deep, abs=0.05)
+
+    # a missing _eff_pa (shouldn't happen in production -- mlb_features.py always sets it)
+    # must fall back to a deep-sample default, not blow up or silently assume zero evidence.
+    out_missing = mm.project_batter(base, {}, n=5000, use_ensemble=False, seed=0)
+    assert out_missing["hits"].mean > 0
+
+
+def test_two_stage_uncertainty_widens_pitcher_intervals_for_thin_samples_not_means():
+    from projector.models import mlb_model as mm
+    base = {"role": "pitcher", "exp_bf": 23.0, "exp_outs": 17.0, "p_k": 0.235,
+            "p_bb": 0.075, "p_h": 0.21, "xera": 4.0}
+    thin = {**base, "_eff_pa": 8}
+    deep = {**base, "_eff_pa": 200_000}
+
+    sd_thin = np.mean([mm.project_pitcher(thin, {}, n=40000, use_ensemble=False, seed=s)
+                       ["strikeouts"].std for s in range(6)])
+    sd_deep = np.mean([mm.project_pitcher(deep, {}, n=40000, use_ensemble=False, seed=s)
+                       ["strikeouts"].std for s in range(6)])
+    assert sd_thin > sd_deep * 1.02
+
+    mean_thin = mm.project_pitcher(thin, {}, n=40000, use_ensemble=False, seed=0)["strikeouts"].mean
+    mean_deep = mm.project_pitcher(deep, {}, n=40000, use_ensemble=False, seed=0)["strikeouts"].mean
+    assert mean_thin == pytest.approx(mean_deep, abs=0.1)
+
+
+def test_total_bases_matches_analytic_expectation_and_supports_per_trial_probabilities():
+    # montecarlo.total_bases was rewritten (sequential conditional-Binomial chain instead of
+    # a single shared-probability Multinomial) specifically so per-PA probabilities can vary
+    # PER SIM -- required for the theta rate-uncertainty draw above. Must still match the
+    # analytic expectation for plain scalar inputs (no regression in the common case).
+    trials = np.full(50000, 4, dtype=int)
+    per_pa = {"1b": 0.15, "2b": 0.05, "3b": 0.005, "hr": 0.035}
+    tb = mc.total_bases(per_pa, trials, g=np.random.default_rng(0))
+    expected = 4 * (0.15 * 1 + 0.05 * 2 + 0.005 * 3 + 0.035 * 4)
+    assert tb.mean() == pytest.approx(expected, rel=0.03)
+    assert (tb >= 0).all()
+
+    # per-sim arrays: a trial with a much higher HR probability must average out higher
+    hi = np.concatenate([np.full(25000, 0.30), np.full(25000, 0.005)])
+    per_pa_var = {"1b": 0.0, "2b": 0.0, "3b": 0.0, "hr": hi}
+    tb_var = mc.total_bases(per_pa_var, trials, g=np.random.default_rng(1))
+    assert tb_var[:25000].mean() > tb_var[25000:].mean() * 3
+
+
 def test_median_direction_always_agrees_with_prob_over():
     # 2026-07-29 projection-realism pass: `projection` is the MEAN — informative, and
     # deliberately allowed to diverge in direction from P(over) on a skewed stat (that's

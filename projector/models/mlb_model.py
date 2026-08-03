@@ -9,17 +9,41 @@ ctx  : game context — park, opponent metrics, weather, Vegas implied team tota
        opposing pitcher handedness, lineup spot.
 
 Pipeline per stat: blended rate → multiplicative adjustments (platoon, park,
-weather, opponent matchup, Vegas scaling) → Monte-Carlo distribution → optional
-XGBoost ensemble re-centring → summarised Projection.
+weather, opponent matchup, Vegas scaling) → per-trial rate-uncertainty draw →
+Monte-Carlo distribution → optional XGBoost ensemble re-centring → summarised
+Projection.
+
+Two-stage uncertainty (2026-08): every stat used to draw its outcome from a rate
+treated as a FIXED constant across all n Monte Carlo trials — only OUTCOME (sampling)
+variance was represented. A rookie's first week and a 500-PA veteran with the identical
+point-estimate rate got the identical spread. `form["_eff_pa"]` (built by
+mlb_features.py — the shrinkage denominator: real PA/BF + prior pseudo-PA) now drives a
+per-trial Gamma rate-uncertainty multiplier (mean 1, CV = 1/sqrt(eff_pa)) applied BEFORE
+each outcome draw, independently per stat. This is the textbook decomposition
+Var(Y) = E[Var(Y|theta)] + Var(E[Y|theta]) — outcome variance plus parameter variance,
+not outcome variance alone.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from . import montecarlo as mc
 from . import ensemble
 from .base import Projection, summarize, _f
+
+_DEFAULT_EFF_PA = 300.0   # used only if form carries no _eff_pa (shouldn't happen in
+                          # production — mlb_features.py always sets it); a generously
+                          # deep-sample default so a missing signal never LOOKS thin.
+
+
+def _theta(eff_n: float, n: int, g: np.random.Generator) -> np.ndarray:
+    """Per-trial rate-uncertainty multiplier: mean 1, CV = 1/sqrt(eff_n) — the standard
+    Gamma-Poisson effective-sample-size approximation (see module docstring)."""
+    eff_n = max(float(eff_n), 1.0)
+    return g.gamma(eff_n, 1.0 / eff_n, n)
 
 # league baselines used to convert metrics into multipliers
 LG_PITCHER_XFIP = 4.10
@@ -81,7 +105,9 @@ def _opp_offense_mult(ctx: dict) -> float:
 # ── batters ──────────────────────────────────────────────────────────────────
 
 def project_batter(form: dict, ctx: dict, n: int = mc.N_SIMS,
-                   use_ensemble: bool = True) -> dict[str, Projection]:
+                   use_ensemble: bool = True, seed: int | None = None) -> dict[str, Projection]:
+    g = mc.rng(seed)
+    eff_pa = _f(form.get("_eff_pa"), _DEFAULT_EFF_PA)
     park = _f(ctx.get("park_factor"), 1.0)
     weather = _weather_hr_mult(ctx)
     opp = _opp_pitcher_mult(ctx)
@@ -99,7 +125,7 @@ def project_batter(form: dict, ctx: dict, n: int = mc.N_SIMS,
         drivers_base.append(f"weather(HR) ×{weather:.2f}")
 
     exp_pa = _f(form.get("exp_pa"), 4.2) * (0.85 + 0.15 * vegas)   # volume tracks team total
-    trials = mc.trial_counts(exp_pa, n)
+    trials = mc.trial_counts(exp_pa, n, g=g)
 
     # per-PA rates with platoon applied
     p_hit = _f(form.get("p_hit"), 0.23) * _platoon_mult(form, ctx, "p_hit")
@@ -118,41 +144,52 @@ def project_batter(form: dict, ctx: dict, n: int = mc.N_SIMS,
     out["plate_appearances"] = summarize(trials, "plate_appearances",
                                          [f"exp PA {exp_pa:.2f} × Vegas {vegas:.2f}"])
 
-    # hits
-    s_hits = mc.binomial_event(p_hit * off, trials)
+    # hits — theta_hit also scales the non-HR hit-type shares below (1B/2B/3B), since
+    # they're all fractions of the SAME underlying "how good is this hitter" uncertainty;
+    # HR gets its own independent draw (a distinct skill/variance source).
+    theta_hit = _theta(eff_pa, n, g)
+    s_hits = mc.binomial_event(p_hit * off * theta_hit, trials, g)
     out["hits"] = summarize(s_hits, "hits", drivers_base)
 
     # home runs (park + weather are genuine HR drivers → full; opp/Vegas halved)
+    theta_hr = _theta(eff_pa, n, g)
     hr_rate = p_hr * park * weather * (opp * vegas) ** 0.5
-    s_hr = mc.binomial_event(hr_rate, trials)
+    s_hr = mc.binomial_event(hr_rate * theta_hr, trials, g)
     out["home_runs"] = summarize(s_hr, "home_runs",
                                  drivers_base + [f"HR rate {hr_rate*100:.1f}%/PA"])
 
     # walks (park/weather neutral)
-    s_bb = mc.binomial_event(p_bb, trials)
+    theta_bb = _theta(eff_pa, n, g)
+    s_bb = mc.binomial_event(p_bb * theta_bb, trials, g)
     out["walks"] = summarize(s_bb, "walks", [f"BB {p_bb*100:.1f}%/PA"])
 
     # strikeouts (scaled by opposing pitcher K tendency)
+    theta_k = _theta(eff_pa, n, g)
     opp_k = _f(ctx.get("opp_pitcher_k_per_pa"), LG_K_PER_PA) / LG_K_PER_PA
-    s_k = mc.binomial_event(p_k * max(0.7, min(1.4, opp_k)), trials)
+    s_k = mc.binomial_event(p_k * max(0.7, min(1.4, opp_k)) * theta_k, trials, g)
     out["strikeouts"] = summarize(s_k, "strikeouts", [f"K {p_k*100:.0f}%/PA × opp {opp_k:.2f}"])
 
-    # total bases (HR adjusted up by park/weather)
-    per_pa = {"1b": p_1b * off, "2b": p_2b * off, "3b": p_3b * off, "hr": hr_rate}
-    s_tb = mc.total_bases(per_pa, trials)
+    # total bases (HR adjusted up by park/weather) — reuses theta_hit/theta_hr so it stays
+    # consistent with the hits/HR distributions above rather than drawing a third, unrelated
+    # source of hit-type uncertainty.
+    per_pa = {"1b": p_1b * off * theta_hit, "2b": p_2b * off * theta_hit,
+             "3b": p_3b * off * theta_hit, "hr": hr_rate * theta_hr}
+    s_tb = mc.total_bases(per_pa, trials, g)
     out["total_bases"] = summarize(s_tb, "total_bases", drivers_base)
 
     # stolen bases — opportunity (on-base) × aggression
+    theta_sb = _theta(eff_pa, n, g)
     exp_sb = _f(form.get("exp_sb"), 0.08) * (0.9 + 0.2 * off)
-    out["stolen_bases"] = summarize(mc.negbinom_count(max(0.01, exp_sb), 0.2, n),
+    out["stolen_bases"] = summarize(mc.negbinom_count(np.maximum(0.01, exp_sb * theta_sb), 0.2, n, g),
                                     "stolen_bases", [f"SB rate {exp_sb:.2f}/g"])
 
     # RBI & runs — contextual counts tied to offense level
+    theta_rbi, theta_runs = _theta(eff_pa, n, g), _theta(eff_pa, n, g)
     exp_rbi = _f(form.get("exp_rbi"), 0.5) * off
     exp_runs = _f(form.get("exp_runs"), 0.5) * off
-    out["rbis"] = summarize(mc.negbinom_count(exp_rbi, 0.6, n), "rbis",
+    out["rbis"] = summarize(mc.negbinom_count(np.maximum(1e-6, exp_rbi * theta_rbi), 0.6, n, g), "rbis",
                             drivers_base + [f"RBI base {exp_rbi:.2f}"])
-    out["runs"] = summarize(mc.negbinom_count(exp_runs, 0.6, n), "runs",
+    out["runs"] = summarize(mc.negbinom_count(np.maximum(1e-6, exp_runs * theta_runs), 0.6, n, g), "runs",
                             drivers_base + [f"runs base {exp_runs:.2f}"])
 
     if use_ensemble:
@@ -163,7 +200,9 @@ def project_batter(form: dict, ctx: dict, n: int = mc.N_SIMS,
 # ── pitchers ─────────────────────────────────────────────────────────────────
 
 def project_pitcher(form: dict, ctx: dict, n: int = mc.N_SIMS,
-                    use_ensemble: bool = True) -> dict[str, Projection]:
+                    use_ensemble: bool = True, seed: int | None = None) -> dict[str, Projection]:
+    g = mc.rng(seed)
+    eff_pa = _f(form.get("_eff_pa"), _DEFAULT_EFF_PA)
     park = _f(ctx.get("park_factor"), 1.0)
     opp_off = _opp_offense_mult(ctx)
     exp_bf = _f(form.get("exp_bf"), 23.0)
@@ -175,27 +214,31 @@ def project_pitcher(form: dict, ctx: dict, n: int = mc.N_SIMS,
     p_h = _f(form.get("p_h"), 0.21)
     xera = _f(form.get("xera"), 4.00)
 
-    trials = mc.trial_counts(exp_bf, n, lo=3, hi=int(exp_bf * 1.6 + 4))
+    trials = mc.trial_counts(exp_bf, n, lo=3, hi=int(exp_bf * 1.6 + 4), g=g)
     out: dict[str, Projection] = {}
 
-    out["strikeouts"] = summarize(mc.binomial_event(p_k, trials), "strikeouts",
+    theta_k = _theta(eff_pa, n, g)
+    out["strikeouts"] = summarize(mc.binomial_event(p_k * theta_k, trials, g), "strikeouts",
                                   [f"K {p_k*100:.0f}%/BF"])
-    out["walks_allowed"] = summarize(mc.binomial_event(p_bb, trials), "walks_allowed",
+    theta_bb = _theta(eff_pa, n, g)
+    out["walks_allowed"] = summarize(mc.binomial_event(p_bb * theta_bb, trials, g), "walks_allowed",
                                      [f"BB {p_bb*100:.1f}%/BF"])
-    out["hits_allowed"] = summarize(mc.binomial_event(p_h * opp_off, trials),
+    theta_h = _theta(eff_pa, n, g)
+    out["hits_allowed"] = summarize(mc.binomial_event(p_h * opp_off * theta_h, trials, g),
                                     "hits_allowed", drivers)
 
     exp_outs_adj = exp_outs / max(0.85, opp_off ** 0.5)      # tough lineup ⇒ shorter outing
-    s_outs = mc.outs_recorded(exp_outs_adj, sd=4.0, n=n)
+    s_outs = mc.outs_recorded(exp_outs_adj, sd=4.0, n=n, g=g)
     out["outs_recorded"] = summarize(s_outs, "outs_recorded",
                                      [f"~{exp_outs_adj:.0f} outs"])
     out["innings_pitched"] = summarize(s_outs / 3.0, "innings_pitched",
                                        [f"~{exp_outs_adj/3:.1f} IP"])
 
     # earned runs from xERA scaled to expected innings, opponent & park
+    theta_er = _theta(eff_pa, n, g)
     exp_ip = exp_outs_adj / 3.0
     exp_er = (xera / 9.0) * exp_ip * opp_off * park
-    out["earned_runs"] = summarize(mc.negbinom_count(max(0.05, exp_er), 0.7, n),
+    out["earned_runs"] = summarize(mc.negbinom_count(np.maximum(0.05, exp_er * theta_er), 0.7, n, g),
                                    "earned_runs", drivers + [f"xERA {xera:.2f}"])
 
     # total runs allowed = earned runs + unearned (errors/passed balls etc). The engine has
@@ -206,8 +249,10 @@ def project_pitcher(form: dict, ctx: dict, n: int = mc.N_SIMS,
     # collided with "earned runs allowed" in the bridge's alias table and silently used the
     # (systematically lower) earned-runs distribution, which measured as a -1.04 run bias.
     _UNEARNED_RATIO = 1.0904
+    # reuses theta_er (not an independent draw) — runs allowed IS earned runs scaled by the
+    # unearned ratio, the same underlying rate uncertainty, not a second unrelated source.
     out["runs_allowed"] = summarize(
-        mc.negbinom_count(max(0.05, exp_er * _UNEARNED_RATIO), 0.7, n),
+        mc.negbinom_count(np.maximum(0.05, exp_er * _UNEARNED_RATIO * theta_er), 0.7, n, g),
         "runs_allowed", drivers + [f"xERA {xera:.2f} × unearned {_UNEARNED_RATIO:.3f}"])
 
     if use_ensemble:

@@ -76,6 +76,13 @@ def build_batter_form(game_logs: list[dict], predictive: dict | None = None,
         form[key] = regress_to_prior(blended, prior, season_pa, cfg["shrinkage_pa"])
 
     form["exp_pa"] = _f(predictive.get("lineup_pa"), s["pa"] / max(1, len(logs)) or 4.2)
+    # 2026-08: how much real evidence backs the per-PA rates above — the SAME shrinkage
+    # denominator (season_pa + shrinkage_pa pseudo-PA) already used inside regress_to_prior
+    # for every key in the loop, since all of them regress against this one `season_pa`.
+    # mlb_model.py's Monte Carlo uses this to draw per-trial rate-uncertainty (see
+    # montecarlo.py / project_batter) so a thin sample gets a genuinely wider distribution,
+    # not just the same spread as a full-season sample at the same point estimate.
+    form["_eff_pa"] = season_pa + cfg["shrinkage_pa"]
     if splits:
         form["platoon"] = splits
     form["_predictive"] = {k: predictive.get(k) for k in
@@ -139,6 +146,8 @@ def build_pitcher_form(game_logs: list[dict], predictive: dict | None = None,
 
     # xERA prior drives earned runs
     form["xera"] = _f(predictive.get("xERA"), _f(predictive.get("xFIP"), 4.0))
+    # See build_batter_form's _eff_pa comment — same idea, keyed on batters faced.
+    form["_eff_pa"] = s["bf"] + cfg["shrinkage_pa"]
     form["_predictive"] = {k: predictive.get(k) for k in
                            ("xFIP", "xERA", "swstr_pct", "csw_pct", "gb_pct",
                             "k_bb_pct") if k in predictive}
