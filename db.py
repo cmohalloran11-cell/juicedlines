@@ -100,7 +100,15 @@ def init_db() -> None:
                          # projection, so a historical row stays attributable to its exact logic.
                          ("model_version", "TEXT"),
                          ("feature_version", "TEXT"),
-                         ("data_snapshot", "TEXT")):
+                         ("data_snapshot", "TEXT"),
+                         # ── model-health archetype signal (2026-08) ─────────────────────
+                         # model_n = games/PA/BF of history behind the projection at grading
+                         # time -- already computed on every line for confidence_score, just
+                         # never persisted. A REAL, measured "how much do we know about this
+                         # player" signal, not a fabricated archetype label — lets
+                         # backtest.by_sample_depth answer "which player archetypes (thin-
+                         # sample rookies/call-ups vs deep-sample regulars) perform worst?"
+                         ("model_n", "REAL")):
             if col not in have:
                 c.execute(f"ALTER TABLE prop_clv ADD COLUMN {col} {typ}")
         c.commit()
@@ -255,6 +263,7 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
             l.get("model_floor"), l.get("model_ceiling"),
             l.get("game_id"),
             l.get("model_version"), l.get("feature_version"), l.get("data_snapshot"),
+            l.get("model_n"),
         ))
     if not rows:
         return 0
@@ -268,8 +277,8 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
                 close_over_implied, close_under_implied,
                 model_raw, model_raw_prob, trust_weight,
                 model_floor, model_ceiling, game_id,
-                model_version, feature_version, data_snapshot)
-            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?)
+                model_version, feature_version, data_snapshot, model_n)
+            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?)
             ON CONFLICT(line_id, game_date) DO UPDATE SET
                 close_ts=excluded.close_ts, close_line=excluded.close_line,
                 close_prob=excluded.close_prob, close_proj=excluded.close_proj,
@@ -287,7 +296,8 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
                 game_id=excluded.game_id,
                 model_version=excluded.model_version,
                 feature_version=excluded.feature_version,
-                data_snapshot=excluded.data_snapshot
+                data_snapshot=excluded.data_snapshot,
+                model_n=excluded.model_n
         """, rows)
         c.commit()
     return len(rows)

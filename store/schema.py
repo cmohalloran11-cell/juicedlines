@@ -82,6 +82,7 @@ _TABLES: tuple[str, ...] = (
         hit_rate      REAL,
         ece           REAL,
         coverage      REAL,
+        brier         REAL,
         recorded_at   TEXT NOT NULL
     )
     """,
@@ -118,3 +119,13 @@ def init_schema(db: Database) -> None:
         db.execute(ddl)
     for ddl in _INDEXES:
         db.execute(ddl)
+    # 2026-08: model_runs gained `brier` after tables already existed in deployed DBs (this
+    # file has no other migration mechanism — CREATE TABLE IF NOT EXISTS alone can't add a
+    # column to an existing table on either SQLite or Postgres). ALTER...ADD COLUMN is
+    # portable across both; both raise on a duplicate column, so the idempotency is just
+    # "ignore that specific failure," not a broad swallow of real errors.
+    try:
+        db.execute("ALTER TABLE model_runs ADD COLUMN brier REAL")
+    except Exception as exc:
+        if "duplicate column" not in str(exc).lower() and "already exists" not in str(exc).lower():
+            raise

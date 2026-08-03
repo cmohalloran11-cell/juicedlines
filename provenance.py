@@ -65,6 +65,51 @@ MODEL_VERSIONS: dict[str, str] = {
 }
 _DEFAULT_MODEL_VERSION = "1.0.0"
 
+# Structured, runtime-queryable mirror of the version-bump comments above — the same
+# facts, but in a shape the Model Health dashboard / API can actually read instead of
+# a human having to open this file. Oldest first per sport. Pair with
+# backtest.version_history(sport) to see whether a given change actually helped:
+# that's measured, this is the "what and why" it can't infer from the ledger alone.
+MODEL_CHANGELOG: dict[str, list[dict]] = {
+    "MLB": [
+        {"version": "mlb-1.1.0", "date": "2026-08",
+         "summary": "Re-vendored the Monte Carlo engine (mlb_model.py) after it had "
+                    "drifted into a broken state that crashed on every call, silently "
+                    "falling back to the bare empirical model for 100% of live MLB "
+                    "projections."},
+        {"version": "mlb-1.2.0", "date": "2026-08",
+         "summary": "Two-stage uncertainty propagation: each simulated trial now draws "
+                    "its own per-stat rate-uncertainty multiplier (scaled by how much "
+                    "real evidence backs that rate) before the outcome draw, instead of "
+                    "treating the fitted rate as fixed across every trial. Widens "
+                    "intervals for thin samples (call-ups, injury returns) without "
+                    "moving point estimates."},
+    ],
+    "Tennis": [
+        {"version": "tennis-1.1.0", "date": "2026-08",
+         "summary": "Fixed tiebreak_prob(): it averaged two point-win probabilities into "
+                    "one constant instead of solving the real alternating-server "
+                    "sequence — a provably different process, not an approximation."},
+        {"version": "tennis-1.2.0", "date": "2026-08",
+         "summary": "Two-stage uncertainty propagation: each simulated match now draws "
+                    "its own serve probability from a Beta distribution around the "
+                    "fitted rate instead of reusing one shared point estimate for the "
+                    "whole match. Pulls thin-sample favorites' win probability toward "
+                    "0.5 relative to the naive point-estimate calculation."},
+    ],
+    "WNBA": [
+        {"version": "wnba-1.1.0", "date": "2026-08",
+         "summary": "Two-stage uncertainty propagation (same principle as MLB/Tennis) "
+                    "plus real measured pts/reb/ast combo correlation (previously combos "
+                    "only correlated incidentally through shared minutes/pace, "
+                    "~0.05-0.08 vs. real box scores' ~0.15-0.47). Note: the WNBA minutes-"
+                    "shrinkage fix (debut-game players no longer projected with zero "
+                    "regression to the mean) shipped before this version bump and was "
+                    "deliberately left unbumped on its own -- narrow effect, didn't "
+                    "justify discarding ~6,790 rows of still-valid calibration history."},
+    ],
+}
+
 FEATURE_VERSION = "1.0.0"            # feature pipeline (projector/features + projector_bridge)
 SIMULATION_VERSION = "montecarlo-1.0.0"   # projector/models/montecarlo
 CALIBRATION_VERSION = "1.0.0"       # the honesty stack shape (gammas / Platt P(over) / width)
@@ -91,6 +136,14 @@ def now_iso() -> str:
 
 def model_version(sport: str | None) -> str:
     return MODEL_VERSIONS.get(sport or "", _DEFAULT_MODEL_VERSION)
+
+
+def changelog(sport: str | None = None) -> dict:
+    """The structured version changelog — one sport, or all. Newest entry last (same
+    order as MODEL_CHANGELOG)."""
+    if sport:
+        return {sport: MODEL_CHANGELOG.get(sport, [])}
+    return dict(MODEL_CHANGELOG)
 
 
 def versions() -> dict:

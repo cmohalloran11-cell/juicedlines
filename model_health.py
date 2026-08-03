@@ -121,3 +121,65 @@ def calibration_detail(sport: str = "MLB") -> dict:
         "drift": backtest.drift(sport),
         "accuracy_by_model_version": backtest.version_history(sport),
     }
+
+
+# ── Model Health dashboard (self-monitoring surface) ───────────────────────────
+# Everything the dashboard needs to answer, per sport: is it improving, is it getting
+# worse, which markets/archetypes perform best/worst, which stats are drifting, and what
+# changed between model versions. One bundle call per view so the UI isn't stitching
+# together 8 separate requests.
+
+def dashboard_summary() -> dict:
+    """Lightweight overview across all sports — the landing view of the Model Health
+    dashboard. Top-line accuracy + drift status only; call dashboard_detail(sport) for
+    the full per-sport breakdown."""
+    out = {}
+    for sp in _SPORTS:
+        try:
+            acc = backtest.current_accuracy(sp)
+            drift = backtest.drift(sp)
+            out[sp] = {
+                "sport": sp,
+                "model_version": provenance.model_version(sp),
+                "n": acc["overall"].get("n", 0),
+                "mae": acc["overall"].get("mae"),
+                "rmse": acc["overall"].get("rmse"),
+                "bias": acc["overall"].get("bias"),
+                "hit_rate": acc["overall"].get("hit_rate"),
+                "brier": acc["overall"].get("brier"),
+                "ece": acc["overall"].get("ece"),
+                "coverage": acc["overall"].get("coverage"),
+                "drift_status": drift.get("status"),
+            }
+        except Exception as exc:
+            out[sp] = {"sport": sp, "error": str(exc)}
+    return {"generated_at": provenance.now_iso(), "sports": out}
+
+
+def dashboard_detail(sport: str = "MLB") -> dict:
+    """The full self-monitoring bundle for one sport: current accuracy (overall +
+    per-stat), reliability diagram, interval coverage, drift (sport-wide + per-stat),
+    accuracy by player-sample-depth (archetype), accuracy by model version, the version
+    changelog (what changed, in plain language), and the recorded daily-snapshot history
+    (backtest.record_run, once/day per sport — see main.py's maintenance loop) for
+    trend charts. Every field answers one of: is it improving? is it getting worse?
+    which markets perform best/worst? which archetypes perform worst? which stats are
+    drifting? what changed, and did it help?"""
+    try:
+        accuracy = backtest.current_accuracy(sport)
+    except Exception as exc:
+        return {"sport": sport, "error": str(exc)}
+    return {
+        "sport": sport,
+        "model_version": provenance.model_version(sport),
+        "generated_at": provenance.now_iso(),
+        "accuracy": accuracy,
+        "reliability_diagram": backtest.reliability_diagram(sport),
+        "drift": backtest.drift(sport),
+        "drift_by_stat": backtest.drift_by_stat(sport),
+        "by_sample_depth": backtest.by_sample_depth(sport),
+        "accuracy_by_model_version": backtest.version_history(sport),
+        "changelog": provenance.changelog(sport).get(sport, []),
+        "snapshot_history": backtest.registry(sport, limit=90),
+        "diagnostics": backtest.diagnostics(sport),
+    }

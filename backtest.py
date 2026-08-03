@@ -44,7 +44,7 @@ def _ledger_rows(sport: str, stat: Optional[str] = None,
     q = ("SELECT player, stat_type, game_date, close_line AS L, close_proj AS P, "
          "actual AS Y, COALESCE(model_raw_prob, close_prob) AS RP, "
          "model_floor AS FL, model_ceiling AS CE, proj_kind AS PK, source AS SRC, "
-         "model_version AS MV "
+         "model_version AS MV, model_n AS N "
          "FROM prop_clv WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL "
          "AND close_proj IS NOT NULL "
          "AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))")
@@ -65,6 +65,35 @@ def _ledger_rows(sport: str, stat: Optional[str] = None,
 
 
 # ── metrics ───────────────────────────────────────────────────────────────────
+
+def _prob_outcome_pairs(P: list[dict]) -> list[tuple[float, float]]:
+    """(predicted P(over), realized outcome 0/1) for every DECIDED row with a probability —
+    the shared input to ECE, Brier, and the reliability diagram, so all three are always
+    computed from the exact same population."""
+    return [(p["RP"], 1.0 if p["Y"] > p["L"] else 0.0) for p in P
+            if p.get("RP") is not None and p.get("L") is not None and abs(p["Y"] - p["L"]) > 1e-9]
+
+
+def reliability_buckets(probs: list[tuple[float, float]], n_buckets: int = 10) -> list[dict]:
+    """Bucket (predicted, outcome) pairs into `n_buckets` equal-width probability bins —
+    the data behind a reliability diagram (x = predicted P(over), y = realized frequency).
+    A perfectly calibrated model has every bucket's predicted/realized on the diagonal."""
+    bins: list[list] = [[0.0, 0.0, 0] for _ in range(n_buckets)]
+    for pr, o in probs:
+        b = min(n_buckets - 1, int(pr * n_buckets))
+        bins[b][0] += pr
+        bins[b][1] += o
+        bins[b][2] += 1
+    out = []
+    for i, (s, o, cnt) in enumerate(bins):
+        lo, hi = i / n_buckets, (i + 1) / n_buckets
+        out.append({
+            "bucket": f"{lo:.1f}-{hi:.1f}", "n": cnt,
+            "predicted": round(s / cnt, 4) if cnt else None,
+            "actual": round(o / cnt, 4) if cnt else None,
+        })
+    return out
+
 
 def metrics(pairs: list[dict]) -> dict:
     """pairs: dicts with L(line) P(projection) Y(actual) and optional RP(prob) FL/CE(band)."""
@@ -92,18 +121,16 @@ def metrics(pairs: list[dict]) -> dict:
         "decided": len(dec),
         "hit_rate": round(hit / len(dec), 4) if dec else None,
     }
-    # probability calibration (ECE) — reliability of P(over)
-    probs = [(p["RP"], 1.0 if p["Y"] > p["L"] else 0.0) for p in P
-             if p.get("RP") is not None and p.get("L") is not None and abs(p["Y"] - p["L"]) > 1e-9]
+    # probability calibration: ECE (mean calibration gap) + Brier score (proper scoring
+    # rule — mean squared error of the probability itself, rewards BOTH calibration and
+    # sharpness/decisiveness, unlike ECE which only checks calibration). 0 = perfect,
+    # 0.25 = the "always guess 50%" floor, 1.0 = maximally, confidently wrong.
+    probs = _prob_outcome_pairs(P)
     if len(probs) >= 50:
-        bins = [[0.0, 0.0, 0] for _ in range(10)]
-        for pr, o in probs:
-            b = min(9, int(pr * 10))
-            bins[b][0] += pr
-            bins[b][1] += o
-            bins[b][2] += 1
-        ece = sum(abs(s / cnt - o / cnt) * cnt for s, o, cnt in bins if cnt) / len(probs)
+        buckets = reliability_buckets(probs)
+        ece = sum(abs(b["predicted"] - b["actual"]) * b["n"] for b in buckets if b["n"]) / len(probs)
         out["ece"] = round(ece, 4)
+        out["brier"] = round(sum((pr - o) ** 2 for pr, o in probs) / len(probs), 4)
     # interval coverage (p10–p90 band should hold ~80%)
     band = [p for p in P if p.get("FL") is not None and p.get("CE") is not None and p["CE"] > p["FL"]]
     if len(band) >= 50:
@@ -135,6 +162,50 @@ def current_accuracy(sport: str = "MLB", min_n: int = 50,
                          for s, m in ranked[:8]],
         "target_coverage": _TARGET_COVERAGE,
     }
+
+
+def reliability_diagram(sport: str = "MLB", stat: Optional[str] = None,
+                        n_buckets: int = 10) -> dict:
+    """The full reliability-diagram data for one sport (optionally one stat): predicted
+    P(over) vs realized frequency per bucket, plus Brier/ECE over the same population.
+    This is the direct answer to "are the probabilities actually calibrated" — a
+    well-calibrated model's buckets sit on the y=x diagonal; systematic over/under-
+    confidence shows up as buckets bowing above or below it."""
+    rows = _ledger_rows(sport, stat=stat)
+    probs = _prob_outcome_pairs(rows)
+    if len(probs) < 50:
+        return {"sport": sport, "stat": stat, "status": "insufficient_data", "n": len(probs)}
+    buckets = reliability_buckets(probs, n_buckets)
+    ece = sum(abs(b["predicted"] - b["actual"]) * b["n"] for b in buckets if b["n"]) / len(probs)
+    brier = sum((pr - o) ** 2 for pr, o in probs) / len(probs)
+    return {
+        "sport": sport, "stat": stat, "n": len(probs), "buckets": buckets,
+        "ece": round(ece, 4), "brier": round(brier, 4),
+        "brier_baseline": 0.25,   # a model that always guesses 50% scores exactly this
+    }
+
+
+def by_sample_depth(sport: str = "MLB", min_n: int = 30) -> dict:
+    """Accuracy broken out by how much real history backed each projection at grading
+    time (model_n — games/PA/BF of evidence, already logged on every row, see db.py's
+    schema comment). This is the honest, MEASURED answer to "which player archetypes
+    perform worst" — thin-sample rookies/call-ups/injury-returns vs deep-sample
+    established regulars — without inventing a role/position taxonomy the ledger
+    doesn't actually carry."""
+    rows = [r for r in _ledger_rows(sport) if r.get("N") is not None]
+    if not rows:
+        return {"sport": sport, "status": "insufficient_data", "n": 0,
+                "note": "no rows carry model_n yet -- only graded AFTER the 2026-08 "
+                        "model_n logging change will have it"}
+    tiers = [("thin (<10 games)", lambda n: n < 10),
+             ("medium (10-25 games)", lambda n: 10 <= n < 25),
+             ("deep (25+ games)", lambda n: n >= 25)]
+    out = []
+    for label, pred in tiers:
+        subset = [r for r in rows if pred(r["N"])]
+        if len(subset) >= min_n:
+            out.append({"archetype": label, **metrics(subset)})
+    return {"sport": sport, "tiers": out, "n_total": len(rows)}
 
 
 # ── diagnostics: does the model's OWN signal about itself hold up? ─────────────
@@ -302,7 +373,7 @@ def record_run(sport: str = "MLB", kind: str = "baseline",
         "sport": sport, "kind": kind,
         "n": m.get("n"), "mae": m.get("mae"), "rmse": m.get("rmse"),
         "bias": m.get("bias"), "hit_rate": m.get("hit_rate"),
-        "ece": m.get("ece"), "coverage": m.get("coverage"),
+        "ece": m.get("ece"), "coverage": m.get("coverage"), "brier": m.get("brier"),
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     try:
@@ -310,9 +381,10 @@ def record_run(sport: str = "MLB", kind: str = "baseline",
         store.init_schema(db_)
         db_.execute(
             "INSERT INTO model_runs (id, model_version, sport, kind, n, mae, rmse, bias, "
-            "hit_rate, ece, coverage, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "hit_rate, ece, coverage, brier, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             tuple(row[k] for k in ("id", "model_version", "sport", "kind", "n", "mae",
-                                   "rmse", "bias", "hit_rate", "ece", "coverage", "recorded_at")))
+                                   "rmse", "bias", "hit_rate", "ece", "coverage", "brier",
+                                   "recorded_at")))
     except Exception as exc:
         return {"recorded": False, "reason": str(exc)}
     return {"recorded": True, "run": row}
@@ -348,22 +420,28 @@ def drift(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 60) -> dict
     """
     mv = provenance.model_version(sport)
     rows = [r for r in _ledger_rows(sport, model_version=mv) if r.get("game_date")]
+    d = _drift_from_rows(rows, recent_frac, min_n)
+    d["sport"] = sport
+    d["model_version"] = mv
+    return d
+
+
+def _drift_from_rows(rows: list[dict], recent_frac: float, min_n: int) -> dict:
+    """Shared recent-vs-prior split + comparison, factored out of `drift()` so
+    `drift_by_stat` can reuse the exact same logic per stat instead of duplicating it."""
     if len(rows) < 2 * min_n:
-        return {"sport": sport, "model_version": mv, "status": "insufficient_data", "n": len(rows)}
+        return {"status": "insufficient_data", "n": len(rows)}
     dates = sorted({r["game_date"] for r in rows})
     cut = dates[int(len(dates) * (1 - recent_frac))]
     recent = [r for r in rows if r["game_date"] >= cut]
     prior = [r for r in rows if r["game_date"] < cut]
     if len(recent) < min_n or len(prior) < min_n:
-        return {"sport": sport, "model_version": mv, "status": "insufficient_data",
-                "recent_n": len(recent), "prior_n": len(prior)}
+        return {"status": "insufficient_data", "recent_n": len(recent), "prior_n": len(prior)}
     mr, mp = metrics(recent), metrics(prior)
     hit_drop = (mp.get("hit_rate") or 0) - (mr.get("hit_rate") or 0)
     mae_infl = (mr["mae"] - mp["mae"]) / mp["mae"] if mp.get("mae") else 0.0
     drifting = hit_drop > 0.05 or mae_infl > 0.15    # >5pp hit-rate drop or >15% MAE inflation
     return {
-        "model_version": mv,
-        "sport": sport,
         "status": "drifting" if drifting else "stable",
         "since": cut,
         "recent": {"n": mr["n"], "hit_rate": mr.get("hit_rate"), "mae": mr["mae"]},
@@ -371,6 +449,26 @@ def drift(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 60) -> dict
         "hit_rate_drop": round(hit_drop, 4),
         "mae_inflation_pct": round(mae_infl * 100, 1),
     }
+
+
+def drift_by_stat(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 30) -> dict:
+    """Per-stat drift (same recent-vs-prior comparison as `drift`, but broken out per
+    stat_type) — answers "WHICH statistics are drifting", not just whether the sport
+    overall is. A sport-wide 'stable' can hide one stat quietly degrading while others
+    improve and average it out."""
+    mv = provenance.model_version(sport)
+    rows = [r for r in _ledger_rows(sport, model_version=mv) if r.get("game_date")]
+    by_stat: dict = {}
+    for r in rows:
+        by_stat.setdefault(r["stat_type"], []).append(r)
+    out = {}
+    for stat, rs in by_stat.items():
+        d = _drift_from_rows(rs, recent_frac, min_n)
+        if d.get("status") != "insufficient_data":
+            out[stat] = d
+    drifting_stats = [s for s, d in out.items() if d["status"] == "drifting"]
+    return {"sport": sport, "model_version": mv, "by_stat": out,
+            "drifting_stats": drifting_stats}
 
 
 def compare(baseline: dict, candidate: dict) -> dict:

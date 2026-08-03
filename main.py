@@ -407,6 +407,53 @@ def api_model_registry(sport: str = Query("", description="empty = all sports"))
     return {"runs": backtest.registry(sport or None)}
 
 
+@app.get("/api/model/dashboard")
+async def api_model_dashboard(sport: str = Query("", description="empty = all-sport summary")):
+    """Model Health dashboard bundle: the self-monitoring surface. No sport = a
+    lightweight cross-sport summary (top-line accuracy + drift status per sport, for the
+    landing view); a sport = the full deep-dive (accuracy, reliability diagram, drift,
+    per-stat drift, archetype breakdown, version history, changelog, daily-snapshot
+    trend). One call per view, matching the existing /api/dashboard pattern."""
+    loop = asyncio.get_event_loop()
+    if not sport:
+        return await loop.run_in_executor(None, model_health.dashboard_summary)
+    return await loop.run_in_executor(None, model_health.dashboard_detail, sport)
+
+
+@app.get("/api/model/reliability")
+def api_model_reliability(sport: str = Query("MLB"),
+                          stat: str = Query("", description="empty = whole sport")):
+    """Reliability diagram data for one sport (optionally one stat): predicted P(over)
+    vs realized frequency per bucket — the direct evidence for "are the probabilities
+    actually calibrated."""
+    import backtest
+    return backtest.reliability_diagram(sport, stat or None)
+
+
+@app.get("/api/model/drift/by-stat")
+def api_model_drift_by_stat(sport: str = Query("MLB")):
+    """Per-stat drift: which specific statistics are degrading, not just the sport
+    overall (a sport-wide 'stable' can hide one stat quietly worsening)."""
+    import backtest
+    return backtest.drift_by_stat(sport)
+
+
+@app.get("/api/model/archetypes")
+def api_model_archetypes(sport: str = Query("MLB")):
+    """Accuracy by player sample depth (model_n at grading time) — the measured answer
+    to "which player archetypes perform worst": thin-sample rookies/call-ups/injury
+    returns vs deep-sample established regulars."""
+    import backtest
+    return backtest.by_sample_depth(sport)
+
+
+@app.get("/api/model/changelog")
+def api_model_changelog(sport: str = Query("", description="empty = all sports")):
+    """What changed in each model version, in plain language — pair with
+    /api/model/dashboard's accuracy_by_model_version to see whether a change helped."""
+    return provenance.changelog(sport or None)
+
+
 @app.get("/api/data/health")
 def api_data_health():
     """DataOS: freshness + coverage + a composite quality score for the current snapshot."""
