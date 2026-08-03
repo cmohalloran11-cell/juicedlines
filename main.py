@@ -49,13 +49,29 @@ FALLBACK_TO_MOCK = os.getenv("FALLBACK_TO_MOCK", "1").lower() not in ("0", "fals
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-SNAPSHOT_INTERVAL = int(os.getenv("SNAPSHOT_INTERVAL", "180"))  # seconds
+
+def _int_env(name: str, default: int) -> int:
+    """int(os.getenv(...)) with a malformed value logging a clear warning and falling back
+    to `default`, instead of a raw ValueError traceback crashing the process at import time
+    (2026-08 production-readiness audit finding -- these are operational tuning knobs, not
+    security-critical config, so fail-soft with visibility beats fail-hard here)."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        log.warning("Env var %s=%r is not a valid integer; using default %d", name, raw, default)
+        return default
+
+
+SNAPSHOT_INTERVAL = _int_env("SNAPSHOT_INTERVAL", 180)  # seconds
 USE_MOCK = os.getenv("USE_MOCK", "").lower() in ("1", "true", "yes")
 
 # Rolling retention for the line-movement snapshot table. Unbounded, it reached
 # 9.6M rows / 1.77GB in a month; movement charts only ever read recent rows. See
 # db.prune_history. Set HISTORY_RETENTION_DAYS=0 to disable pruning.
-HISTORY_RETENTION_DAYS = int(os.getenv("HISTORY_RETENTION_DAYS", "14"))
+HISTORY_RETENTION_DAYS = _int_env("HISTORY_RETENTION_DAYS", 14)
 # Run DB maintenance (prune history + stale ungraded CLV) about once a day.
 _MAINT_EVERY_CYCLES = max(1, 86_400 // max(SNAPSHOT_INTERVAL, 1))
 
@@ -237,6 +253,20 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # HTML is served with no-cache so edits show on refresh (avoids stale-cache confusion).
 _HTML_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
+
+@app.get("/health")
+@app.get("/healthz")
+def health_check():
+    """Pure process-liveness check for a load balancer / uptime monitor -- no disk read, no
+    DB query, no dependency on upstream feeds being up. Deliberately distinct from
+    /api/status (reports on cached line data) and /api/data/health (reports on data
+    freshness/quality): those correctly go unhealthy when PrizePicks/Underdog/statsapi are
+    down even though this process is completely fine, which is the wrong signal for
+    "should the load balancer restart/stop routing to this instance." Added 2026-08 --
+    render.yaml previously pointed healthCheckPath at "/", which does a FileResponse disk
+    read of static/index.html on every check instead of a true liveness ping."""
+    return {"status": "ok"}
 
 
 @app.get("/")

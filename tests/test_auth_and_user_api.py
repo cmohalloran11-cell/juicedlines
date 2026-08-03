@@ -162,6 +162,16 @@ def test_simulation_endpoint_unknown_id_404(client):
     assert client.get("/api/model/health?sport=MLB").status_code == 200
 
 
+def test_health_check_is_public_and_fast(client):
+    # Pure liveness ping for a load balancer -- must never require auth and never depend on
+    # data being loaded (unlike /api/status or /api/data/health, which correctly reflect
+    # upstream-feed health, the wrong signal for "should this process be restarted").
+    for path in ("/health", "/healthz"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert r.json() == {"status": "ok"}
+
+
 def test_backtest_replay_requires_login_but_plain_accuracy_stays_public(client):
     # 2026-08 production-readiness fix: replay re-runs the real projection engine up to
     # 800 times per call -- a materially more expensive, triggerable action than reading

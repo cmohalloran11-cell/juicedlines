@@ -28,7 +28,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 log = logging.getLogger("juiced.request")
 
-RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "300"))  # 0 = disabled
+_RATE_LIMIT_RPM_RAW = os.getenv("RATE_LIMIT_RPM")
+try:
+    # A malformed value falls back to the default (300) with a clear warning instead of a
+    # raw ValueError crashing the process at import time (2026-08 audit finding).
+    RATE_LIMIT_RPM = 300 if _RATE_LIMIT_RPM_RAW is None else int(_RATE_LIMIT_RPM_RAW)
+except ValueError:
+    log.warning("Env var RATE_LIMIT_RPM=%r is not a valid integer; using default 300",
+               _RATE_LIMIT_RPM_RAW)
+    RATE_LIMIT_RPM = 300  # 0 = disabled
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):

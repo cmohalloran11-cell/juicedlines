@@ -8,7 +8,8 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /
+    healthCheckPath: /health   # pure liveness ping (main.py's health_check) -- no disk
+                                # read, no dependency on upstream feeds being up
     envVars:
       - key: PYTHON_VERSION
         value: "3.12"
