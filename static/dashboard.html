@@ -205,6 +205,15 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
   .topbar{padding:14px 15px 6px;gap:10px}.view{padding:8px 14px 50px}
   .search{max-width:none}.search kbd{display:none}
   .rtable{font-size:11.5px}
+  /* 2026-08 (production-readiness audit): .rtable/.drops (Projections' 14-column table and
+     every other prop/data table in the app -- ~15 call sites, all sharing these two classes)
+     had no overflow handling at all on narrow viewports, so the WHOLE PAGE scrolled
+     horizontally instead of just the table, dragging the topbar/header off-screen with it.
+     display:block on the table lets overflow-x:auto actually apply (overflow is ignored on
+     display:table by spec); thead/tbody/tr/td keep their own table-* display values since
+     those aren't touched, so the table still renders correctly -- it's just independently
+     scrollable now, and the rest of the page stays put. */
+  .rtable,.drops{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
 }
 </style>
 </head>
