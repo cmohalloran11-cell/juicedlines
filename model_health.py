@@ -118,4 +118,6 @@ def calibration_detail(sport: str = "MLB") -> dict:
         "interval_widening_factor": db.interval_width(sport),
         "scorecard": db.scorecard(sport),
         "diagnostics": backtest.diagnostics(sport),
+        "drift": backtest.drift(sport),
+        "accuracy_by_model_version": backtest.version_history(sport),
     }

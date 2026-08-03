@@ -11,18 +11,23 @@ import tempfile
 
 import db as _db
 import backtest
+import provenance
 
 
 def _insert(rows):
     """rows: list of dicts; missing columns → NULL. Each row gets a distinct synthetic
-    player so backtest._ledger_rows' (player, stat, game_date) dedup never collides them."""
+    player so backtest._ledger_rows' (player, stat, game_date) dedup never collides them.
+    model_version defaults to the sport's CURRENT version so these rows survive
+    backtest._ledger_rows' default model_version scoping (2026-08) — same pattern as
+    tests/test_calibration_characterization.py's _insert."""
     cols = ("line_id", "game_date", "sport", "player", "stat_type", "close_line",
             "close_proj", "actual", "close_prob", "model_raw_prob", "model_floor",
-            "model_ceiling", "proj_kind", "source", "odds_type")
+            "model_ceiling", "proj_kind", "source", "odds_type", "model_version")
     with _db._lock, _db._conn() as c:
         for i, r in enumerate(rows):
             r = {"line_id": f"L{i}", "game_date": "2026-07-01", "sport": "MLB",
                  "player": f"P{i}", "stat_type": "Hits", "odds_type": "standard", **r}
+            r.setdefault("model_version", provenance.model_version(r["sport"]))
             c.execute(f"INSERT INTO prop_clv ({','.join(cols)}) "
                       f"VALUES ({','.join('?' for _ in cols)})", [r.get(k) for k in cols])
         c.commit()
@@ -94,6 +99,31 @@ def test_calibration_by_book_splits_by_source():
         out = backtest.calibration_by_book("MLB", min_n=20)
         assert out["by_book"]["bookA"]["hit_rate"] == 1.0
         assert out["by_book"]["bookB"]["hit_rate"] == 0.0
+    _with_temp_db(run)
+
+
+def test_backtest_never_pools_accuracy_across_a_model_version_change():
+    # 2026-08 fix: _ledger_rows (and everything built on it -- current_accuracy, drift,
+    # the calibration_by_* diagnostics) never filtered by model_version at all, so a
+    # deliberate engine change (e.g. this session's two-stage uncertainty propagation)
+    # would have its measured accuracy silently averaged with the era BEFORE the change --
+    # masking a regression or fabricating an improvement that was really just old data.
+    def run():
+        rows = []
+        for i in range(60):     # old version: always WRONG
+            rows.append({"close_line": 1.5, "close_proj": 2.0, "actual": 0.0,
+                         "model_version": "mlb-OLD"})
+        for i in range(60, 120):  # current version: always RIGHT
+            rows.append({"close_line": 1.5, "close_proj": 2.0, "actual": 2.0,
+                         "model_version": provenance.model_version("MLB")})
+        _insert(rows)
+        acc = backtest.current_accuracy("MLB", min_n=10)
+        assert acc["overall"]["hit_rate"] == 1.0, "must reflect ONLY the current version"
+        assert acc["model_version"] == provenance.model_version("MLB")
+
+        by_version = backtest.version_history("MLB", min_n=10)
+        assert by_version["by_version"]["mlb-OLD"]["hit_rate"] == 0.0
+        assert by_version["by_version"][provenance.model_version("MLB")]["hit_rate"] == 1.0
     _with_temp_db(run)
 
 

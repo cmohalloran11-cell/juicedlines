@@ -22,17 +22,29 @@ from statistics import NormalDist
 from typing import Any, Callable, Optional
 
 import db
+import provenance
 
 _TARGET_COVERAGE = 0.80
 
 
 # ── ledger access ─────────────────────────────────────────────────────────────
 
-def _ledger_rows(sport: str, stat: Optional[str] = None) -> list[dict]:
-    """Graded, standard-odds prop rows, deduped to one per (player, stat, game_date)."""
+def _ledger_rows(sport: str, stat: Optional[str] = None,
+                 model_version: str | None = None, all_versions: bool = False) -> list[dict]:
+    """Graded, standard-odds prop rows, deduped to one per (player, stat, game_date).
+
+    Scoped to `model_version` by default (current version for this sport, per
+    provenance.model_version) — mirrors db.py's stat_gammas/prob_calibration/etc scoping.
+    A deliberate math change to the engine (e.g. the 2026-08 two-stage uncertainty
+    propagation, or the earlier MLB engine-crash fix) makes every accuracy/drift number
+    computed here attributable to the CURRENT model, not a blend of pre- and post-change
+    eras that would mask a regression or fake an improvement. Pass `all_versions=True`
+    explicitly (e.g. for a long-horizon registry view) to intentionally pool across
+    versions; a bare, unscoped read of the full ledger is never the default."""
     q = ("SELECT player, stat_type, game_date, close_line AS L, close_proj AS P, "
          "actual AS Y, COALESCE(model_raw_prob, close_prob) AS RP, "
-         "model_floor AS FL, model_ceiling AS CE, proj_kind AS PK, source AS SRC "
+         "model_floor AS FL, model_ceiling AS CE, proj_kind AS PK, source AS SRC, "
+         "model_version AS MV "
          "FROM prop_clv WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL "
          "AND close_proj IS NOT NULL "
          "AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))")
@@ -40,6 +52,10 @@ def _ledger_rows(sport: str, stat: Optional[str] = None) -> list[dict]:
     if stat:
         q += " AND LOWER(stat_type)=?"
         args.append(stat.lower())
+    if not all_versions:
+        mv = model_version if model_version is not None else provenance.model_version(sport)
+        q += " AND model_version=?"
+        args.append(mv)
     with db._lock, db._conn() as c:
         rows = [dict(r) for r in c.execute(q, args).fetchall()]
     seen: dict = {}
@@ -95,9 +111,13 @@ def metrics(pairs: list[dict]) -> dict:
     return out
 
 
-def current_accuracy(sport: str = "MLB", min_n: int = 50) -> dict:
-    """Live model's measured accuracy from the ledger — the baseline. Overall + per-stat."""
-    rows = _ledger_rows(sport)
+def current_accuracy(sport: str = "MLB", min_n: int = 50,
+                     model_version: str | None = None) -> dict:
+    """Live model's measured accuracy from the ledger — the baseline. Overall + per-stat.
+    Scoped to `model_version` (default: current) so a deliberate engine change can't have
+    its accuracy quietly averaged with the era before the change — see _ledger_rows."""
+    mv = model_version if model_version is not None else provenance.model_version(sport)
+    rows = _ledger_rows(sport, model_version=mv)
     overall = metrics(rows)
     by_stat: dict = {}
     for r in rows:
@@ -107,7 +127,8 @@ def current_accuracy(sport: str = "MLB", min_n: int = 50) -> dict:
     ranked = sorted(((s, m) for s, m in per_stat.items()),
                     key=lambda kv: kv[1].get("mae", 0), reverse=True)
     return {
-        "sport": sport, "source": "graded ledger (recorded projections vs actuals)",
+        "sport": sport, "model_version": mv,
+        "source": "graded ledger (recorded projections vs actuals)",
         "overall": overall,
         "per_stat": per_stat,
         "worst_by_mae": [{"stat": s, "mae": m["mae"], "hit_rate": m.get("hit_rate"), "n": m["n"]}
@@ -172,6 +193,21 @@ def calibration_by_book(sport: str = "MLB", min_n: int = 20) -> dict:
         groups.setdefault(r.get("SRC") or "unknown", []).append(r)
     return {"sport": sport,
             "by_book": {k: metrics(rs) for k, rs in groups.items() if len(rs) >= min_n}}
+
+
+def version_history(sport: str = "MLB", min_n: int = 30) -> dict:
+    """Accuracy broken out PER model_version that has graded history — lets you see, e.g.,
+    whether the current version's measured MAE/hit-rate/coverage is actually better than
+    the version it replaced, rather than assuming a deliberate math change helped. Pulls
+    every version at once (all_versions=True) specifically to compare across them; every
+    OTHER function in this module stays scoped to the current version by default."""
+    rows = _ledger_rows(sport, all_versions=True)
+    by_version: dict = {}
+    for r in rows:
+        by_version.setdefault(r.get("MV") or "unknown", []).append(r)
+    out = {v: metrics(rs) for v, rs in by_version.items() if len(rs) >= min_n}
+    return {"sport": sport, "current_version": provenance.model_version(sport),
+            "by_version": out}
 
 
 def diagnostics(sport: str = "MLB") -> dict:
@@ -302,22 +338,31 @@ def drift(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 60) -> dict
     window (the newest `recent_frac` of dated props) vs the PRIOR window, and compare accuracy.
     Flags drift when recent hit-rate drops materially or recent MAE inflates vs the prior — i.e.
     the live model is quietly getting worse and should be investigated/retrained.
+
+    Scoped to the CURRENT model_version by default (via _ledger_rows) — a version bump
+    always looks like a `recent` MAE spike/hit-rate drop against `prior` graded rows from
+    a DIFFERENT model if the two eras were pooled; that would be a false drift alarm on the
+    exact events that are supposed to reset the baseline, not a real regression. If there
+    isn't yet enough graded history under the current version to split, this correctly
+    reports insufficient_data rather than silently falling back to a cross-version compare.
     """
-    rows = [r for r in _ledger_rows(sport) if r.get("game_date")]
+    mv = provenance.model_version(sport)
+    rows = [r for r in _ledger_rows(sport, model_version=mv) if r.get("game_date")]
     if len(rows) < 2 * min_n:
-        return {"sport": sport, "status": "insufficient_data", "n": len(rows)}
+        return {"sport": sport, "model_version": mv, "status": "insufficient_data", "n": len(rows)}
     dates = sorted({r["game_date"] for r in rows})
     cut = dates[int(len(dates) * (1 - recent_frac))]
     recent = [r for r in rows if r["game_date"] >= cut]
     prior = [r for r in rows if r["game_date"] < cut]
     if len(recent) < min_n or len(prior) < min_n:
-        return {"sport": sport, "status": "insufficient_data",
+        return {"sport": sport, "model_version": mv, "status": "insufficient_data",
                 "recent_n": len(recent), "prior_n": len(prior)}
     mr, mp = metrics(recent), metrics(prior)
     hit_drop = (mp.get("hit_rate") or 0) - (mr.get("hit_rate") or 0)
     mae_infl = (mr["mae"] - mp["mae"]) / mp["mae"] if mp.get("mae") else 0.0
     drifting = hit_drop > 0.05 or mae_infl > 0.15    # >5pp hit-rate drop or >15% MAE inflation
     return {
+        "model_version": mv,
         "sport": sport,
         "status": "drifting" if drifting else "stable",
         "since": cut,
