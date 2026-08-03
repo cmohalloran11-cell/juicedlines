@@ -17,3 +17,7 @@ scipy~=1.18.0
 pyjwt~=2.13.0
 # Postgres backend for the store/ layer (DATABASE_URL → Postgres; SQLite otherwise).
 psycopg[binary]~=3.3.4
+# Error monitoring (main.py). Fully optional -- only activates if SENTRY_DSN is set; a
+# local dev run with no env vars never talks to Sentry at all. Installed unconditionally
+# (small, pure-Python, no native deps) so it's always available if an operator sets the DSN.
+sentry-sdk[fastapi]~=2.66.1
