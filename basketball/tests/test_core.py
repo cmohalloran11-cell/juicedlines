@@ -32,6 +32,16 @@ def test_shrinkage_direction():
     assert prior["pts"] < heavy < light
 
 
+def test_positional_prior_poss_rejects_unsupported_league_clearly():
+    # 2026-08 regression guard: this used to fall back to an `_SL_PER40` table that was never
+    # defined anywhere, so any non-WNBA league raised a bare NameError. Must now fail with a
+    # clear, actionable error instead -- and WNBA itself must be completely unaffected.
+    import pytest
+    with pytest.raises(ValueError, match="no positional priors exist"):
+        PR.positional_prior_poss("G", 96.0, "Summer League")
+    assert PR.positional_prior_poss("G", 96.0, "WNBA")["pts"] > 0
+
+
 def test_sample_weight_and_eff_games():
     r = R.fit_rates(_games(10, 30, 20), "WNBA", PR.positional_prior_poss("G", 96, "WNBA"),
                     40, 96.0, 120, 6)

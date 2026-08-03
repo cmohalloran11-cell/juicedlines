@@ -24,7 +24,8 @@ _WNBA_PER40 = {
 _ORB_SHARE = {"G": 0.21, "F": 0.28, "C": 0.26, "": 0.24}
 # pseudo-rebounds of prior weight — the split is a stable skill, so a modest sample moves it.
 _ORB_SHARE_SHRINK = 25.0
-# How much of a Summer-League player's COLLEGE offensive share carries into the positional
+
+
 def orb_share_prior(position: str) -> float:
     """Baseline offensive-rebound share for a position."""
     return _ORB_SHARE.get((position or "")[:1].upper(), _ORB_SHARE[""])
@@ -51,5 +52,15 @@ def _per40_to_poss(per40: dict, league_pace: float) -> dict:
 
 
 def positional_prior_poss(position: str, league_pace: float, league: str = "WNBA") -> dict:
-    table = _WNBA_PER40 if league == "WNBA" else _SL_PER40
-    return _per40_to_poss(table.get(position or "", table[""]), league_pace)
+    # 2026-08: this used to fall back to `_SL_PER40` for any non-WNBA league -- a table that
+    # was never defined anywhere in this module (only WNBA priors ever shipped). Currently
+    # unreachable in production (basketball.LEAGUES/`_LEAGUES` are WNBA-only everywhere this
+    # gets called), but any future caller passing a different league string would hit a bare
+    # NameError instead of a clear, actionable error. Fail loudly and specifically instead.
+    if league != "WNBA":
+        raise ValueError(
+            f"positional_prior_poss: no positional priors exist for league={league!r} -- "
+            f"only WNBA is currently supported. Add a per-40 table for this league before "
+            f"projecting it, don't silently reuse WNBA's."
+        )
+    return _per40_to_poss(_WNBA_PER40.get(position or "", _WNBA_PER40[""]), league_pace)
