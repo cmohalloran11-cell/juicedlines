@@ -8,7 +8,27 @@ Best Value, and the default Projections feed) — they must stay a separate, opt
 """
 from __future__ import annotations
 
+import os
+import tempfile
+
+import pytest
+
+import db as _db
 import dashboard
+
+
+@pytest.fixture(autouse=True)
+def _temp_db(monkeypatch, tmp_path):
+    # dashboard.build() reads db.recent_prop_moves(), which queries the prop_clv table
+    # directly -- this test file never called db.init_db(), so it only ever "passed" because
+    # SOME prior test in the same session (or a leftover history.db from a manual local run)
+    # happened to create the schema first. On a genuinely clean checkout with no pre-existing
+    # history.db (exactly what CI's runners have), prop_clv doesn't exist yet and this raised
+    # sqlite3.OperationalError: no such table: prop_clv -- confirmed by reproducing a truly
+    # fresh venv + fresh checkout locally. Isolate this file with its own temp DB, matching
+    # the pattern already used in tests/test_diagnostics.py and tests/test_auth_and_user_api.py.
+    monkeypatch.setattr(_db, "DB_PATH", tmp_path / "history_test.db", raising=False)
+    _db.init_db()
 
 
 def _line(id_, player, odds_type="standard", model_prob=0.6, model_edge=0.5):
