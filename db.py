@@ -111,6 +111,17 @@ def init_db() -> None:
                          ("model_n", "REAL")):
             if col not in have:
                 c.execute(f"ALTER TABLE prop_clv ADD COLUMN {col} {typ}")
+        # 2026-08 (production-readiness audit): every calibration/accuracy query in this
+        # file and backtest.py filters on sport (always) and model_version (almost always,
+        # after this session's model-version scoping work), then checks actual IS NOT NULL.
+        # idx_clv_grade above is (actual, game_date) -- useless as a leading index for a
+        # sport= filter. Without this, every stat_gammas/prob_calibration/interval_width/
+        # stat_biases/_ledger_rows call does a full table scan, and prop_clv only grows
+        # (graded rows are kept forever, db.py's own comment on line_history's retention
+        # policy doesn't apply here). sport+model_version covers the common case; actual
+        # as the third column lets SQLite use the index for the IS NOT NULL check too.
+        c.execute("CREATE INDEX IF NOT EXISTS idx_clv_sport_version "
+                 "ON prop_clv(sport, model_version, actual)")
         c.commit()
 
 
