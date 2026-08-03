@@ -102,9 +102,13 @@ def _model(tour: str):
 
 
 def _baseline_player(base, tour: str) -> R.PlayerRates:
+    # No real match history at all -- ALL of spw/rpw's weight is the tour prior, i.e.
+    # maximum parameter uncertainty (eff_*_pts = just the shrinkage pseudo-count).
     return R.PlayerRates(player_id="", player="(unknown)", tour=tour, spw=base.spw_avg,
                          rpw=base.rpw_avg, ace_rate=base.ace_rate_avg, df_rate=base.df_rate_avg,
-                         pts_per_svgame=base.pts_per_svgame_avg, n_matches=0)
+                         pts_per_svgame=base.pts_per_svgame_avg, n_matches=0,
+                         eff_serve_pts=cfg("model", "shrink_serve_pts"),
+                         eff_return_pts=cfg("model", "shrink_return_pts"))
 
 
 def resolve(tour: str, name: str):

@@ -17,8 +17,13 @@ def _base():
     return TourBaselines("ATP", 0.636, 0.364, 0.079, 0.038, 6.7, {"Hard": 0.638})
 
 
-def _player(name, spw, rpw, ace=0.07, df=0.035):
-    return PlayerRates(name, name, "ATP", spw, rpw, ace, df, 6.7, n_matches=50)
+def _player(name, spw, rpw, ace=0.07, df=0.035, eff_pts=4300.0):
+    # eff_pts default ~= 50 matches worth of serve/return points (matches n_matches=50
+    # below) -- a genuinely deep, low-uncertainty sample, so simulator-vs-closed-form
+    # comparisons stay tight. Tests that want to exercise thin-sample parameter
+    # uncertainty pass a small eff_pts explicitly.
+    return PlayerRates(name, name, "ATP", spw, rpw, ace, df, 6.7, n_matches=50,
+                       eff_serve_pts=eff_pts, eff_return_pts=eff_pts)
 
 
 def test_hold_prob_monotonic_and_bounded():
@@ -102,6 +107,36 @@ def test_sim_matches_closed_form_match_prob():
     sim_win = float((sim["winner"] == 0).mean())
     ana = match_win_analytic(a, b, "Hard", base, 3)
     assert abs(sim_win - ana) < 0.02                            # simulator ≈ analytic
+
+
+def test_two_stage_uncertainty_pulls_thin_sample_favorites_toward_a_coin_flip():
+    # 2026-08: every game/tiebreak used to be resolved from a hold probability treated as a
+    # FIXED constant for the WHOLE match, identical across all n sims -- only outcome
+    # (point/game-by-point) variance was represented. rates.py's eff_serve_pts/eff_return_pts
+    # now drive a per-sim Beta-distributed serve-probability draw (see matchup.p_serve_sim),
+    # so a THIN sample (a couple of tour matches) gets genuinely more spread than a deep one
+    # at the identical point-estimate rate. Because match-win probability is a NONLINEAR
+    # function of the per-point serve probability, this isn't just wider bands: a big
+    # favorite built on a thin sample's point estimate has its average simulated win
+    # probability pulled measurably toward 0.5 relative to the naive point-estimate
+    # (analytic) calculation -- exactly the honest behavior (don't fully trust a big edge
+    # that rests on a small sample) that motivated this fix.
+    from tennis.model.matchup import match_win_analytic
+    base = _base()
+    a_deep, b_deep = _player("A", 0.68, 0.40, eff_pts=4300), _player("B", 0.62, 0.36, eff_pts=4300)
+    a_thin, b_thin = _player("A", 0.68, 0.40, eff_pts=150), _player("B", 0.62, 0.36, eff_pts=150)
+    ana = match_win_analytic(a_deep, b_deep, "Hard", base, 3)
+
+    win_deep = np.mean([float((simulate(a_deep, b_deep, "Hard", base, best_of=3, n=20000,
+                                        rng=np.random.default_rng(s))["winner"] == 0).mean())
+                        for s in range(4)])
+    win_thin = np.mean([float((simulate(a_thin, b_thin, "Hard", base, best_of=3, n=20000,
+                                        rng=np.random.default_rng(s))["winner"] == 0).mean())
+                        for s in range(4)])
+
+    assert abs(win_deep - ana) < 0.02, "a deep sample must still closely track the analytic point estimate"
+    assert win_thin < win_deep - 0.03, "a thin sample must be pulled meaningfully toward 0.5"
+    assert win_thin > 0.5, "still a real favorite -- uncertainty tempers the edge, doesn't erase it"
 
 
 def test_sim_distributions_valid():

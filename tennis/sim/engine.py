@@ -10,6 +10,17 @@ resulting distributions; match-win prob is blended with Elo by the caller.
 
 Format is a per-match parameter: best-of-3/5 and whether the deciding set uses a
 tiebreak (standard) or is played out (advantage).
+
+Two-stage uncertainty (2026-08): every game/tiebreak used to be resolved from a hold
+probability treated as a FIXED constant for the WHOLE match, identical across all n
+sims — only outcome (point-by-point/game-by-game) variance was represented. A player
+with a handful of tour matches and one with hundreds, at the identical point-estimate
+serve rate, produced identical match-outcome spread. `p_serve_sim` now draws each sim
+its OWN serve probability from the rate's actual posterior uncertainty (see
+model/rates.py's eff_serve_pts/eff_return_pts and model/matchup.py's `_beta_draw`),
+so hold/tiebreak probabilities vary sim-to-sim along with everything else — the
+textbook Var(Y) = E[Var(Y|theta)] + Var(E[Y|theta]) decomposition, same principle as
+the MLB and WNBA engines (see their commits).
 """
 
 from __future__ import annotations
@@ -17,7 +28,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..config import cfg
-from ..model.matchup import p_serve, hold_prob, tiebreak_prob
+from ..model.matchup import p_serve_sim, hold_prob_vec, tiebreak_prob_vec
 
 
 def simulate(rates_a, rates_b, surface, base, best_of=3,
@@ -25,10 +36,10 @@ def simulate(rates_a, rates_b, surface, base, best_of=3,
     n = n or cfg("model", "n_sims")
     rng = rng or np.random.default_rng()
 
-    psa = p_serve(rates_a, rates_b, surface, base)
-    psb = p_serve(rates_b, rates_a, surface, base)
-    ha, hb = hold_prob(psa), hold_prob(psb)
-    tb_a = tiebreak_prob(psa, psb)                    # A wins a tiebreak
+    psa = p_serve_sim(rates_a, rates_b, surface, base, n, rng)   # per-sim, not a scalar
+    psb = p_serve_sim(rates_b, rates_a, surface, base, n, rng)
+    ha, hb = hold_prob_vec(psa), hold_prob_vec(psb)
+    tb_a = tiebreak_prob_vec(psa, psb)                 # A wins a tiebreak, per sim
     need = best_of // 2 + 1
 
     ga = np.zeros(n, int); gb = np.zeros(n, int)      # games in current set
@@ -82,8 +93,10 @@ def simulate(rates_a, rates_b, surface, base, best_of=3,
     dfs_b = rng.binomial(np.maximum(0, sp_b), min(0.3, rates_b.df_rate))
 
     return {
-        "n": n, "p_serve_a": round(psa, 4), "p_serve_b": round(psb, 4),
-        "hold_a": round(ha, 4), "hold_b": round(hb, 4),
+        # p_serve_a/hold_a etc. are now per-sim arrays (parameter uncertainty varies
+        # sim-to-sim) — report the mean for these diagnostic summary fields.
+        "n": n, "p_serve_a": round(float(np.mean(psa)), 4), "p_serve_b": round(float(np.mean(psb)), 4),
+        "hold_a": round(float(np.mean(ha)), 4), "hold_b": round(float(np.mean(hb)), 4),
         "winner": winner,                              # 0=A,1=B
         "games_a": tga, "games_b": tgb, "total_games": tga + tgb,
         "sets_a": sa, "sets_b": sb, "total_sets": sa + sb,

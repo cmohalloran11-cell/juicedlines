@@ -11,6 +11,9 @@ from __future__ import annotations
 from functools import lru_cache
 from math import comb
 
+import numpy as np
+from scipy.special import comb as _comb_vec
+
 from ..config import cfg
 
 
@@ -26,6 +29,34 @@ def p_serve(rates_a, rates_b, surface, base) -> float:
     return clamp_p(base.spw_avg + (spw_a - base.spw_avg) - (rpw_b - base.rpw_avg))
 
 
+def _beta_draw(rate: float, eff_n: float, n: int, rng: np.random.Generator) -> np.ndarray:
+    """Per-sim draw of a TRUE rate from Beta(rate*eff_n, (1-rate)*eff_n) — the natural
+    conjugate uncertainty for a proportion fit by `_shrink`'s pseudo-count blending
+    (mean = rate, CV shrinks as eff_n grows). Used for spw/rpw parameter uncertainty."""
+    eff_n = max(float(eff_n), 4.0)
+    r = min(max(float(rate), 1e-4), 1.0 - 1e-4)
+    return rng.beta(r * eff_n, (1.0 - r) * eff_n, n)
+
+
+def p_serve_sim(rates_a, rates_b, surface, base, n: int,
+                rng: np.random.Generator) -> np.ndarray:
+    """Per-sim array version of `p_serve`: instead of one shared point-estimate serve
+    probability for the whole match, each sim gets its OWN serve probability reflecting
+    genuine parameter uncertainty in both players' rates (thin-sample players vary more
+    sim-to-sim than deep-sample ones at the same point estimate) — see rates.py's
+    eff_serve_pts/eff_return_pts. Uses the player's OVERALL eff_*_pts as the uncertainty
+    scale even when a surface-specific rate is the point estimate (no separate per-surface
+    effective-sample tracking yet — the overall count is a reasonable, slightly
+    conservative proxy since surface samples are never deeper than the overall one)."""
+    spw_a_pt = rates_a.surface_spw.get(surface, rates_a.spw)
+    rpw_b_pt = rates_b.surface_rpw.get(surface, rates_b.rpw)
+    theta_spw_a = _beta_draw(spw_a_pt, rates_a.eff_serve_pts, n, rng)
+    theta_rpw_b = _beta_draw(rpw_b_pt, rates_b.eff_return_pts, n, rng)
+    lo, hi = cfg("model", "p_serve_clamp")
+    return np.clip(base.spw_avg + (theta_spw_a - base.spw_avg) - (theta_rpw_b - base.rpw_avg),
+                   lo, hi)
+
+
 def race_prob(p: float, target: int) -> float:
     """P(win a race to `target` points, win-by-2) given per-point prob p.
     target=4 → hold a service game; target=7 → win a tiebreak."""
@@ -39,6 +70,21 @@ def race_prob(p: float, target: int) -> float:
 
 def hold_prob(p_srv: float) -> float:
     return race_prob(p_srv, 4)
+
+
+def hold_prob_vec(p_srv: np.ndarray) -> np.ndarray:
+    """Vectorized `hold_prob` — one hold probability PER SIM instead of one shared
+    scalar, so a per-sim rate-uncertainty draw on the serve probability (see
+    sim/engine.py) can carry through to a per-sim hold probability. Same closed form
+    as race_prob(p, 4), just evaluated elementwise across an array instead of once."""
+    p = np.clip(np.asarray(p_srv, dtype=float), 0.001, 0.999)
+    q = 1.0 - p
+    target = 4
+    win = np.zeros_like(p)
+    for lose in range(target - 1):
+        win = win + _comb_vec(target - 1 + lose, lose) * (p ** target) * (q ** lose)
+    deuce = _comb_vec(2 * (target - 1), target - 1) * (p ** (target - 1)) * (q ** (target - 1))
+    return win + deuce * (p * p) / (p * p + q * q)
 
 
 def tiebreak_prob(psa: float, psb: float, a_serves_first: bool = True) -> float:
@@ -91,6 +137,62 @@ def tiebreak_prob(psa: float, psb: float, a_serves_first: bool = True) -> float:
                 f[(pa, pb)] = (p_a_wins_point * f[(pa + 1, pb)]
                                + (1.0 - p_a_wins_point) * f[(pa, pb + 1)])
     return f[(0, 0)]
+
+
+def _tiebreak_prob_batch(psa: np.ndarray, psb: np.ndarray,
+                         a_serves_first: bool = True) -> np.ndarray:
+    """Same exact DP as `tiebreak_prob`, but every state is a numpy array — K independent
+    tiebreak probabilities computed in ONE pass instead of K separate Python-level DP
+    fills. A naive per-pair loop (K calls to the scalar DP, each ~3600 dict-entry fills in
+    pure Python) does not scale to thousands of distinct per-sim probability pairs — this
+    vectorizes the same recursion across the K dimension using numpy arithmetic instead."""
+    K = psa.shape[0]
+
+    def server_is_a(points_played: int) -> bool:
+        if points_played == 0:
+            return a_serves_first
+        first_server_again = ((points_played - 1) // 2) % 2 == 1
+        return a_serves_first if first_server_again else not a_serves_first
+
+    MAX_POINTS = 60
+    f: dict[tuple[int, int], np.ndarray] = {}
+    for total in range(2 * MAX_POINTS, -1, -1):
+        lo = max(0, total - MAX_POINTS)
+        hi = min(total, MAX_POINTS)
+        for pa in range(lo, hi + 1):
+            pb = total - pa
+            if pa >= 7 and pa - pb >= 2:
+                f[(pa, pb)] = np.ones(K)
+            elif pb >= 7 and pb - pa >= 2:
+                f[(pa, pb)] = np.zeros(K)
+            elif pa >= MAX_POINTS or pb >= MAX_POINTS:
+                f[(pa, pb)] = np.full(K, 0.5)
+            else:
+                p_a_wins_point = psa if server_is_a(total) else (1.0 - psb)
+                f[(pa, pb)] = (p_a_wins_point * f[(pa + 1, pb)]
+                               + (1.0 - p_a_wins_point) * f[(pa, pb + 1)])
+    return f[(0, 0)]
+
+
+def tiebreak_prob_vec(psa: np.ndarray, psb: np.ndarray, a_serves_first: bool = True) -> np.ndarray:
+    """Per-sim tiebreak win probability for A, for arrays of per-sim serve probabilities.
+    Rounds psa/psb to 3 decimals (a tiebreak's realistic sensitivity is far coarser than
+    that) and runs the batched exact DP (`_tiebreak_prob_batch`) once across every
+    DISTINCT rounded pair — typically a few thousand unique pairs even across 10,000
+    sims, computed together in one vectorized pass rather than one Python DP fill per
+    pair — then broadcasts each result back to every sim that shares that pair."""
+    psa = np.asarray(psa, dtype=float)
+    psb = np.asarray(psb, dtype=float)
+    # round to 3 decimals as INTEGER milli-probabilities (0-1000) so the (ra,rb) -> single
+    # key fold/unfold is exact — no floating-point round-trip error.
+    ia = np.round(psa * 1000).astype(np.int64)
+    ib = np.round(psb * 1000).astype(np.int64)
+    keys = ia * 1001 + ib
+    uniq_keys, inverse = np.unique(keys, return_inverse=True)
+    uniq_ra = (uniq_keys // 1001) / 1000.0
+    uniq_rb = (uniq_keys % 1001) / 1000.0
+    uniq_result = _tiebreak_prob_batch(uniq_ra, uniq_rb, a_serves_first)
+    return uniq_result[inverse]
 
 
 def set_win_prob(ha: float, hb: float, tb_a: float, a_serves_first: bool = True) -> float:

@@ -66,6 +66,13 @@ class PlayerRates:
     n_matches: int = 0
     n_by_surface: dict = field(default_factory=dict)
     raw_spw: float | None = None      # pre-shrinkage (diagnostics)
+    # 2026-08: effective SERVE/RETURN POINTS behind spw/rpw -- (recency-weighted points
+    # played) + (prior pseudo-points), i.e. the `_shrink` denominator. This is the
+    # parameter-uncertainty knob: a thin sample has a small eff_serve_pts/eff_return_pts
+    # and its rate is genuinely less certain than a deep one at the same point estimate.
+    # See sim/engine.py's per-sim rate-uncertainty draw.
+    eff_serve_pts: float = 0.0
+    eff_return_pts: float = 0.0
 
     def eff_matches(self, surface: str | None = None) -> int:
         return self.n_by_surface.get(surface, 0) if surface else self.n_matches
@@ -147,5 +154,6 @@ def fit(matches, tour: str) -> tuple[TourBaselines, dict[str, PlayerRates]]:
             ace_rate=ace, df_rate=df,
             pts_per_svgame=(a["sp"] / a["svg"]) if a["svg"] else base.pts_per_svgame_avg,
             surface_spw=surf_spw, surface_rpw=surf_rpw, n_matches=a["n"],
-            n_by_surface=n_surf, raw_spw=(a["sw"] / a["sp"]) if a["sp"] else None)
+            n_by_surface=n_surf, raw_spw=(a["sw"] / a["sp"]) if a["sp"] else None,
+            eff_serve_pts=a["sp"] + Ks, eff_return_pts=a["rp"] + Kr)
     return base, out
