@@ -40,7 +40,7 @@ import dashboard as dashboard_mod
 import weather as weather_mod
 import books
 import middleware
-from auth import require_role
+from auth import require_role, optional_user
 from routes_user import router as user_router
 from pullers import fetch_prizepicks, fetch_underdog, mock_lines
 
@@ -399,9 +399,22 @@ def api_model_health(sport: str = Query("", description="MLB | WNBA | Tennis | e
 @app.get("/api/backtest")
 async def api_backtest(sport: str = Query("MLB"),
                        replay: int = Query(0, ge=0, le=800,
-                                           description="if >0, run a leakage-free replay of N historical props")):
+                                           description="if >0, run a leakage-free replay of N historical props"),
+                       user: dict = Depends(optional_user)):
     """Model measurement ruler (Vol V Pt4): current accuracy from the ledger, and optionally
-    a leakage-free replay of the live model on N past prop-days."""
+    a leakage-free replay of the live model on N past prop-days.
+
+    `replay` re-runs the real projection engine up to 800 times per call (one live
+    Monte-Carlo simulation per historical prop-day) -- a materially more expensive,
+    triggerable action than just reading the ledger, and unlike current_accuracy it isn't
+    cached (see model_health.py). Viewing current_accuracy (replay=0, the default) stays
+    fully public, matching the "transparency" principle every other model-health endpoint
+    follows; actually triggering a replay requires being logged in (any account, not
+    ADMIN-only) so it can't be hit anonymously in a loop."""
+    if replay and not user:
+        raise HTTPException(status_code=401,
+                            detail="Sign in to run a backtest replay (viewing current "
+                                   "accuracy without replay doesn't require it).")
     import backtest
     loop = asyncio.get_event_loop()
     out = {"current": await loop.run_in_executor(None, backtest.current_accuracy, sport)}

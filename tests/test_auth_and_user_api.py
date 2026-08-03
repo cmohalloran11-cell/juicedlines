@@ -160,3 +160,16 @@ def test_new_public_endpoints_respond(client):
 def test_simulation_endpoint_unknown_id_404(client):
     assert client.get("/api/simulation?id=nope").status_code == 404
     assert client.get("/api/model/health?sport=MLB").status_code == 200
+
+
+def test_backtest_replay_requires_login_but_plain_accuracy_stays_public(client):
+    # 2026-08 production-readiness fix: replay re-runs the real projection engine up to
+    # 800 times per call -- a materially more expensive, triggerable action than reading
+    # the ledger, and unlike current_accuracy it isn't cached. Just viewing current
+    # accuracy (replay=0, the default) must stay fully public.
+    assert client.get("/api/backtest?sport=MLB").status_code == 200
+    assert client.get("/api/backtest?sport=MLB&replay=5").status_code == 401
+    alice = {"Authorization": f"Bearer {_token('uid-alice', 'alice@x.com')}"}
+    r = client.get("/api/backtest?sport=MLB&replay=1", headers=alice)
+    assert r.status_code == 200
+    assert "replay" in r.json()
