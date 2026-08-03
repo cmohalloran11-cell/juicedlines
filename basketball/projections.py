@@ -133,7 +133,7 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
         rates = R.fit_rates(games, league, prior_poss, game_len, lg_pace,
                             lc.get("shrink_poss", 300), cfg("model", "recency_halflife"))
     else:
-        rates = R.prior_only_rates(league, prior_poss)
+        rates = R.prior_only_rates(league, prior_poss, lc.get("shrink_poss", 120.0))
     rates.player = ref.name
 
     # minutes (own component)

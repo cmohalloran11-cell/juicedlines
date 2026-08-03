@@ -94,6 +94,43 @@ def test_sim_mean_and_dispersion():
     assert wide > tight
 
 
+def test_two_stage_uncertainty_widens_intervals_for_thin_samples_not_means():
+    # 2026-08: every simulated count used to condition on the fitted rate as a FIXED constant
+    # across all n trials -- only outcome (sampling) variance was represented. A debut-game
+    # player and an established veteran with the IDENTICAL point-estimate rate got the
+    # identical spread, understating real uncertainty for the thin sample. rates.eff_poss (the
+    # shrinkage denominator: real weighted possessions + prior pseudo-possessions) now drives a
+    # per-trial Gamma rate-uncertainty multiplier (mean 1, CV=1/sqrt(eff_poss)) BEFORE the
+    # outcome draw -- the textbook Var(Y) = E[Var(Y|theta)] + Var(E[Y|theta]) decomposition.
+    per_poss = {s: 0.0 for s in BASE_STATS}
+    per_poss["pts"] = 0.25
+    thin = R.PlayerRates("X", "WNBA", per_poss=dict(per_poss), eff_poss=150)   # ~debut game
+    deep = R.PlayerRates("X", "WNBA", per_poss=dict(per_poss), eff_poss=3000)  # deep, stable sample
+    kw = dict(proj_minutes=30, minutes_sd=0.01, matchup_pace=96.0, pace_sd_frac=0.0001,
+              game_len=40, disp=0.10, n=40000)
+
+    sd_thin = E.simulate(thin, rng=np.random.default_rng(0), **kw)["pts"].std()
+    sd_deep = E.simulate(deep, rng=np.random.default_rng(0), **kw)["pts"].std()
+    assert sd_thin > sd_deep, "a thin sample must carry more spread than a deep one at the same rate"
+
+    # the MEAN must stay (statistically) unchanged -- this is a spread fix, not a bias fix.
+    # E[theta] = 1 regardless of eff_poss, so both should land near the same point estimate.
+    mean_thin = E.simulate(thin, rng=np.random.default_rng(1), **kw)["pts"].mean()
+    mean_deep = E.simulate(deep, rng=np.random.default_rng(1), **kw)["pts"].mean()
+    poss = (30 / 40) * 96.0
+    assert abs(mean_thin - 0.25 * poss) < 0.5
+    assert abs(mean_deep - 0.25 * poss) < 0.5
+
+    # a genuinely deep sample (eff_poss -> large) must converge to the OLD fixed-rate spread
+    # (no meaningful parameter uncertainty left to add) -- confirms the mechanism, not just
+    # its direction.
+    huge = R.PlayerRates("X", "WNBA", per_poss=dict(per_poss), eff_poss=10_000_000)
+    fixed_rate_sd = E.simulate(R.PlayerRates("X", "WNBA", per_poss=dict(per_poss), eff_poss=1e12),
+                               rng=np.random.default_rng(0), **kw)["pts"].std()
+    sd_huge = E.simulate(huge, rng=np.random.default_rng(0), **kw)["pts"].std()
+    assert abs(sd_huge - fixed_rate_sd) < 0.15
+
+
 def test_combos_are_sums_and_bounded_probs():
     rates = R.PlayerRates("X", "WNBA", per_poss={s: 0.1 for s in BASE_STATS})
     sim = E.simulate(rates, 30, 2, 96.0, 0.05, 40, 0.12, n=8000, rng=np.random.default_rng(1))

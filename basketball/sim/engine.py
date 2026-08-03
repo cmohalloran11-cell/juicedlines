@@ -7,6 +7,22 @@ Per sim we draw minutes and pace ONCE, then each base stat as an overdispersed
 count (Negative-Binomial: var = μ·(1 + disp·μ)). Because minutes and pace are shared
 across the stats within a sim, combos (PRA, stocks, …) come out correctly correlated.
 The variance width is a league knob.
+
+Two-stage uncertainty (2026-08): every simulated count used to condition on the rate
+estimate as a fixed constant across all n trials — only OUTCOME (sampling) variance was
+represented; the estimate's own PARAMETER uncertainty (how wrong the shrunk per-poss rate
+itself might be, given how little/much real data supports it — rates.eff_poss) never
+propagated into the distribution at all. A debut-game player and a 40-game veteran with
+the identical point estimate got the identical spread, which understates real uncertainty
+for the debut player and (to a lesser degree) overstates it for the veteran. Now each trial
+first draws its own rate multiplier theta ~ Gamma(eff_poss, 1/eff_poss) (mean 1, CV =
+1/sqrt(eff_poss) — the standard Gamma-Poisson effective-sample-size approximation), then
+samples the outcome conditional on that trial's rate. This is the textbook two-stage
+decomposition: Var(Y) = E[Var(Y|theta)] + Var(E[Y|theta]) — outcome variance plus parameter
+variance, not outcome variance alone. Each stat draws its OWN independent theta (a hot
+scoring night and a hot rebounding night aren't the same underlying uncertainty), while
+minutes/pace stay a single shared draw per trial (that shared-ness is what makes combos
+correlate correctly — see the module comment above).
 """
 
 from __future__ import annotations
@@ -40,9 +56,15 @@ def simulate(rates: PlayerRates, proj_minutes: float, minutes_sd: float,
                    0.5 * matchup_pace, 1.6 * matchup_pace)
     poss = player_possessions(minutes, game_len, pace)      # vectorized
 
+    # Parameter-uncertainty stage: how much real evidence backs this rate estimate.
+    # eff_poss<=0 shouldn't happen (fit_rates/prior_only_rates always add >=1 pseudo-
+    # possession of prior), but floor defensively rather than let a Gamma shape of 0 blow up.
+    eff_poss = max(float(getattr(rates, "eff_poss", 0.0) or 0.0), 1.0)
+
     out = {"minutes": minutes, "poss": poss}
     for s in BASE_STATS:
-        mu = rates.per_poss.get(s, 0.0) * poss * opp_adj.get(s, 1.0)
+        theta = rng.gamma(eff_poss, 1.0 / eff_poss, n)         # mean 1, CV = 1/sqrt(eff_poss)
+        mu = rates.per_poss.get(s, 0.0) * poss * opp_adj.get(s, 1.0) * theta
         out[s] = _negbin(mu, disp, rng)
 
     # Offensive/defensive rebounds are DERIVED, not fitted (see DERIVED_STATS): split each

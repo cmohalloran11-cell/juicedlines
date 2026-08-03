@@ -25,6 +25,13 @@ class PlayerRates:
     n_games: int = 0
     sample_weight: float = 0.0    # fraction of the estimate from the sample vs prior
     minutes_sample: list = field(default_factory=list)   # (weight, minutes) for minutes.py
+    # 2026-08: effective PSEUDO-POSSESSIONS behind this rate estimate — (recency-weighted
+    # possessions observed) + (prior pseudo-possessions), i.e. the shrinkage denominator.
+    # This is the parameter-uncertainty knob: a thin sample (few real possessions, estimate
+    # mostly the prior) has a SMALL eff_poss and its rate is genuinely less certain than a
+    # deep, stable sample with the same point estimate. See sim/engine.py's per-trial
+    # rate-uncertainty draw, which uses this as a Gamma shape (CV = 1/sqrt(eff_poss)).
+    eff_poss: float = 0.0
 
 
 def player_possessions(minutes: float, game_len: float, pace: float) -> float:
@@ -48,19 +55,21 @@ def fit_rates(games: list[PlayerGame], league: str, prior_poss: dict,
         for s in BASE_STATS:
             wstat[s] += w * g.stat(s)
 
+    denom = wposs + shrink_poss
     per_poss = {}
     for s in BASE_STATS:
         pr = prior_poss.get(s, 0.0)
-        denom = wposs + shrink_poss
         per_poss[s] = (wstat[s] + shrink_poss * pr) / denom if denom > 0 else pr
 
-    sample_weight = wposs / (wposs + shrink_poss) if (wposs + shrink_poss) > 0 else 0.0
+    sample_weight = wposs / denom if denom > 0 else 0.0
     return PlayerRates(player=games[0].player if games else "", league=league,
                        per_poss=per_poss, eff_games=round(wsum, 2), n_games=len(games),
-                       sample_weight=round(sample_weight, 3), minutes_sample=msample)
+                       sample_weight=round(sample_weight, 3), minutes_sample=msample,
+                       eff_poss=round(denom, 1))
 
 
-def prior_only_rates(league: str, prior_poss: dict) -> PlayerRates:
-    """A player with no usable games — the prior IS the estimate."""
+def prior_only_rates(league: str, prior_poss: dict, shrink_poss: float = 120.0) -> PlayerRates:
+    """A player with no usable games — the prior IS the estimate, and ALL of its weight is
+    the prior pseudo-possessions (maximum parameter uncertainty for this rate)."""
     return PlayerRates(player="", league=league, per_poss=dict(prior_poss),
-                       eff_games=0.0, n_games=0, sample_weight=0.0)
+                       eff_games=0.0, n_games=0, sample_weight=0.0, eff_poss=shrink_poss)
