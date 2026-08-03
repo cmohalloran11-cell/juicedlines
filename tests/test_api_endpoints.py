@@ -25,6 +25,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("SUPABASE_URL", "")
     monkeypatch.setenv("SUPABASE_JWT_SECRET", "")
+    monkeypatch.setenv("SENTRY_DSN", "")           # never let a test run talk to real Sentry
 
     import store
     store.reset_singleton()

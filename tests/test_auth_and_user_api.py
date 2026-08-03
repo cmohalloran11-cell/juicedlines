@@ -35,6 +35,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("USE_MOCK", "1")            # no live pulls in the background loop
     monkeypatch.setenv("FALLBACK_TO_MOCK", "1")
+    monkeypatch.setenv("SENTRY_DSN", "")           # never let a test run talk to real Sentry
 
     # Point the relational store at a temp SQLite file (and make get_database() return it).
     import store
