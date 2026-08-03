@@ -32,7 +32,7 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true      # turn Pages on via the API (build_type=workflow) — no manual toggle
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: static            # serve the site shell; data comes from the `data` branch
       - id: deploy
