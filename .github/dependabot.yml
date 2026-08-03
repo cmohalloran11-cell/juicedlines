@@ -1,0 +1,22 @@
+# Automated dependency updates. requirements.txt is pinned (~=X.Y.Z, 2026-08) specifically
+# so upgrades are deliberate PRs reviewed + tested by CI (test.yml), not silent floor bumps
+# on a fresh install -- Dependabot is what actually opens those PRs on a schedule instead of
+# someone having to remember to check for updates.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Security patches matter most; group routine version-bump PRs together weekly instead
+    # of one PR per package so they don't flood the PR list.
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

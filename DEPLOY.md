@@ -64,6 +64,44 @@ calls, ephemeral disk, and the ~40 s cold pull exceeds function timeouts).
 
 ---
 
+## Rollback
+
+CI (`.github/workflows/test.yml` + `deploy-prod.yml`'s `test` job) blocks a broken commit
+from reaching production, but it can't catch a runtime-only issue that only shows up under
+real traffic or real upstream data. If that happens, roll back — don't try to hotfix live.
+
+### Option A (static/Vercel)
+The site itself: **Vercel → Deployments → find the last good deployment → "⋯" → Promote to
+Production.** Takes effect immediately, no rebuild.
+The board data (`data` branch): it's force-pushed every ~5 min by `refresh.yml`, so a bad
+*board* (not a bad *site*) self-heals on the next cycle — nothing to roll back manually.
+If a bad board is somehow persisting, disable the workflow (**Actions → refresh board →
+"..." → Disable workflow**) to stop the churn while you investigate, then re-enable it.
+
+### Option B (full server — Render/Railway/Fly/Docker)
+- **Render:** Dashboard → your service → **Events** tab → find the last good deploy →
+  **Rollback to this deploy**. One click, Render redeploys that exact commit.
+- **Railway:** Project → Deployments → find the last good one → **⋮ → Redeploy**.
+- **Fly.io:** `fly releases` to list, then `fly deploy --image <previous-image-ref>` (or
+  `fly releases rollback` if available on your CLI version) to return to it.
+- **Any Docker host without a built-in rollback UI:** re-deploy the previous known-good
+  commit directly — `git checkout <last-good-sha> && docker build ... && docker push ...`
+  (or re-trigger your CI/CD pipeline against that SHA) — then redeploy from that image.
+
+### General playbook (any path)
+1. **Identify the last good commit** — `git log --oneline` on `main`, cross-referenced
+   against when the issue started (check `/health` uptime and the request logs).
+2. **Roll back the deploy** using the platform steps above — don't `git revert` and
+   re-deploy under pressure; that's slower and risks a second mistake mid-incident.
+3. **Once stable, `git revert` the bad commit(s) on `main`** (not `reset --hard` — keep
+   history) so the next normal deploy doesn't reintroduce the same bug, then investigate
+   with the pressure off.
+4. **The database is untouched by a rollback.** Neither deploy path rolls back `history.db`/
+   `juiced.db` schema or data — rolling back code only matters if the bad deploy didn't
+   also write bad data. If it did, that's a separate, deliberate data-fix, not a rollback.
+
+---
+
 ## Environment variables (Juiced 2.0)
 
 All optional — the app runs with none set. Configure on the host (Render/Railway env vars).
@@ -82,6 +120,9 @@ All optional — the app runs with none set. Configure on the host (Render/Railw
 | `AI_MODEL` | `gemini-2.5-flash` | Model for AI Juice (provider-appropriate default). |
 | `RATE_LIMIT_RPM` | `300` | Per-IP requests/minute over `/api/*` (sliding window). `0` disables it entirely. |
 | `SNAPSHOT_INTERVAL` | `180` | Seconds between background board refreshes. |
+| `SENTRY_DSN` | *(unset)* | Enables real-time error monitoring (unhandled exceptions) via Sentry. Unset ⇒ the app never talks to Sentry at all — safe to leave unset locally and on any deployment that doesn't want it. |
+| `SENTRY_ENVIRONMENT` | `production` | Tag shown on Sentry issues (e.g. `staging`, `production`) — only matters if `SENTRY_DSN` is set. |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.0` | Performance-tracing sample rate (`0.0`–`1.0`). Off by default; only matters if `SENTRY_DSN` is set. |
 
 New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/ai/explain?id=`, and the authenticated `/api/me`, `/api/watchlists*`, `/api/portfolio*`.
 

@@ -31,3 +31,12 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run test suite
         run: python -m pytest -q
+      - name: Dependency vulnerability scan (pip-audit)
+        # Non-blocking (continue-on-error): a newly-disclosed CVE in a dependency shouldn't
+        # suddenly block deploying an unrelated, urgent fix. This surfaces known
+        # vulnerabilities in the run log/summary for visibility; Dependabot (see
+        # .github/dependabot.yml) is what actually opens the upgrade PRs.
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt || echo "::warning::pip-audit found known vulnerabilities -- see output above. Non-blocking; review and update requirements.txt when convenient."
