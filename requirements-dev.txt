@@ -1,0 +1,15 @@
+# Test-only dependencies -- never needed to RUN the app, only to run its test suite.
+# Kept separate from requirements.txt so a production install doesn't pull test tooling.
+#
+# 2026-08: pytest and httpx were BOTH missing from every requirements file. Every local
+# test run this whole project "passed" only because both happened to already be installed
+# globally on the dev machine, completely independent of this repo -- a genuinely clean
+# `pip install -r requirements.txt` (exactly what CI's runners do) never installed either,
+# so `python -m pytest` failed at "No module named pytest" and, even past that,
+# `from fastapi.testclient import TestClient` requires httpx (an optional dependency of
+# starlette, not bundled by default) and would have failed too. Confirmed by reproducing a
+# genuinely clean venv install locally, matching CI's exact steps -- this wasn't a CI
+# runner quirk, it reproduces 100% of the time in a real clean install.
+-r requirements.txt
+pytest~=9.1.1
+httpx~=0.28.1
