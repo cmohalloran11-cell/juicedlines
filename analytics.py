@@ -1123,6 +1123,40 @@ def attach_market_quality(lines: list[dict]) -> None:
         l["market_book_count"] = len(by_key.get(key, ()))
 
 
+def attach_stat_trust(lines: list[dict]) -> None:
+    """
+    Attach `stat_trust_gamma` — the model's own MEASURED trust in this stat type, from
+    db.stat_gammas (the edge-regression slope of actual-vs-line on model-vs-line, scoped to
+    the CURRENT model_version so it can't blend pre/post-engine-fix history). A stat the
+    model has proven it has no real edge on (γ≈0 — e.g. historically "Runs" for MLB) gets a
+    low trust value here; a stat it's proven itself on (γ high — e.g. "Hits") gets a high one.
+
+    2026-08: added because juice_score/confidence_score previously had NO connection to the
+    ledger's own measured track record at all — two props with identical raw EV/probability
+    inputs scored identically regardless of whether the model has ever actually been right
+    about that stat. valuation.py stays a pure, I/O-free function by design (see its module
+    docstring), so this is computed once per sport HERE and stamped onto each line, the same
+    pattern as attach_market_quality above.
+
+    Default 0.5 (neutral — neither rewarded nor punished) for any stat with too little graded
+    history yet to have a measured gamma. Call AFTER attach_projections, same as
+    attach_market_quality.
+    """
+    by_sport: dict[str, dict] = {}
+    for l in lines:
+        sport = l.get("sport")
+        stat = l.get("stat_type")
+        if not sport or not stat:
+            continue
+        if sport not in by_sport:
+            try:
+                by_sport[sport] = db.stat_gammas(sport)
+            except Exception:
+                by_sport[sport] = {}
+        gammas = by_sport[sport]
+        l["stat_trust_gamma"] = gammas.get(stat.lower(), 0.5)
+
+
 def attach_game_ids(lines: list[dict]) -> None:
     """
     Attach `game_id` so the parlay builder can spot CORRELATED legs — two picks from the

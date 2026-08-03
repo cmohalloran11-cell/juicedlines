@@ -113,6 +113,7 @@ _KEEP = (
     "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
     "market_book_count",                # juice_score's market-quality component (attach_market_quality)
+    "stat_trust_gamma",                 # juice_score's measured-per-stat-trust component (attach_stat_trust)
 )
 
 # The paywall: everything a projection produces is PREMIUM. Stripping these leaves the free
@@ -122,7 +123,7 @@ _KEEP = (
 _PREMIUM_FIELDS = frozenset({
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n", "model_raw", "model_median",
     "bball_confidence", "tennis_confidence", "model_floor", "model_ceiling",
-    "surface", "model_agreement", "elo_eff_matches", "market_book_count",
+    "surface", "model_agreement", "elo_eff_matches", "market_book_count", "stat_trust_gamma",
     "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",
     "lineup_slot", "lineup_status", "workload_status", "layoff_days", "workload_outs",
 })
@@ -165,6 +166,10 @@ def main() -> None:
         analytics.attach_market_quality(lines)   # juice_score's cross-book coverage signal
     except Exception as exc:
         errors["market_quality"] = str(exc)
+    try:
+        analytics.attach_stat_trust(lines)   # juice_score's measured-per-stat-trust signal
+    except Exception as exc:
+        errors["stat_trust"] = str(exc)
 
     # Direction-invariant validation (2026-07-29 Over/Under bias audit): every exported
     # projection must satisfy Projection > Line ⇒ P(Over) > 50% (and the reverse). The engines

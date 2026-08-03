@@ -201,6 +201,30 @@ def test_juice_score_missing_signals_stay_neutral_not_penalized():
     assert valuation.juice_score(minimal) > 0
 
 
+def test_juice_ev_component_scales_with_measured_stat_trust():
+    # 2026-08 fix: the EV component used to reward a stat's EV at face value even after
+    # db.stat_gammas had PROVEN the model has no real edge on it (gamma near 0 -- actual
+    # outcomes don't track the model's predictions for that stat at all). Now attach_stat_trust
+    # stamps a measured `stat_trust_gamma` onto the line and the EV component is discounted by
+    # min(1, 2*gamma), so a proven-untrustworthy stat can't carry its EV score at full weight.
+    base = {"model_prob": 0.7, "model_n": 20, "proj_kind": "engine", "model_proj": 2.0,
+            "line": 1.5, "model_edge": 0.5, "over_implied": 0.55, "under_implied": 0.55}
+    untrusted = {**base, "stat_trust_gamma": 0.0}    # proven no edge on this stat
+    neutral = {**base}                                # no measured history yet -- default 0.5
+    trusted = {**base, "stat_trust_gamma": 1.0}       # proven real edge on this stat
+
+    ev_untrusted = next(f for f in valuation.juice_factors(untrusted) if f["factor"] == "Expected Value")
+    ev_neutral = next(f for f in valuation.juice_factors(neutral) if f["factor"] == "Expected Value")
+    ev_trusted = next(f for f in valuation.juice_factors(trusted) if f["factor"] == "Expected Value")
+
+    assert ev_untrusted["value"] == 0.0, "gamma=0 must fully zero out the EV component"
+    # gamma=0.5 (neutral, no data yet) must NOT be penalized -- same as no data at all
+    assert ev_neutral["value"] == valuation.juice_factors(base)[0]["value"]
+    # gamma>=0.5 is capped at full credit, not further boosted
+    assert ev_trusted["value"] == ev_neutral["value"]
+    assert valuation.juice_score(untrusted) < valuation.juice_score(neutral)
+
+
 def test_confidence_factors_decompose_the_score():
     # The three real components must sum to the confidence score (the honest breakdown).
     line = {"model_prob": 0.72, "model_n": 18, "proj_kind": "engine"}

@@ -241,9 +241,23 @@ def _juice_components(line: dict[str, Any], model_prob: Optional[float]) -> dict
     # 1. Expected Value — the recommended side's real (dampened) EV. Unpriced (demon/goblin)
     # legs have no EV to reward or punish, so they get the neutral default, not a penalty for
     # a number that was never computable in the first place.
+    #
+    # 2026-08: scaled by the model's own MEASURED trust in this stat (attach_stat_trust →
+    # stat_trust_gamma, from db.stat_gammas — the edge-regression slope of actual-vs-line on
+    # model-vs-line, per stat, from the graded ledger). Before this, a stat the model has
+    # historically had ZERO real edge on (gamma≈0 — e.g. MLB Runs) could score exactly as
+    # high on the EV component as a stat it's proven itself on (gamma high — e.g. Hits),
+    # purely because Juice Score never consulted the model's own track record. gamma=0.5
+    # (the neutral default for a stat with too little graded history to have a measured
+    # value yet) leaves the EV component untouched — this only discounts a stat once it's
+    # been PROVEN untrustworthy, never merely because it hasn't been measured yet.
     rec = recommend_side(model_prob, line) if model_prob is not None else None
     ev = rec["ev"] if rec else None
-    out["ev"] = (_scale(ev, -0.08, 0.15), f"{ev*100:+.1f}% EV" if ev is not None else "not priced")
+    ev_score = _scale(ev, -0.08, 0.15)
+    trust_mult = min(1.0, 2.0 * float(line.get("stat_trust_gamma", 0.5)))
+    out["ev"] = (ev_score * trust_mult,
+                f"{ev*100:+.1f}% EV" + (f" (×{trust_mult:.2f} stat trust)" if trust_mult < 0.99 else "")
+                if ev is not None else "not priced")
 
     # 2. Confidence — reuse the existing, real confidence score.
     conf = confidence_score(line) / 100.0
