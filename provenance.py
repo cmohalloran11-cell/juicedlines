@@ -27,14 +27,41 @@ MODEL_VERSIONS: dict[str, str] = {
     # reflects that fallback, not the real engine — bumped so db.py's calibration queries
     # (stat_gammas/prob_calibration/interval_width/stat_biases, all model_version-scoped)
     # can't blend the two models' outcomes into one calibration fit.
-    "MLB": "mlb-1.1.0",
+    #
+    # 1.2.0 (2026-08): two-stage uncertainty propagation. Every stat used to draw its
+    # outcome from a rate treated as a FIXED constant across all Monte Carlo trials — only
+    # outcome (sampling) variance was represented. Each trial now first draws its own
+    # per-stat rate-uncertainty multiplier (Gamma, scaled by how much real evidence backs
+    # that rate — form["_eff_pa"]) before the outcome draw: Var(Y) = E[Var(Y|theta)] +
+    # Var(E[Y|theta]), not outcome variance alone. Widens intervals for thin samples
+    # (call-ups, injury returns) without moving point estimates — approved for production
+    # baseline 2026-08 (see backtest.version_history for pre/post comparison once enough
+    # games are graded under this version).
+    "MLB": "mlb-1.2.0",
     # 1.1.0 (2026-08): fixed tiebreak_prob() -- it averaged two point-win probabilities into
     # one constant instead of solving the real alternating-server sequence, a provably
     # different (not just approximate) process. Shifts tiebreak/match win probability by a
     # real, measurable amount for any asymmetric matchup. Bumped for the same
     # don't-blend-pre/post-fix graded rows reason as MLB above.
-    "Tennis": "tennis-1.1.0",
-    "WNBA": "wnba-1.0.0",
+    #
+    # 1.2.0 (2026-08): two-stage uncertainty propagation (see MLB 1.2.0 comment for the
+    # general principle). Each sim now draws its own serve probability from
+    # Beta(rate*eff_n, (1-rate)*eff_n) instead of reusing one shared point estimate for the
+    # whole match — pulls thin-sample favorites' win probability toward 0.5 relative to the
+    # naive point-estimate calculation (a real, expected effect of honest parameter
+    # uncertainty on a nonlinear win-probability function). Approved for production
+    # baseline 2026-08.
+    "Tennis": "tennis-1.2.0",
+    # 1.1.0 (2026-08): two-stage uncertainty propagation (same principle as MLB/Tennis
+    # above) PLUS real measured pts/reb/ast combo correlation (basketball/model/combo_corr.py
+    # — previously combos only correlated incidentally through shared minutes/pace, ~0.05-0.08
+    # vs. real box scores' ~0.15-0.47). Note: the WNBA minutes-shrinkage fix
+    # (minutes_shrink_games 0->1.5, basketball/config.py) shipped BEFORE this bump and was
+    # deliberately NOT version-bumped on its own — it only materially affects thin-sample
+    # (debut-game) players, and bumping then would have discarded ~6,790 rows of still-valid
+    # calibration history for a narrow-effect change. This bump covers the two materially
+    # broader changes above. Approved for production baseline 2026-08.
+    "WNBA": "wnba-1.1.0",
 }
 _DEFAULT_MODEL_VERSION = "1.0.0"
 
