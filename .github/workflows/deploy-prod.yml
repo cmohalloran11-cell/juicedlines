@@ -6,6 +6,11 @@ name: deploy to production (vercel)
 # starving the real production deploy. This workflow only fires on real SITE changes (a push
 # to main touching the app, or a manual run), so production deploys stay well under the cap.
 #
+# 2026-08: added a `test` job that `deploy` now depends on (`needs: test`) — previously a
+# push to main deployed to production regardless of whether the test suite passed. A manual
+# "Run workflow" dispatch still runs the tests first too (no bypass), on the theory that an
+# emergency deploy is exactly when you can least afford a silent regression.
+#
 # ── ONE-TIME SETUP ──────────────────────────────────────────────────────────────────────
 #   1. Vercel → Project → Settings → Git → Deploy Hooks → "Create Hook":
 #        Name: prod   ·   Branch: main   → copy the generated URL.
@@ -14,8 +19,8 @@ name: deploy to production (vercel)
 #   3. (Strongly recommended) In Vercel → Settings → Git, turn OFF automatic deployments
 #      (or disable Preview Deployments) so ONLY this hook deploys — that permanently stops
 #      the data-branch previews from eating the cap.
-# After that, every push to main that touches the app auto-deploys to production, and you
-# can also deploy on demand from the Actions tab → "Run workflow".
+# After that, every push to main that touches the app auto-deploys to production (once tests
+# pass), and you can also deploy on demand from the Actions tab → "Run workflow".
 
 on:
   workflow_dispatch: {}            # manual "Run workflow" button (deploy on demand)
@@ -27,7 +32,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run test suite
+        run: python -m pytest -q
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Vercel production deploy

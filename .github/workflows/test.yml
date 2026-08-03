@@ -1,0 +1,33 @@
+name: test
+
+# Runs the pytest suite (136+ tests across tests/, basketball/tests/, tennis/tests/) on
+# every push and pull request. Added 2026-08: a production-readiness audit found the repo
+# had real test coverage but NOTHING ran it automatically — a regression could reach `main`
+# (and auto-deploy to production via deploy-prod.yml) with zero test gate. This workflow is
+# the general CI status check (visible on PRs); deploy-prod.yml additionally runs the same
+# suite as a hard gate before it will trigger the production deploy hook.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run test suite
+        run: python -m pytest -q
