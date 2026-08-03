@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — JUICED</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23080b05'/%3E%3Cpath d='M58 8 L24 54 H46 L40 92 L78 40 H54 Z' fill='%23b6f01a'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#060803;--surface:#0e1308;--card:#151b0d;--border:#2b3520;--border2:#3c4a27;--accent:#b6f01a;--text:#eafce0;--muted:#8b9b72;--font:'Inter','Segoe UI',system-ui,-apple-system,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(1100px 620px at 72% -14%,#1a2e05 0%,var(--bg) 55%);color:var(--text);font-family:var(--font);line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+.wrap{max-width:760px;margin:0 auto;padding:0 22px 80px}
+.nav{display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:900;font-style:italic;color:#fff;text-decoration:none}
+.mark{width:26px;height:26px;border-radius:7px;background:#0a0e06;border:1px solid rgba(182,240,26,.28);display:flex;align-items:center;justify-content:center}
+.mark svg{width:17px;height:17px}
+.nav a.back{margin-left:auto;color:var(--muted);font-size:13px;font-weight:600;text-decoration:none}
+.nav a.back:hover{color:var(--text)}
+h1{font-size:34px;font-weight:900;letter-spacing:-.8px;margin:44px 0 6px}
+.updated{color:var(--muted);font-size:13px;margin-bottom:34px}
+h2{font-size:19px;font-weight:800;margin:34px 0 10px;letter-spacing:-.2px}
+p,li{color:#cfe0c2;font-size:14.5px}
+p{margin-bottom:12px}
+ul,ol{margin:0 0 14px 22px}
+li{margin-bottom:6px}
+table{width:100%;border-collapse:collapse;margin:14px 0 20px;font-size:13.5px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+td{color:#cfe0c2}
+.callout{background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:16px 18px;margin:20px 0;font-size:13.5px;color:var(--muted)}
+.callout b{color:var(--text)}
+footer{border-top:1px solid var(--border);padding:26px 22px;margin-top:50px;text-align:center;color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="nav">
+  <a href="./index.html" class="brand"><span class="mark"><svg viewBox="0 0 100 100"><path d="M58 8 L24 54 H46 L40 92 L78 40 H54 Z" fill="var(--accent)"/></svg></span>JUICED</a>
+  <a href="./index.html" class="back">← Back to home</a>
+</div>
+<div class="wrap">
+  <h1>Privacy Policy</h1>
+  <div class="updated">Last updated: <span id="upd"></span> · Effective for the free public beta</div>
+
+  <div class="callout">
+    <b>Plain-language summary:</b> JUICED doesn't sell your data. We collect the minimum
+    needed to run your account (email, and whatever you save — watchlists, portfolio
+    entries, alerts). If you use it as a guest, that data stays in your own browser and
+    never reaches our servers. We don't currently process any payment information because
+    JUICED doesn't have a paid tier yet.
+  </div>
+
+  <h2>1. What we collect</h2>
+  <table>
+    <tr><th>If you're signed in</th><th>What it is</th></tr>
+    <tr><td>Account info</td><td>Email address and display name, from your chosen sign-in method (Google OAuth or email/password via Supabase). We don't set or see your password directly — that's handled by Supabase.</td></tr>
+    <tr><td>Watchlists</td><td>Props you've saved to track.</td></tr>
+    <tr><td>Portfolio entries</td><td>Plays you've logged (line, side, stake, odds, result) for your own tracking — this is self-reported by you, not a real wager placed through us.</td></tr>
+    <tr><td>Alerts</td><td>The metric/threshold rules you've configured (e.g. "notify when Juice Score ≥ 80").</td></tr>
+  </table>
+  <table>
+    <tr><th>If you're a guest (not signed in)</th><th>What it is</th></tr>
+    <tr><td>Local watchlist/portfolio/notes</td><td>Stored only in your browser's local storage. It never reaches our servers and is lost if you clear browser data or switch devices.</td></tr>
+  </table>
+
+  <h2>2. What we don't collect</h2>
+  <p>We do not collect payment or billing information of any kind — JUICED is currently
+  free and has no paid tier or checkout flow. We do not request or store government ID,
+  SSN, or other sensitive identity documents. We do not sell your personal data to third
+  parties, and we don't use it for third-party advertising.</p>
+
+  <h2>3. Automatically collected technical data</h2>
+  <p>Like most web services, our server logs basic request metadata (IP address,
+  timestamp, requested path, response status) for operating and securing the Service —
+  for example, detecting abuse and diagnosing errors. If error-monitoring is enabled on a
+  given deployment, a crash report may include the request path and a stack trace, but is
+  configured to avoid capturing full request bodies or credentials.</p>
+
+  <h2>4. Third parties we rely on</h2>
+  <table>
+    <tr><th>Service</th><th>Why</th></tr>
+    <tr><td>Supabase</td><td>Authentication (sign-in) and, depending on deployment, the account database.</td></tr>
+    <tr><td>MLB Stats API, ESPN</td><td>Public sports data used to build projections. We don't send them any of your personal data.</td></tr>
+    <tr><td>PrizePicks, Underdog, Sleeper</td><td>Public prop-line data we display for comparison. We are not affiliated with them and don't share your account data with them.</td></tr>
+    <tr><td>Google Gemini or Anthropic (optional, "AI Juice" feature)</td><td>If enabled on a deployment, generates a plain-language explanation of a projection. Only the specific projection's own numbers are sent — never your account info.</td></tr>
+    <tr><td>Xweather (optional)</td><td>Weather conditions for outdoor games. No personal data involved.</td></tr>
+  </table>
+
+  <h2>5. Cookies and local storage</h2>
+  <p>We use browser local/session storage to keep you signed in and to remember
+  preferences (like your watchlist, as a guest, or UI settings like sidebar state). We
+  don't use third-party advertising or tracking cookies.</p>
+
+  <h2>6. Your rights</h2>
+  <p>You can request access to, correction of, or deletion of your account data at any
+  time. Deleting your account removes your stored watchlists, portfolio entries, and
+  alerts. Guest data is entirely in your control already — clearing your browser's local
+  storage removes it immediately, no request needed.</p>
+
+  <h2>7. Data retention</h2>
+  <p>We keep account data for as long as your account exists. Some operational data (like
+  line-movement history) is retained on a rolling window and pruned automatically after a
+  bounded period, independent of any individual account.</p>
+
+  <h2>8. Children's privacy</h2>
+  <p>JUICED is not directed at, and should not be used by, anyone under the legal age for
+  sports wagering content in their jurisdiction. We don't knowingly collect data from
+  anyone underage.</p>
+
+  <h2>9. Changes to this policy</h2>
+  <p>We may update this policy as the Service evolves — particularly if a paid tier is
+  introduced in the future, which would add a payment processor to the list above and be
+  reflected here before it happens. Material changes will be reflected by updating the
+  date at the top of this page.</p>
+
+  <h2>10. Contact</h2>
+  <p>Questions about this policy, or a request to access/delete your data, can be sent
+  through the feedback option available in the app once signed in.</p>
+
+  <div class="callout">
+    This page is a good-faith baseline appropriate for a free informational beta with no
+    payment processing. It is not a substitute for review by a qualified attorney,
+    particularly once the Service accepts payment or expands its jurisdictional footprint.
+  </div>
+</div>
+<footer>© <span id="yr"></span> JUICED · Informational only · Not financial advice · 18+</footer>
+<script>document.getElementById('yr').textContent=new Date().getFullYear();document.getElementById('upd').textContent=new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'});</script>
+</body>
+</html>

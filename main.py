@@ -50,6 +50,34 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 
+# ── error monitoring (optional, env-gated) ──────────────────────────────────────
+# Fully opt-in: with no SENTRY_DSN set (the default -- nothing set locally or in most
+# deploys), this block does nothing and the app never talks to Sentry. Set SENTRY_DSN on
+# a deployment to get real-time alerting on unhandled exceptions instead of only finding
+# out about a production issue from a user report or by reading logs after the fact.
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+            release=None,   # provenance.code_sha() isn't available yet at this import point;
+                            # Sentry still groups issues fine without an explicit release tag.
+            # Off by default -- performance tracing samples request bodies/timings, which is
+            # more than this app needs by default. Set SENTRY_TRACES_SAMPLE_RATE (0.0-1.0) to
+            # opt in to tracing on a deployment that wants it.
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+            send_default_pii=False,   # never send request bodies/user IPs/cookies by default
+        )
+        log.info("Sentry error monitoring enabled (environment=%s)",
+                os.getenv("SENTRY_ENVIRONMENT", "production"))
+    except Exception as exc:
+        # Never let a monitoring-tool problem take down the app it's supposed to be
+        # watching -- log and continue exactly as if SENTRY_DSN had been unset.
+        log.warning("Sentry init failed, continuing without it: %s", exc)
+
+
 def _int_env(name: str, default: int) -> int:
     """int(os.getenv(...)) with a malformed value logging a clear warning and falling back
     to `default`, instead of a raw ValueError traceback crashing the process at import time
@@ -280,6 +308,16 @@ def app_page():
     # deploy both files are siblings; on the FastAPI server we map it explicitly so the
     # launch buttons resolve instead of 404ing.
     return FileResponse(STATIC_DIR / "app.html", headers=_HTML_HEADERS)
+
+
+@app.get("/terms.html")
+def terms_page():
+    return FileResponse(STATIC_DIR / "terms.html", headers=_HTML_HEADERS)
+
+
+@app.get("/privacy.html")
+def privacy_page():
+    return FileResponse(STATIC_DIR / "privacy.html", headers=_HTML_HEADERS)
 
 
 @app.get("/dashboard")
