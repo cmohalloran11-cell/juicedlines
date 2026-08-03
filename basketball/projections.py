@@ -22,6 +22,7 @@ from .model import priors as PR
 from .model import minutes as MIN
 from .model import opponent as OPP
 from .model.pace import matchup_pace
+from .model.combo_corr import empirical_combo_corr
 from .sim import engine as E
 
 # PrizePicks/Underdog "Fantasy Score" weights (standard DFS scoring).
@@ -182,9 +183,16 @@ def project_player(league: str, name: str, news_minutes: float | None = None,
             split_games = []
     orb_share = PR.fit_orb_share(split_games, ref.position)
 
+    # Real per-player pts/reb/ast dependence from their own game log (falls back to a
+    # pooled empirical default inside empirical_combo_corr for a thin sample; None below
+    # its min-games floor, which correctly SKIPS induction rather than forcing a default
+    # onto someone we truly know nothing about).
+    combo_corr = empirical_combo_corr(games)
+
     sim = E.simulate(rates, proj_min, min_sd, pace, lc.get("pace_sd_frac", 0.06),
                      game_len, lc.get("disp", 0.12), opp_adj=opp_adj,
-                     n=n or cfg("model", "n_sims"), rng=rng, orb_share=orb_share)
+                     n=n or cfg("model", "n_sims"), rng=rng, orb_share=orb_share,
+                     combo_corr=combo_corr)
 
     proj = {
         "player": ref.name, "team": ref.team, "team_id": ref.team_id,

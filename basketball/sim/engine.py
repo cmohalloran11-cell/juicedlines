@@ -31,6 +31,7 @@ import numpy as np
 
 from .. import BASE_STATS, COMBOS, DERIVED_STATS
 from ..model.rates import PlayerRates, player_possessions
+from ..model.combo_corr import induce_corr, _COMBO_KEYS
 
 
 def _negbin(mu: np.ndarray, disp: float, rng: np.random.Generator) -> np.ndarray:
@@ -47,7 +48,7 @@ def simulate(rates: PlayerRates, proj_minutes: float, minutes_sd: float,
              matchup_pace: float, pace_sd_frac: float, game_len: float,
              disp: float, opp_adj: dict | None = None, n: int = 10000,
              rng: np.random.Generator | None = None,
-             orb_share: float | None = None) -> dict:
+             orb_share: float | None = None, combo_corr=None) -> dict:
     rng = rng or np.random.default_rng()
     opp_adj = opp_adj or {}
 
@@ -66,6 +67,17 @@ def simulate(rates: PlayerRates, proj_minutes: float, minutes_sd: float,
         theta = rng.gamma(eff_poss, 1.0 / eff_poss, n)         # mean 1, CV = 1/sqrt(eff_poss)
         mu = rates.per_poss.get(s, 0.0) * poss * opp_adj.get(s, 1.0) * theta
         out[s] = _negbin(mu, disp, rng)
+
+    # Re-pair pts/reb/ast to carry the player's REAL measured combo correlation (see
+    # model/combo_corr.py) instead of just whatever correlation falls out incidentally
+    # from sharing minutes/pace/possessions (measured ~0.05-0.08 -- real box scores run
+    # much higher). Every marginal stays exactly the same values, just re-ordered — must
+    # run BEFORE the orb/drb split below so the derived rebound split tracks the
+    # CORRELATION-INDUCED reb array, not the pre-induction one.
+    if combo_corr is not None and all(k in out for k in _COMBO_KEYS):
+        reordered = induce_corr([out[k] for k in _COMBO_KEYS], combo_corr)
+        for k, arr in zip(_COMBO_KEYS, reordered):
+            out[k] = arr
 
     # Offensive/defensive rebounds are DERIVED, not fitted (see DERIVED_STATS): split each
     # simulated rebound binomially at the player's offensive share. This inherits the

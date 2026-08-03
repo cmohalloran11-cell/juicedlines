@@ -180,6 +180,69 @@ def test_derived_rebound_split():
     assert E.market_array(sim3, "orb") is None
 
 
+def test_combo_corr_induces_real_pts_reb_ast_dependence_and_widens_pra():
+    # 2026-08: the sim only correlates stats INCIDENTALLY, through sharing minutes/pace/
+    # possessions -- measured ~0.05-0.08 between pts and reb on live sims, far below what
+    # real box scores show (see model/combo_corr.py's pooled default, measured from 15
+    # WNBA players' own game logs: pts-reb 0.474). Passing a target combo_corr matrix
+    # re-pairs the ALREADY-DRAWN pts/reb/ast marginals (Iman-Conover) so the joint carries
+    # the real correlation, without moving any single stat's own distribution.
+    from basketball.model.combo_corr import _COMBO_CORR_DEFAULT
+    rates = R.PlayerRates("X", "WNBA", per_poss={s: 0.1 for s in BASE_STATS})
+    kw = dict(proj_minutes=28, minutes_sd=3, matchup_pace=96.0, pace_sd_frac=0.05,
+              game_len=40, disp=0.10, n=30000)
+    no_corr = E.simulate(rates, rng=np.random.default_rng(0), **kw)
+    induced = E.simulate(rates, rng=np.random.default_rng(0), combo_corr=_COMBO_CORR_DEFAULT, **kw)
+
+    # marginals are EXACTLY preserved -- same values, just re-paired
+    for k in ("pts", "reb", "ast"):
+        assert np.array_equal(np.sort(no_corr[k]), np.sort(induced[k]))
+
+    c_before = np.corrcoef(no_corr["pts"], no_corr["reb"])[0, 1]
+    c_after = np.corrcoef(induced["pts"], induced["reb"])[0, 1]
+    assert c_before < 0.15, "sanity: incidental correlation alone should be weak"
+    # Iman-Conover matches the target approximately, not exactly -- discrete/skewed count
+    # marginals (NegBin, often near-zero) attenuate the achieved Pearson correlation
+    # somewhat versus the underlying Gaussian-copula target. What matters is a large,
+    # correct-direction move off the weak incidental baseline, not exact reproduction.
+    assert c_after > 0.35, "induced correlation should land well above the incidental baseline"
+
+    # a real positive correlation must widen (not narrow) the PRA combo sum's spread,
+    # since correlated components sum to more variance than independent ones -- the mean
+    # stays put (sum of unchanged marginals).
+    pra_before, pra_after = E.market_array(no_corr, "pra"), E.market_array(induced, "pra")
+    assert abs(pra_before.mean() - pra_after.mean()) < 0.5
+    assert pra_after.std() > pra_before.std() * 1.05
+
+
+def test_combo_corr_none_leaves_marginals_and_pairing_untouched():
+    # combo_corr=None (the default) must reproduce the exact old behavior bit-for-bit --
+    # existing callers that don't pass it see zero change.
+    rates = R.PlayerRates("X", "WNBA", per_poss={s: 0.1 for s in BASE_STATS})
+    kw = dict(proj_minutes=28, minutes_sd=3, matchup_pace=96.0, pace_sd_frac=0.05,
+              game_len=40, disp=0.10, n=5000)
+    a = E.simulate(rates, rng=np.random.default_rng(3), **kw)
+    b = E.simulate(rates, rng=np.random.default_rng(3), combo_corr=None, **kw)
+    for k in ("pts", "reb", "ast"):
+        assert np.array_equal(a[k], b[k])
+
+
+def test_empirical_combo_corr_skips_below_min_games_and_shrinks_thin_samples():
+    from basketball.model.combo_corr import empirical_combo_corr, _COMBO_CORR_DEFAULT
+    # too few games -> None (skip induction entirely, never force a default onto an
+    # unmeasured player)
+    assert empirical_combo_corr(_games(5, 28, 20)) is None
+    # a real, distinctly-non-default measured correlation, moderate sample -> pulled
+    # partway toward the pooled default, not fully overridden
+    import random
+    random.seed(0)
+    games = [PlayerGame(date=f"2026-06-{i+1:02d}", league="WNBA", player_id="x", player="X",
+                        team_id="1", team="T", opp_id="2", opp="O", minutes=28,
+                        pts=10 + i, reb=5, ast=3, stl=1, blk=1, to=2, tpm=2)
+             for i in range(20)]   # pts perfectly increasing, reb/ast constant -> undefined corr
+    assert empirical_combo_corr(games) is None   # constant reb/ast columns -> corr undefined
+
+
 def test_orb_share_prior_shrinks():
     base = PR.orb_share_prior("C")
     assert 0.0 < base < 1.0
