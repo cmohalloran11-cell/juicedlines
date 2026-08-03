@@ -1456,7 +1456,21 @@ async function render(){renderNav();const r=cur();
   $('#greet').style.display=r==='dashboard'?'':'none';$('#subgreet').style.display=r==='dashboard'?'':'none';
   try{await fn(arg)}catch(e){$('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load this page.<br><span class="muted">${e}</span><br><button class="btn pri" style="margin-top:14px" onclick="render()">Retry</button></div>`}}
 window.addEventListener('hashchange',()=>{closeDrawer();closeSide();render()});
-$('#globalsearch').addEventListener('keydown',e=>{if(e.key==='Enter'){go('projections');setTimeout(()=>{const f=$('#f-stat');if(f){f.value=e.target.value;f.dispatchEvent(new Event('input'))}},100)}});
+// 2026-08 fix: this used to target #f-stat, an element that never existed anywhere in
+// this file (the real search input is #pq, rendered by vProjections) — so typing a query
+// and hitting Enter silently navigated to Projections with the query dropped on the
+// floor. PF.q is the actual filter state vProjections reads (line ~613) and applies via
+// applyProj() on render, so setting it before navigating is enough — no DOM timing hack.
+$('#globalsearch').addEventListener('keydown',e=>{if(e.key==='Enter'){PF.q=e.target.value;PF.page=1;go('projections')}});
+// ⌘K / Ctrl+K focuses global search from anywhere (the hint shown next to the input was
+// never actually wired to a listener).
+window.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){
+    e.preventDefault();
+    const el=$('#globalsearch');
+    if(el){el.focus();el.select()}
+  }
+});
 
 async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
   // On static, auth.json can't know if the Vercel AI function has a key — probe it.
