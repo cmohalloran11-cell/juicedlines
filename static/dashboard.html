@@ -259,6 +259,28 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 
 <script>
 const $=(s,r=document)=>r.querySelector(s),el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
+// 2026-08 (production-readiness audit, flagged independently by both a performance and a
+// frontend pass): /api/projections?...&limit=8000 -- a large payload -- was independently
+// re-fetched from scratch by ~15 different call sites across this file (most using the
+// EXACT same query string), with zero caching, even though the underlying board data only
+// changes once per SNAPSHOT_INTERVAL (~3 min) server-side. Every route/view switch re-hit
+// the network and re-did dashboard.py's _drop()/juice_score()/etc. over the whole pool
+// server-side for no reason. Short in-memory cache, keyed by the exact URL, scoped ONLY to
+// GET /api/projections (never watchlist/portfolio/alert mutations or anything else) --
+// zero changes needed at any of the 15 call sites, they all go through this same api().
+// Caching the in-flight PROMISE (not just the resolved value) also dedupes concurrent
+// requests for the same URL fired within the same tick (e.g. Promise.all([...,
+// api('/api/projections?...')]) from two views navigated in quick succession).
+const _projCache={};
+const _PROJ_CACHE_TTL=30000;
+function _cachedProjectionsFetch(url,doFetch){
+  const hit=_projCache[url];
+  if(hit&&Date.now()-hit.t<_PROJ_CACHE_TTL)return hit.p;
+  const p=doFetch();
+  _projCache[url]={t:Date.now(),p};
+  p.catch(()=>{delete _projCache[url]});   // don't cache a failed fetch
+  return p;
+}
 const api=(p,opt={})=>{
   // Static: prebuilt JSON for everything EXCEPT /api/ai/* — those hit the Vercel serverless
   // function (which holds the Gemini key). Relative URL so it resolves under the site root.
@@ -266,7 +288,10 @@ const api=(p,opt={})=>{
   const h={'Content-Type':'application/json'};
   if(AUTH.token)h['Authorization']='Bearer '+AUTH.token; else if(AUTH.dev)h['X-Dev-User']='demo';
   const url=(STATIC && p.startsWith('/api/'))?'.'+p:p;
-  return fetch(url,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined}).then(r=>r.json());};
+  const doFetch=()=>fetch(url,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined}).then(r=>r.json());
+  if(!STATIC&&(!opt.method||opt.method==='GET')&&p.startsWith('/api/projections'))
+    return _cachedProjectionsFetch(p,doFetch);
+  return doFetch();};
 const fmt=n=>n==null?'—':(+n).toLocaleString(undefined,{maximumFractionDigits:2});
 const signed=n=>n==null?'—':(n>0?'+':'')+(+n).toFixed(Math.abs(n)<10?1:0);
 const pct=n=>n==null?'—':(n>0?'+':'')+(+n).toFixed(1)+'%';
