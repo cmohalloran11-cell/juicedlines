@@ -80,6 +80,8 @@ All optional — the app runs with none set. Configure on the host (Render/Railw
 | `GEMINI_API_KEY` | *(unset)* | Google Gemini key — enables AI Juice (`/api/ai/*`) when `AI_PROVIDER=gemini`. |
 | `ANTHROPIC_API_KEY` / `AI_API_KEY` | *(unset)* | Anthropic key — used when `AI_PROVIDER=anthropic`. |
 | `AI_MODEL` | `gemini-2.5-flash` | Model for AI Juice (provider-appropriate default). |
+| `RATE_LIMIT_RPM` | `300` | Per-IP requests/minute over `/api/*` (sliding window). `0` disables it entirely. |
+| `SNAPSHOT_INTERVAL` | `180` | Seconds between background board refreshes. |
 
 New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/ai/explain?id=`, and the authenticated `/api/me`, `/api/watchlists*`, `/api/portfolio*`.
 
