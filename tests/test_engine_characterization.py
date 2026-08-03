@@ -13,11 +13,54 @@ while making the combo sum respect real baseball dependence.
 """
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 import projector_bridge as pb
 from projector.models import montecarlo as mc
+
+
+def test_vendored_engine_works_without_the_sibling_stat_projector_repo():
+    # 2026-08 regression guard. projector_bridge.py vendors a standalone copy of the real
+    # engine at projector/models/mlb_model.py specifically so a deploy that only checks out
+    # this repo (no ../stat-projector sibling) can still run it -- see projector_bridge.py's
+    # own docstring. That vendored copy previously drifted out of sync (two pasted-together,
+    # broken definitions of project_batter/project_pitcher, one calling helper functions that
+    # were never defined) and crashed with a NameError on every single call -- invisible in
+    # local dev ONLY because a sibling ../stat-projector checkout happened to exist and take
+    # sys.path precedence over the vendored copy, silently masking the break. In a real deploy
+    # (no sibling directory) every MLB projection request raised, was swallowed by
+    # projector_bridge.project_player's blanket except-Exception, and the board silently fell
+    # back to the cruder empirical-median model for 100% of MLB props with zero user-facing
+    # signal that the "real" engine was dark. This test spawns a FRESH subprocess that imports
+    # projector.models.mlb_model directly (bypassing projector_bridge's sys.path insert
+    # entirely) so it can never accidentally resolve to the sibling repo, matching exactly
+    # what a real deploy sees.
+    repo_root = Path(__file__).resolve().parent.parent
+    script = (
+        "from projector.models import mlb_model as mm\n"
+        "assert 'stat-projector' not in mm.__file__, mm.__file__\n"
+        "form = {'p_hit':0.26,'p_hr':0.035,'p_bb':0.09,'p_k':0.22,'exp_pa':4.3,"
+        "'exp_runs':0.5,'exp_rbi':0.5,'exp_sb':0.05}\n"
+        "out = mm.project_batter(form, {}, n=500, use_ensemble=False)\n"
+        "assert 'hits' in out and out['hits'].mean is not None\n"
+        "pform = {'xfip':3.8,'p_k':0.24,'p_bb':0.07,'exp_bf':24,'exp_er':2.5,'exp_ip':5.5}\n"
+        "pout = mm.project_pitcher(pform, {}, n=500, use_ensemble=False)\n"
+        "assert 'strikeouts' in pout and pout['strikeouts'].mean is not None\n"
+        "print('OK')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=str(repo_root),
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0 and "OK" in result.stdout, (
+        f"vendored engine crashed in a clean subprocess (matches a real deploy):\n"
+        f"stdout={result.stdout}\nstderr={result.stderr}"
+    )
 
 
 # ── _induce_corr: marginals must be preserved, only pairing changes ───────────
