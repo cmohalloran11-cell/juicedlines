@@ -267,6 +267,15 @@ const timeOf=s=>{if(!s)return'';try{return new Date(s).toLocaleTimeString([],{ho
 const rel=ts=>{if(!ts)return'';const s=(Date.now()-new Date(ts).getTime())/1000;if(isNaN(s))return'';if(s<0||s<45)return'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'};
 const jColor=v=>v>=70?'var(--accent)':v>=55?'#d7e04a':'#e8c84a';
 const cap=s=>(s||'').replace(/^\w/,m=>m.toUpperCase());
+// 2026-08 (production-readiness audit, defense-in-depth): player/team/stat names come
+// straight from third-party feeds (PrizePicks/Underdog/Sleeper via pullers.py) with no
+// server-side sanitization, and flow unescaped into innerHTML template literals all over
+// this file. No live exploit found — none of today's sources have ever returned a name
+// containing HTML — but there's no reason to trust that indefinitely. Applied to the
+// highest-traffic shared rendering paths (prop table rows, the player page header) where
+// this untrusted text is interpolated as plain content, not the many spots elsewhere that
+// intentionally build markup around a trusted, app-controlled value.
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // ── SVG icon system (replaces all emoji) ──
 const IC2={
   bolt:'M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z',
@@ -428,9 +437,9 @@ function closeSide(){$('.side').classList.remove('open');$('#sidescrim').classLi
 // from the real mean (model_proj) server-side and are untouched by this.
 const dispProj=x=>x.median!=null?(x.projection+x.median)/2:x.projection;
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
-  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.team||''} ${x.position?'· '+x.position:''}</div></div></div></td>
-  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${x.stat||''}</div></td>
-  <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${x.team||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${x.opponent}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'}</div><div class="tm">${esc(x.team)||''} ${x.position?'· '+esc(x.position):''}</div></div></div></td>
+  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${esc(x.stat)||''}</div></td>
+  <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${esc(x.team)||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${esc(x.opponent)}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
   <td class="mono" style="font-weight:800" title="Average of the model's mean and median projection">${fmt(dispProj(x))}</td>
   <td class="mono muted">${fmt(x.line)}</td>
   <td class="mono ${x.edgePct>=0?'pos':'neg'}" style="font-weight:800">${x.unpriced?'<span class="muted" style="font-weight:600;font-size:10.5px">not priced</span>':pct(x.edgePct)}</td>
@@ -642,10 +651,10 @@ function applyProj(){
 }
 const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
   <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td>
-  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${x.player||'—'}</div><div class="tm">${x.position||''} ${x.startTime?'· '+timeOf(x.startTime):''}</div></div></div></td>
-  <td><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">${teamBadge(x,18)} ${x.team||''}</span></td>
-  <td class="muted">${x.opponent?`${x.isHome?'vs':'@'} ${x.opponent}`:'—'}</td>
-  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${x.stat||''}</div></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'}</div><div class="tm">${esc(x.position)||''} ${x.startTime?'· '+timeOf(x.startTime):''}</div></div></div></td>
+  <td><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">${teamBadge(x,18)} ${esc(x.team)||''}</span></td>
+  <td class="muted">${x.opponent?`${x.isHome?'vs':'@'} ${esc(x.opponent)}`:'—'}</td>
+  <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${esc(x.stat)||''}</div></td>
   <td>${bookLogo(x.source,22)}</td>
   <td class="mono muted">${fmt(x.line)}</td>
   <td class="mono" style="font-weight:800" title="Average of the model's mean and median projection">${fmt(dispProj(x))}</td>
@@ -1089,7 +1098,7 @@ async function vPlayerPage(name){
   PP_ROWS=rows; PP_TOP=top;
   $('#view').innerHTML=`
    <div class="pp-head"><img class="pp-photo" src="${ph(top.headshot)}">
-     <div><div class="nm">${name} ${teamBadge(top,15)}</div><div class="meta">${top.team||''} ${top.position?'· '+top.position:''} · ${top.sport||''}</div></div>
+     <div><div class="nm">${esc(name)} ${teamBadge(top,15)}</div><div class="meta">${esc(top.team)||''} ${top.position?'· '+esc(top.position):''} · ${top.sport||''}</div></div>
      <div class="pp-badges">
        <div class="pp-badge"><div class="v" style="color:${jColor(top.juiceScore)}">${top.juiceScore}</div><div class="l">Juice Score</div></div>
        <div class="pp-badge"><div class="v">${Math.round(top.confidence)}</div><div class="l">Confidence</div></div>
@@ -1375,7 +1384,7 @@ function corrHTML(x){const st=(x.stat||'');
 async function openProp(x,tab){
   SELID=x.id; if(cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}
   const D=$('#drawer');$('#scrim').classList.add('open');D.classList.add('open');
-  D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${x.player} ${oddsTypeBadge(x)}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${x.team||''} · ${cap(x.side)} ${fmt(x.line)} ${x.stat}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
+  D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${esc(x.player)} ${oddsTypeBadge(x)}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${esc(x.team)||''} · ${cap(x.side)} ${fmt(x.line)} ${esc(x.stat)}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
    <div class="dsec" style="border:0;padding-bottom:0"><button class="btn" style="width:100%;justify-content:center" onclick='goPlayer(${JSON.stringify(x.player).replace(/'/g,"&#39;")})'>${icon('user',13)} View Full Player Page</button></div>
    <div class="dsec">${edgeEvKV(x)}</div>
    ${juiceBreakdown(x)}
