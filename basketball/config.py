@@ -41,9 +41,18 @@ CONFIG = {
             # healthy WNBA sample dominates the rough positional prior → tight rates.
             "shrink_poss": 120,
             # minutes: the player's own recency-weighted minutes (short half-life →
-            # tracks current role). No pull to a global midpoint for players with a
-            # sample; the midpoint only applies to zero-game players (via the fallback).
-            "minutes_shrink_games": 0,
+            # tracks current role), regressed toward the role baseline with pseudo-count
+            # k=1.5. 2026-08 fix: this was 0 -- meaning a player's FIRST game (however
+            # fluky -- extended overtime, a blowout benching) became their entire minutes
+            # projection with zero smoothing, only a literal zero-game player ever touched
+            # the baseline fallback. Since the shrink weight is k/(effective_games+k), k=1.5
+            # gives real protection for a 1-3 game sample (e.g. ~60% pull toward baseline at
+            # n=1) while barely touching a player with an established, stable role (the
+            # recency half-life below caps effective sample size around ~4 games regardless
+            # of career length, so even a full-season veteran keeps a modest, non-zero pull
+            # toward the role baseline -- a real but smaller residual gap than a debut game
+            # getting none at all).
+            "minutes_shrink_games": 1.5,
             "prior": "positional",    # regress rates toward WNBA positional averages
             # variance widths (fraction of the projected mean)
             "min_sd_frac": 0.13,      # minutes are fairly stable in WNBA

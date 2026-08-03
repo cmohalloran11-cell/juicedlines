@@ -58,6 +58,29 @@ def test_minutes_news_and_baseline():
     assert m3 > 28                                          # recent (33ish) outweighs old (17ish)
 
 
+def test_minutes_shrinks_a_debut_game_but_barely_touches_an_established_veteran():
+    # 2026-08 regression guard: WNBA's live config used to pass minutes_shrink_games=0,
+    # meaning a player's FIRST game -- however fluky (extended overtime, a blowout benching)
+    # -- became their entire minutes projection with zero regression to the mean. Only a
+    # literal zero-game player ever touched the role baseline. With a nonzero k (see
+    # basketball/config.py), a thin sample must be pulled meaningfully toward the baseline
+    # while a deep, stable sample is barely affected.
+    baseline = MIN._WNBA_ROLE_BASELINE
+    k = 1.5
+    debut, _ = MIN.project_minutes([38.0], "WNBA", k, 0.13)
+    assert debut < 38.0 - 5, "a single fluky game must be pulled well off its raw value"
+    assert abs(debut - baseline) < abs(38.0 - baseline), "must move toward the role baseline"
+
+    stable_games = [28.0] * 20
+    veteran, _ = MIN.project_minutes(stable_games, "WNBA", k, 0.13)
+    assert abs(veteran - 28.0) < 2.0, "an established, stable role must barely move"
+
+    # k=0 (the old, broken behavior) must NOT regress at all -- confirms the mechanism
+    # itself still works exactly as before, only the config constant changed
+    unshrunk, _ = MIN.project_minutes([38.0], "WNBA", 0, 0.13)
+    assert unshrunk == 38.0
+
+
 def test_sim_mean_and_dispersion():
     rates = R.PlayerRates("X", "WNBA", per_poss={s: 0.0 for s in BASE_STATS})
     rates.per_poss["pts"] = 0.25

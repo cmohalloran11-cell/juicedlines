@@ -30,9 +30,7 @@ def project_minutes(minutes_sample: list, league: str, minutes_shrink_games: flo
         w = 0.5 ** (i / _MINUTES_HALFLIFE)
         wsum += w
         wmin += w * m
-
-    else:
-        baseline = _WNBA_ROLE_BASELINE
+    baseline = _WNBA_ROLE_BASELINE
 
     k = minutes_shrink_games
     proj = (wmin + k * baseline) / (wsum + k) if (wsum + k) > 0 else baseline
