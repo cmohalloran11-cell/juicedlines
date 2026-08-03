@@ -87,6 +87,12 @@ def _drop(line: dict) -> dict:
         "source": line.get("source"),
         "oddsType": (line.get("odds_type") or "standard").lower(),
         "unpriced": valuation.is_unpriced(line),   # demon/goblin — no Edge %/EV, see valuation.py
+        # Projection version metadata (spec Principle 4 reproducibility) — stamped by
+        # provenance.stamp_lines (see analytics.enrich_lines) but previously dropped here
+        # before reaching the API, so a user could never see which model version actually
+        # produced their pick. Same fix as build_static.py's _KEEP for the static board.
+        "model_version": line.get("model_version"),
+        "data_snapshot": line.get("data_snapshot"),
     }
 
 

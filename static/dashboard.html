@@ -1385,7 +1385,8 @@ async function openProp(x,tab){
    ${corrHTML(x)}
    <div class="dsec"><h5>AI Juice</h5><div class="aibox" id="aibox">${AUTH.ai?'Generating a grounded explanation…':'AI Juice is not configured on the server.'}</div></div>
    <div class="dsec" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${isWatched(x.id)?'':'pri'}" id="wbtn" onclick='toggleWatch(${JSON.stringify(x).replace(/"/g,"&quot;")});renderDrawerBtns(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${isWatched(x.id)?'Watching':'Add to Watchlist'}</button><button class="btn" onclick='addPlay(${JSON.stringify(x).replace(/"/g,"&quot;")})'>+ Portfolio</button><button class="btn" onclick='saveProp(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('star',13)} Save</button><button class="btn" onclick='loadResearch(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('research',13)} Research</button><button class="btn" onclick='compareBooks(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('layers',13)} Compare Books</button></div>
-   <div class="dsec" id="cmpbox" style="display:none"></div>`;
+   <div class="dsec" id="cmpbox" style="display:none"></div>
+   ${x.model_version?`<p class="muted" style="font-size:10.5px;padding:0 20px 16px;margin:0">Projected by model <b style="color:var(--text)">${x.model_version}</b>${x.data_snapshot?` on data as of ${x.data_snapshot}`:''} — <span style="color:var(--accent);font-weight:700;cursor:pointer" onclick="closeDrawer();MH_SPORT='${x.sport}';go('model-health')">see how this model version measures up →</span></p>`:''}`;
   loadSim(x);loadRecent(x);if(AUTH.ai)loadAIExplain(x);
   if(tab==='ai')setTimeout(()=>$('#aibox')&&$('#aibox').scrollIntoView({behavior:'smooth',block:'center'}),200);
 }

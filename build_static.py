@@ -114,6 +114,12 @@ _KEEP = (
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
     "market_book_count",                # juice_score's market-quality component (attach_market_quality)
     "stat_trust_gamma",                 # juice_score's measured-per-stat-trust component (attach_stat_trust)
+    # 2026-08: projection version metadata (spec Principle 4 reproducibility) -- stamped on
+    # every line by provenance.stamp_lines but previously stripped here before reaching any
+    # served output, so a user could never actually see which model version produced their
+    # pick, only the aggregate ledger could. Free tier too (not in _PREMIUM_FIELDS below) --
+    # this is a transparency/trust disclosure, not a competitive edge signal.
+    "model_version", "data_snapshot",
 )
 
 # The paywall: everything a projection produces is PREMIUM. Stripping these leaves the free
