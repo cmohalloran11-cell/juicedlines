@@ -24,7 +24,8 @@ def test_stamp_only_projected_lines_and_mirror_ledger_fields():
     a, b = lines
     assert "provenance" in a and "provenance" not in b
     # ledger-persisted flat fields mirror the nested provenance
-    assert a["model_version"] == a["provenance"]["model_version"] == "mlb-1.0.0"
+    assert (a["model_version"] == a["provenance"]["model_version"]
+            == provenance.model_version("MLB"))
     assert a["feature_version"] == provenance.FEATURE_VERSION
     assert a["data_snapshot"] == "2026-07-26"
     assert a["provenance"]["sims"] == 5000 and a["provenance"]["method"] == "engine"
@@ -35,7 +36,7 @@ def test_versions_endpoint_payload_shape():
     for key in ("model_versions", "feature_version", "simulation_version",
                 "calibration_version", "schema_version"):
         assert key in v
-    assert v["model_versions"]["MLB"] == "mlb-1.0.0"
+    assert v["model_versions"]["MLB"] == provenance.model_version("MLB")
 
 
 # ── AI Juice ──────────────────────────────────────────────────────────────────

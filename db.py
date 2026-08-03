@@ -12,6 +12,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import provenance
+
 DB_PATH = Path(__file__).parent / "history.db"
 _lock = threading.Lock()
 
@@ -318,7 +320,7 @@ def pending_grades(today: str, sport: str = "MLB", limit: int = 400) -> list[dic
 
 
 def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
-                k: float = 300.0) -> dict:
+                k: float = 300.0, model_version: str | None = None) -> dict:
     """Per-stat TRUST weight learned from the graded ledger — how much to trust the model over
     the market line, PER STAT. trust = the edge-regression slope γ of (actual−line) on
     (model−line): the optimal shrinkage of the model toward the line (proj = line + γ·(model−
@@ -328,14 +330,23 @@ def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
     γ is shrunk toward `prior` by sample size (pseudo-count k) so a thin/noisy stat can't swing
     it, and read off `model_raw` (COALESCE with close_proj for pre-anchor rows) — the RAW model,
     never the anchored projection, so trust can't feed back on itself. Validated out-of-sample
-    2026-07-21 (train 7d → test 4d): overall MAE 3.157→3.076, 18/19 stats better, ROI −11.2→−9.0%."""
+    2026-07-21 (train 7d → test 4d): overall MAE 3.157→3.076, 18/19 stats better, ROI −11.2→−9.0%.
+
+    Scoped to `model_version` (default: the CURRENT version for this sport, per
+    provenance.model_version) so a deliberate model change — e.g. the 2026-08 MLB engine-crash
+    fix, which silently swapped every live projection from a bare empirical fallback to the
+    real Monte-Carlo engine — can't have its trust weights computed from a blend of the old
+    model's graded history and the new one's. Until enough NEW-version rows accrue this
+    honestly returns fewer/no stats rather than reusing a stale-model fit — the same "empty
+    until we actually have enough to trust" behavior this function already had for thin data."""
+    mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
         rows = c.execute(
             """SELECT LOWER(stat_type) st, close_line L, COALESCE(model_raw, close_proj) m, actual y
                FROM prop_clv WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL
-               AND stat_type IS NOT NULL
+               AND stat_type IS NOT NULL AND model_version=?
                AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
-            (sport,)).fetchall()
+            (sport, mv)).fetchall()
     import statistics
     by: dict = {}
     for r in rows:
@@ -358,21 +369,27 @@ def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
     return out
 
 
-def prob_calibration(sport: str = "MLB", min_n: int = 400) -> dict:
+def prob_calibration(sport: str = "MLB", min_n: int = 400,
+                     model_version: str | None = None) -> dict:
     """Platt calibration of P(over) — {"a":…, "b":…} for p_cal = sigmoid(a·logit(p)+b). The model's
     Monte-Carlo distributions are OVERCONFIDENT (measured 2026-07-21: a "62% over" hits ~51%), so a<1
     shrinks confidence toward 0.5. Fit by IRLS on the graded ledger's `model_raw_prob` (the PRE-
     calibration prob; COALESCE with close_prob for old rows) so it never feeds back on itself.
     Validated out-of-sample (train 7d→test 4d): ECE 0.070→0.045, log-loss + Brier both down.
-    Empty {} until ≥min_n rows or a bad fit → probabilities ship uncalibrated, as before."""
+    Empty {} until ≥min_n rows or a bad fit → probabilities ship uncalibrated, as before.
+
+    Scoped to `model_version` (default: current, per provenance.model_version) — see
+    stat_gammas's docstring for why pooling graded rows across a deliberate model change would
+    apply one model's measured overconfidence correction to a different model's output."""
     import numpy as np
+    mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
         rows = c.execute(
             """SELECT close_line L, actual y, COALESCE(model_raw_prob, close_prob) p FROM prop_clv
                WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL
-               AND COALESCE(model_raw_prob, close_prob) IS NOT NULL
+               AND COALESCE(model_raw_prob, close_prob) IS NOT NULL AND model_version=?
                AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
-            (sport,)).fetchall()
+            (sport, mv)).fetchall()
     pts = [(r["p"], 1.0 if r["y"] > r["L"] else 0.0) for r in rows
            if r["p"] is not None and abs(r["y"] - r["L"]) > 1e-9]
     if len(pts) < min_n:
@@ -398,7 +415,8 @@ def prob_calibration(sport: str = "MLB", min_n: int = 400) -> dict:
     return {"a": round(a, 4), "b": round(b, 4)}
 
 
-def interval_width(sport: str = "MLB", min_n: int = 300) -> float:
+def interval_width(sport: str = "MLB", min_n: int = 300,
+                   model_version: str | None = None) -> float:
     """How much to STRETCH the reported floor–ceiling band so it means what it says.
 
     Our p10–p90 band should contain 80% of outcomes. Measured 2026-07-21 on MLB it contained
@@ -415,15 +433,21 @@ def interval_width(sport: str = "MLB", min_n: int = 300) -> float:
          low-count discrete stats — runs against a 0.5 line — and read 4.3x against this 1.85x.)
 
     Returns 1.0 (no stretch) when there's nothing trustworthy to go on.
+
+    Scoped to `model_version` (default: current) — see stat_gammas's docstring. A stretch
+    factor measured against the OLD model's coverage gap is not the right correction for a
+    newly-fixed/changed model's distributions, which can be narrow (or wide) by a different
+    amount.
     """
     from statistics import NormalDist
+    mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
         rows = c.execute(
             """SELECT actual y, model_floor lo, model_ceiling hi FROM prop_clv
                WHERE sport=? AND actual IS NOT NULL AND model_floor IS NOT NULL
-               AND model_ceiling IS NOT NULL AND model_ceiling > model_floor
+               AND model_ceiling IS NOT NULL AND model_ceiling > model_floor AND model_version=?
                AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
-            (sport,)).fetchall()
+            (sport, mv)).fetchall()
     if len(rows) >= min_n:
         hit = sum(1 for r in rows if r["lo"] <= r["y"] <= r["hi"]) / len(rows)
         hit = min(0.98, max(0.30, hit))
@@ -432,7 +456,7 @@ def interval_width(sport: str = "MLB", min_n: int = 300) -> float:
         z_tgt = NormalDist().inv_cdf(0.90)            # p10–p90
         if z_act > 1e-6:
             return round(min(3.0, max(1.0, z_tgt / z_act)), 2)
-    cal = prob_calibration(sport)
+    cal = prob_calibration(sport, model_version=mv)
     a = float(cal.get("a") or 0)
     if 0.2 < a < 1.0:
         return round(min(3.0, 1.0 / a), 2)
@@ -537,18 +561,23 @@ def recent_prop_moves(limit: int = 400) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def stat_biases(sport: str = "MLB", min_n: int = 60) -> dict:
+def stat_biases(sport: str = "MLB", min_n: int = 60,
+                model_version: str | None = None) -> dict:
     """
     Per-stat systematic bias = mean(projection − actual) from graded props,
     deduped to one point per (player, stat, game). A stable, sufficiently-sampled
     bias is a calibration error we can correct on future projections. Returns
     {stat_type_lower: bias} only for stats with ≥ min_n data points.
+
+    Scoped to `model_version` (default: current) — see stat_gammas's docstring.
     """
+    mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
         rows = c.execute(
             "SELECT player, stat_type, game_date, close_proj, actual FROM prop_clv "
-            "WHERE actual IS NOT NULL AND close_proj IS NOT NULL AND sport = ?",
-            (sport,)).fetchall()
+            "WHERE actual IS NOT NULL AND close_proj IS NOT NULL AND sport = ? "
+            "AND model_version = ?",
+            (sport, mv)).fetchall()
     seen: dict = {}                      # (player,stat,date) → (proj, actual), constant per group
     for r in rows:
         k = (r["player"], r["stat_type"], r["game_date"])

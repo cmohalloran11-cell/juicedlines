@@ -21,8 +21,19 @@ from pathlib import Path
 # ── version identifiers (bump on a deliberate change to the corresponding math) ──
 # Per-sport model logic (projector/models, analytics resolvers, sport board modules).
 MODEL_VERSIONS: dict[str, str] = {
-    "MLB": "mlb-1.0.0",
-    "Tennis": "tennis-1.0.0",
+    # 1.1.0 (2026-08): the vendored Monte Carlo engine (projector/models/mlb_model.py) had
+    # drifted into a broken state that crashed on every call, silently falling back to the
+    # bare empirical model for 100% of live MLB projections. Every graded row before this fix
+    # reflects that fallback, not the real engine — bumped so db.py's calibration queries
+    # (stat_gammas/prob_calibration/interval_width/stat_biases, all model_version-scoped)
+    # can't blend the two models' outcomes into one calibration fit.
+    "MLB": "mlb-1.1.0",
+    # 1.1.0 (2026-08): fixed tiebreak_prob() -- it averaged two point-win probabilities into
+    # one constant instead of solving the real alternating-server sequence, a provably
+    # different (not just approximate) process. Shifts tiebreak/match win probability by a
+    # real, measurable amount for any asymmetric matchup. Bumped for the same
+    # don't-blend-pre/post-fix graded rows reason as MLB above.
+    "Tennis": "tennis-1.1.0",
     "WNBA": "wnba-1.0.0",
 }
 _DEFAULT_MODEL_VERSION = "1.0.0"
