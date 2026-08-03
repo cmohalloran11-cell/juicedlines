@@ -11,13 +11,47 @@ is too thin for a metric, that field is null with a plain-language note rather t
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+import time
+from typing import Any, Callable, Optional
 
 import db
 import provenance
 import backtest
 
 _SPORTS = ("MLB", "WNBA", "Tennis")
+
+# 2026-08 (production-readiness audit): every function in this module does several full
+# scans of the graded CLV ledger (db.py's stat_gammas/prob_calibration/interval_width/
+# stat_biases each issue their own query; backtest.diagnostics alone does 3 more via
+# calibration_by_confidence/method/book; dashboard_detail layers current_accuracy,
+# reliability_diagram, drift, drift_by_stat, by_sample_depth, and version_history on top of
+# THAT) — measured at ~2.5s for a single dashboard_detail call. None of it was cached, and
+# these are public, unauthenticated, rate-limit-exempt-in-spirit endpoints (viewing model
+# health shouldn't require login) — a legitimate-use DoS risk, not just slow. The underlying
+# ledger only changes when props get graded (~every 30 min, see main.py's grading cadence),
+# so a short TTL cache costs nothing in freshness while cutting repeat-request cost to
+# near-zero. Same pattern as basketball/projections.py's _proj_cache and
+# tennis/projections.py's _MODEL_CACHE — an in-process dict, not a new dependency.
+_CACHE: dict[str, tuple[float, Any]] = {}
+_TTL = 120.0
+
+
+def _cached(key: str, compute: Callable[[], Any]) -> Any:
+    hit = _CACHE.get(key)
+    if hit and time.time() - hit[0] < _TTL:
+        return hit[1]
+    value = compute()
+    _CACHE[key] = (time.time(), value)
+    return value
+
+
+def clear_cache() -> None:
+    """Drop every cached entry. Called automatically after a graded/regraded prop write
+    (see analytics.grade_pending) so a fresh grading pass is reflected immediately rather
+    than waiting out the TTL; also used by tests that swap the underlying DB out from
+    under this module (a stale cross-test cache hit would otherwise return the PREVIOUS
+    test's temp-db data instead of computing fresh)."""
+    _CACHE.clear()
 
 # Rough attribution of what drives a projection — the "Model Confidence Breakdown" donut.
 # These reflect the engine's factor emphasis (recent form is the backbone; matchup/usage
@@ -89,38 +123,44 @@ def _sport_health(sport: str) -> dict:
 
 
 def health(sport: Optional[str] = None) -> dict:
-    """Public model-health report. One sport, or all when sport is None."""
-    sports = [sport] if sport else list(_SPORTS)
-    reports = {}
-    for s in sports:
-        try:
-            reports[s] = _sport_health(s)
-        except Exception as exc:  # a sport with no ledger rows shouldn't break the whole report
-            reports[s] = {"sport": s, "error": str(exc)}
-    return {
-        "versions": provenance.versions(),
-        "generated_at": provenance.now_iso(),
-        "sports": reports,
-        "disclaimer": (
-            "Projections are transparent statistical estimates, not guarantees. Metrics are "
-            "measured from graded historical outcomes vs the closing line."),
-    }
+    """Public model-health report. One sport, or all when sport is None. Cached (_TTL) —
+    see the module-level comment on why."""
+    def _compute() -> dict:
+        sports = [sport] if sport else list(_SPORTS)
+        reports = {}
+        for s in sports:
+            try:
+                reports[s] = _sport_health(s)
+            except Exception as exc:  # a sport with no ledger rows shouldn't break the report
+                reports[s] = {"sport": s, "error": str(exc)}
+        return {
+            "versions": provenance.versions(),
+            "generated_at": provenance.now_iso(),
+            "sports": reports,
+            "disclaimer": (
+                "Projections are transparent statistical estimates, not guarantees. Metrics "
+                "are measured from graded historical outcomes vs the closing line."),
+        }
+    return _cached(f"health:{sport or 'all'}", _compute)
 
 
 def calibration_detail(sport: str = "MLB") -> dict:
     """Full calibration stack for one sport — the AdminOS calibration dashboard (Ch 342-343).
-    Same underlying data as the public report but with every per-stat number, unsummarized."""
-    return {
-        "sport": sport,
-        "per_stat_trust_gamma": db.stat_gammas(sport),
-        "per_stat_bias": db.stat_biases(sport),
-        "probability_platt": db.prob_calibration(sport),
-        "interval_widening_factor": db.interval_width(sport),
-        "scorecard": db.scorecard(sport),
-        "diagnostics": backtest.diagnostics(sport),
-        "drift": backtest.drift(sport),
-        "accuracy_by_model_version": backtest.version_history(sport),
-    }
+    Same underlying data as the public report but with every per-stat number, unsummarized.
+    Cached (_TTL)."""
+    def _compute() -> dict:
+        return {
+            "sport": sport,
+            "per_stat_trust_gamma": db.stat_gammas(sport),
+            "per_stat_bias": db.stat_biases(sport),
+            "probability_platt": db.prob_calibration(sport),
+            "interval_widening_factor": db.interval_width(sport),
+            "scorecard": db.scorecard(sport),
+            "diagnostics": backtest.diagnostics(sport),
+            "drift": backtest.drift(sport),
+            "accuracy_by_model_version": backtest.version_history(sport),
+        }
+    return _cached(f"calibration_detail:{sport}", _compute)
 
 
 # ── Model Health dashboard (self-monitoring surface) ───────────────────────────
@@ -132,28 +172,30 @@ def calibration_detail(sport: str = "MLB") -> dict:
 def dashboard_summary() -> dict:
     """Lightweight overview across all sports — the landing view of the Model Health
     dashboard. Top-line accuracy + drift status only; call dashboard_detail(sport) for
-    the full per-sport breakdown."""
-    out = {}
-    for sp in _SPORTS:
-        try:
-            acc = backtest.current_accuracy(sp)
-            drift = backtest.drift(sp)
-            out[sp] = {
-                "sport": sp,
-                "model_version": provenance.model_version(sp),
-                "n": acc["overall"].get("n", 0),
-                "mae": acc["overall"].get("mae"),
-                "rmse": acc["overall"].get("rmse"),
-                "bias": acc["overall"].get("bias"),
-                "hit_rate": acc["overall"].get("hit_rate"),
-                "brier": acc["overall"].get("brier"),
-                "ece": acc["overall"].get("ece"),
-                "coverage": acc["overall"].get("coverage"),
-                "drift_status": drift.get("status"),
-            }
-        except Exception as exc:
-            out[sp] = {"sport": sp, "error": str(exc)}
-    return {"generated_at": provenance.now_iso(), "sports": out}
+    the full per-sport breakdown. Cached (_TTL)."""
+    def _compute() -> dict:
+        out = {}
+        for sp in _SPORTS:
+            try:
+                acc = backtest.current_accuracy(sp)
+                drift = backtest.drift(sp)
+                out[sp] = {
+                    "sport": sp,
+                    "model_version": provenance.model_version(sp),
+                    "n": acc["overall"].get("n", 0),
+                    "mae": acc["overall"].get("mae"),
+                    "rmse": acc["overall"].get("rmse"),
+                    "bias": acc["overall"].get("bias"),
+                    "hit_rate": acc["overall"].get("hit_rate"),
+                    "brier": acc["overall"].get("brier"),
+                    "ece": acc["overall"].get("ece"),
+                    "coverage": acc["overall"].get("coverage"),
+                    "drift_status": drift.get("status"),
+                }
+            except Exception as exc:
+                out[sp] = {"sport": sp, "error": str(exc)}
+        return {"generated_at": provenance.now_iso(), "sports": out}
+    return _cached("dashboard_summary", _compute)
 
 
 def dashboard_detail(sport: str = "MLB") -> dict:
@@ -164,22 +206,25 @@ def dashboard_detail(sport: str = "MLB") -> dict:
     (backtest.record_run, once/day per sport — see main.py's maintenance loop) for
     trend charts. Every field answers one of: is it improving? is it getting worse?
     which markets perform best/worst? which archetypes perform worst? which stats are
-    drifting? what changed, and did it help?"""
-    try:
-        accuracy = backtest.current_accuracy(sport)
-    except Exception as exc:
-        return {"sport": sport, "error": str(exc)}
-    return {
-        "sport": sport,
-        "model_version": provenance.model_version(sport),
-        "generated_at": provenance.now_iso(),
-        "accuracy": accuracy,
-        "reliability_diagram": backtest.reliability_diagram(sport),
-        "drift": backtest.drift(sport),
-        "drift_by_stat": backtest.drift_by_stat(sport),
-        "by_sample_depth": backtest.by_sample_depth(sport),
-        "accuracy_by_model_version": backtest.version_history(sport),
-        "changelog": provenance.changelog(sport).get(sport, []),
-        "snapshot_history": backtest.registry(sport, limit=90),
-        "diagnostics": backtest.diagnostics(sport),
-    }
+    drifting? what changed, and did it help? Cached (_TTL) — this alone was measured at
+    ~2.5s uncached."""
+    def _compute() -> dict:
+        try:
+            accuracy = backtest.current_accuracy(sport)
+        except Exception as exc:
+            return {"sport": sport, "error": str(exc)}
+        return {
+            "sport": sport,
+            "model_version": provenance.model_version(sport),
+            "generated_at": provenance.now_iso(),
+            "accuracy": accuracy,
+            "reliability_diagram": backtest.reliability_diagram(sport),
+            "drift": backtest.drift(sport),
+            "drift_by_stat": backtest.drift_by_stat(sport),
+            "by_sample_depth": backtest.by_sample_depth(sport),
+            "accuracy_by_model_version": backtest.version_history(sport),
+            "changelog": provenance.changelog(sport).get(sport, []),
+            "snapshot_history": backtest.registry(sport, limit=90),
+            "diagnostics": backtest.diagnostics(sport),
+        }
+    return _cached(f"dashboard_detail:{sport}", _compute)

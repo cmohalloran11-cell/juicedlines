@@ -157,10 +157,27 @@ async def _snapshot_loop() -> None:
                     None, db.log_clv, data["lines"], data["updated_at"])
                 log.info("Snapshotted %d lines (CLV-logged %d)", len(data["lines"]), n)
             # Grade settled props ~every 30 min (10 cycles), off the event loop.
+            # 2026-08 (production-readiness audit): grade_basketball/grade_tennis existed,
+            # fully implemented ("best-effort; never raises into the build" by their own
+            # docstrings) and mirror grade_pending's exact pattern, but were never actually
+            # called from anywhere -- only MLB props were ever graded automatically. WNBA/
+            # Tennis props got logged to the ledger every build and then sat ungraded
+            # forever, which is why this session's Model Health work kept showing
+            # insufficient_data for those two sports regardless of how much time passed.
             if i % 10 == 0:
-                res = await loop.run_in_executor(None, analytics.grade_pending)
-                if res.get("graded") or res.get("voided"):
-                    log.info("CLV graded %d, voided %d", res["graded"], res["voided"])
+                any_graded = False
+                for grader in (analytics.grade_pending, analytics.grade_basketball,
+                              analytics.grade_tennis):
+                    res = await loop.run_in_executor(None, grader)
+                    if res.get("graded") or res.get("voided"):
+                        log.info("%s: graded %d, voided %d",
+                                grader.__name__, res["graded"], res["voided"])
+                        any_graded = True
+                if any_graded:
+                    # model_health.py caches its aggregates for _TTL seconds (2026-08) --
+                    # a fresh grading pass should be reflected immediately, not after a
+                    # stale window expires.
+                    model_health.clear_cache()
             # DB maintenance ~once a day: bound the snapshot table + drop stale
             # ungraded ledger rows. Cheap DELETEs — no VACUUM in the hot loop.
             if HISTORY_RETENTION_DAYS > 0 and i % _MAINT_EVERY_CYCLES == 0:

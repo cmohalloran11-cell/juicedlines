@@ -12,6 +12,7 @@ import tempfile
 import db as _db
 import backtest
 import provenance
+import model_health
 
 
 def _insert(rows):
@@ -34,14 +35,20 @@ def _insert(rows):
 
 
 def _with_temp_db(fn):
+    # model_health.py caches (_TTL=120s, module-global) -- without clearing on both sides
+    # of the DB_PATH swap, a test could get another test's stale cached result instead of
+    # computing fresh against ITS OWN temp db (or leak its own result into a later test/the
+    # real DB_PATH once restored).
     orig = _db.DB_PATH
     tmp = tempfile.mkdtemp()
     try:
+        model_health.clear_cache()
         _db.DB_PATH = os.path.join(tmp, "t.db")
         _db.init_db()
         fn()
     finally:
         _db.DB_PATH = orig
+        model_health.clear_cache()
 
 
 def test_calibration_by_confidence_flags_an_untrustworthy_signal():
