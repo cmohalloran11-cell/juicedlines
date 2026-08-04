@@ -115,7 +115,7 @@ jobs:
             # the rest are the SPA page payloads the static frontend reads instead of /api/*.
             for f in analytics.json history.json clv.db board.free.json trust.json \
                      dashboard.json projections.json boosted.json direction_report.json \
-                     injuries.json weather.json books.json \
+                     injuries.json weather.json books.json optimizer.json \
                      auth.json model_health.json backtest.json drift.json; do
               if [ -f "static/$f" ]; then cp "static/$f" "_data/$f"; fi
             done
