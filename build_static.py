@@ -431,22 +431,26 @@ def main() -> None:
         # by sport/engine, and the before-rejection Over/Under distribution. Also the data
         # source for the planned admin Model Bias Monitor.
         _w("direction_report.json", {**dreport, "updated_at": updated})
+        # Entry Optimizer (optimizer.py): today's-best combinations off the CURRENT board.
+        # Runs every cycle (FAST included), not gated behind full-build-only like
+        # model_health/backtest below — those are slow, day-level "how's the model doing"
+        # metrics that don't need sub-hourly freshness; this is "what should I bet right
+        # now", which is exactly as time-sensitive as projections.json/dashboard.json above.
+        # Measured ~5s over a 3,700-prop slate (2026-08-04) — well inside the FAST cycle's
+        # ~100s budget, nothing like the 331s analytics.json step the FAST/FULL split exists
+        # for. Static deploy has no live /api/optimizer/today, so this file IS that endpoint
+        # for the static SPA (see dashboard.html's staticApi()).
+        import optimizer as _opt
+        _w("optimizer.json", _opt.today_report(lines))
         extra_json = ""
         if not FAST:
             import model_health as _mh
             import backtest as _bt
-            import optimizer as _opt
             _w("model_health.json", _mh.health())
             _w("backtest.json", {"current": _bt.current_accuracy("MLB")})
             _w("drift.json", _bt.drift("MLB"))
-            # Entry Optimizer (optimizer.py): candidate search + Monte Carlo across all 8
-            # PrizePicks formats — real work (not free like the other JSON above), so it only
-            # runs on FULL cycles, same as model_health/backtest/drift right above it. Static
-            # deploy has no live /api/optimizer/today, so this file IS that endpoint for the
-            # static SPA (see dashboard.html's staticApi()).
-            _w("optimizer.json", _opt.today_report(lines))
-            extra_json = "/model_health/backtest/drift/optimizer"
-        print(f"  wrote SPA JSON: projections/dashboard/injuries/weather/books/auth{extra_json}")
+            extra_json = "/model_health/backtest/drift"
+        print(f"  wrote SPA JSON: projections/dashboard/injuries/weather/books/auth/optimizer{extra_json}")
     except Exception as exc:
         print(f"  dashboard SPA JSON SKIPPED ({exc})")
 
