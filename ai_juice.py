@@ -105,6 +105,20 @@ def _prompt(line: dict[str, Any]) -> str:
 
 # ── provider calls ────────────────────────────────────────────────────────────
 
+def _gemini_error_detail(r: "requests.Response") -> str:
+    """The API's own error.status + message (e.g. "RESOURCE_EXHAUSTED: You exceeded your
+    current quota...") instead of a bare HTTP code — a 429 read as just "(429)" gives no way
+    to tell a spent daily quota from a transient per-minute throttle without re-testing."""
+    try:
+        err = r.json().get("error", {}) or {}
+        status, msg = err.get("status"), err.get("message")
+        if status and msg:
+            return f"{status}: {msg}"
+        return status or str(r.status_code)
+    except Exception:
+        return str(r.status_code)
+
+
 def _call_gemini(prompt: str) -> dict:
     url = _GEMINI_URL.format(model=AI_MODEL)
     body = {
@@ -117,12 +131,7 @@ def _call_gemini(prompt: str) -> dict:
     except Exception as exc:
         return {"available": False, "reason": f"AI request failed: {exc}"}
     if r.status_code != 200:
-        detail = ""
-        try:
-            detail = r.json().get("error", {}).get("status", "") or str(r.status_code)
-        except Exception:
-            detail = str(r.status_code)
-        return {"available": False, "reason": f"AI request rejected ({detail})."}
+        return {"available": False, "reason": f"AI request rejected ({_gemini_error_detail(r)})."}
     data = r.json()
     cands = data.get("candidates") or []
     if not cands:
@@ -197,7 +206,7 @@ def coach(summary: dict[str, Any]) -> dict:
         except Exception as exc:
             return {"available": False, "reason": f"AI request failed: {exc}"}
         if r.status_code != 200:
-            return {"available": False, "reason": f"AI request rejected ({r.status_code})."}
+            return {"available": False, "reason": f"AI request rejected ({_gemini_error_detail(r)})."}
         data = r.json()
         cands = data.get("candidates") or []
         if not cands:

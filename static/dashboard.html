@@ -1854,7 +1854,12 @@ async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}
   await refreshWatched();
   renderAuthUI();
   applyCollapsed();
-  $('#aijuice-val').textContent=AUTH.ai?'∞':'off';
+  // "∞" implied a verified, unlimited-capacity connection — AUTH.ai only ever meant "a key
+  // is configured", never "requests are actually succeeding" (see /api/ai/status). A real
+  // Gemini quota exhaustion (429) still showed the infinity symbol, which is exactly the
+  // fabricated-looking-real-number problem this codebase treats as a correctness bug
+  // elsewhere. "On"/"Off" claims only what's actually known.
+  $('#aijuice-val').textContent=AUTH.ai?'On':'Off';
   if(!location.hash)location.hash='/dashboard';
   render();
   setInterval(()=>{if(cur()==='dashboard')render()},60000);

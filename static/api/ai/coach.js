@@ -36,7 +36,16 @@ module.exports = async function handler(req, res) {
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!r.ok) {
-      return res.status(200).json({ ai: { available: false, reason: `AI request rejected (${r.status}).` } });
+      // The API's own error.status + message (e.g. "RESOURCE_EXHAUSTED: You exceeded your
+      // current quota...") — a bare HTTP code can't distinguish a spent daily quota from a
+      // transient per-minute throttle.
+      let detail = String(r.status);
+      try {
+        const err = ((await r.json()) || {}).error || {};
+        if (err.status && err.message) detail = `${err.status}: ${err.message}`;
+        else if (err.status) detail = err.status;
+      } catch (_) { /* keep the bare status */ }
+      return res.status(200).json({ ai: { available: false, reason: `AI request rejected (${detail}).` } });
     }
     const j = await r.json();
     const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
