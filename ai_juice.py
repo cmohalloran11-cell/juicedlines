@@ -52,6 +52,14 @@ def available() -> bool:
     return False
 
 
+# Gemini free-tier request-per-minute cap for gemini-2.5-flash — measured live from the
+# API's own 429 error body (2026-08-04): "generate_content_free_tier_requests, limit: 20".
+# Real, sourced number, not a guess — but Google can change it, and it goes away entirely
+# once billing is enabled on the key (paid tier has no equivalent published RPM cap this
+# codebase knows to display). No equivalent published number exists for Anthropic here.
+GEMINI_FREE_TIER_RPM = 20
+
+
 def status() -> dict:
     return {
         "available": available(),
@@ -59,6 +67,7 @@ def status() -> dict:
         "model": AI_MODEL if available() else None,
         "reason": None if available() else (
             f"AI Juice ({PROVIDER}) is not configured — set the provider's API key."),
+        "rpm_limit": GEMINI_FREE_TIER_RPM if (available() and PROVIDER == "gemini") else None,
     }
 
 

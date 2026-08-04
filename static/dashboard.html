@@ -1850,7 +1850,7 @@ window.addEventListener('keydown',e=>{
 
 async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
   // On static, auth.json can't know if the Vercel AI function has a key — probe it.
-  if(STATIC){try{const s=await api('/api/ai/status');if(s&&typeof s.available==='boolean')AUTH.ai=s.available}catch(e){}}
+  if(STATIC){try{const s=await api('/api/ai/status');if(s&&typeof s.available==='boolean'){AUTH.ai=s.available;AUTH.ai_rpm_limit=s.rpm_limit}}catch(e){}}
   // Real Supabase auth when the server provides the public client config.
   if(AUTH.supabase_url && AUTH.supabase_anon_key && window.supabase){
     try{
@@ -1867,12 +1867,11 @@ async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}
   await refreshWatched();
   renderAuthUI();
   applyCollapsed();
-  // "∞" implied a verified, unlimited-capacity connection — AUTH.ai only ever meant "a key
-  // is configured", never "requests are actually succeeding" (see /api/ai/status). A real
-  // Gemini quota exhaustion (429) still showed the infinity symbol, which is exactly the
-  // fabricated-looking-real-number problem this codebase treats as a correctness bug
-  // elsewhere. "On"/"Off" claims only what's actually known.
-  $('#aijuice-val').textContent=AUTH.ai?'On':'Off';
+  // Real number, not a decorative symbol: Gemini's actual free-tier requests-per-minute cap
+  // (ai_juice.GEMINI_FREE_TIER_RPM / status.js, measured live from the API's own error body).
+  // Falls back to "On" only if AI is configured but no published limit is tracked here (e.g.
+  // Anthropic) — never a made-up figure, and "Off" when AI isn't configured at all.
+  $('#aijuice-val').textContent=AUTH.ai?(AUTH.ai_rpm_limit?AUTH.ai_rpm_limit+'/min':'On'):'Off';
   if(!location.hash)location.hash='/dashboard';
   render();
   setInterval(()=>{if(cur()==='dashboard')render()},60000);

@@ -385,6 +385,7 @@ def api_auth_status():
         "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY") or None,
         "ai": ai_juice.available(),
         "ai_provider": ai_juice.PROVIDER,
+        "ai_rpm_limit": ai_juice.status().get("rpm_limit"),
     }
 
 
