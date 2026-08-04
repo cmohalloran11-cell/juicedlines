@@ -786,8 +786,19 @@ function coachFallback(d,opt){
   if(best)bits.push(`Best combo right now: ${best.format} (${Math.round(best.simulation.chanceOfProfit*100)}% chance of profit, ${pct(best.simulation.expectedROI*100)} expected ROI).`);
   return bits.join(' ');
 }
+// Dashboard re-renders every 60s (see the setInterval in boot()) and every render called
+// loadCoach() with zero caching — a real Gemini call, unconditionally, per tick, per open
+// tab. Gemini's free tier caps at 20 requests/MINUTE (measured live: every AI Juice call
+// was 429ing with "generate_content_free_tier_requests, limit: 20"), so this alone could
+// exhaust the app's entire shared quota with just a couple of tabs open, starving every
+// other AI Juice caller too. Cache the result (success longer than failure, so a transient
+// 429 doesn't get "stuck" for the full window once real capacity frees back up).
+const _coachCache={};
+const _COACH_OK_TTL=20*60*1000, _COACH_FAIL_TTL=5*60*1000;
 async function loadCoach(d,opt){
   const box=$('#coachText');if(!box)return;
+  const hit=_coachCache[sport];
+  if(hit&&Date.now()-hit.t<hit.ttl){box.className='';box.textContent=hit.text;return}
   try{
     let ctx=d.coach_context||{};
     const best=opt&&opt.topEntries&&opt.topEntries[0];
@@ -796,8 +807,10 @@ async function loadCoach(d,opt){
       best_entry_chance_of_profit_pct:Math.round(best.simulation.chanceOfProfit*1000)/10};
     const r=STATIC?await api('/api/ai/coach',{method:'POST',body:ctx})
                   :await api('/api/ai/coach?sport='+sport);
-    box.className='';
-    box.textContent=(r.ai&&r.ai.available)?r.ai.strategy:coachFallback(d,opt);
+    const ok=!!(r.ai&&r.ai.available);
+    const text=ok?r.ai.strategy:coachFallback(d,opt);
+    box.className='';box.textContent=text;
+    _coachCache[sport]={t:Date.now(),text,ttl:ok?_COACH_OK_TTL:_COACH_FAIL_TTL};
   }catch(e){box.className='';box.textContent=coachFallback(d,opt)}
 }
 
