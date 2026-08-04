@@ -37,11 +37,13 @@ import valuation
 import model_health
 import dataos
 import dashboard as dashboard_mod
+import optimizer as optimizer_mod
 import weather as weather_mod
 import books
 import middleware
 from auth import require_role, optional_user
 from routes_user import router as user_router
+from routes_optimizer import router as optimizer_router
 from pullers import fetch_prizepicks, fetch_underdog, mock_lines
 
 FALLBACK_TO_MOCK = os.getenv("FALLBACK_TO_MOCK", "1").lower() not in ("0", "false", "no")
@@ -269,6 +271,7 @@ app.add_middleware(
 )
 
 app.include_router(user_router)
+app.include_router(optimizer_router)
 
 # Backend hardening: request-id + timing logs, error envelope, optional rate limit (Vol III).
 middleware.install(app)
@@ -576,6 +579,24 @@ async def api_ai_explain(id: str = Query(..., description="line_id to explain"))
     # Off the event loop — the AI call is blocking network I/O.
     result = await asyncio.get_event_loop().run_in_executor(None, ai_juice.explain, line)
     return {"line_id": id, "ai": result}
+
+
+@app.get("/api/ai/coach")
+async def api_ai_coach(sport: str = Query("all")):
+    """Grounded slate-level strategy recommendation (AI Coach panel) — built from the same
+    real aggregate numbers already shown on the dashboard, never invented."""
+    lines = _cache.get("lines") or []
+    d = dashboard_mod.build(lines, _cache.get("updated_at"), _cache.get("errors"), sport=sport)
+    ctx = dict(d.get("coach_context") or {})
+    top = optimizer_mod.top_overall(optimizer_mod.build_pool(lines), limit=1, sport=sport)
+    if top:
+        best = top[0]
+        ctx["best_entry_format"] = best["format"]
+        ctx["best_entry_quality_score"] = best["qualityScore"]
+        ctx["best_entry_expected_roi_pct"] = round(best["simulation"]["expectedROI"] * 100, 1)
+        ctx["best_entry_chance_of_profit_pct"] = round(best["simulation"]["chanceOfProfit"] * 100, 1)
+    result = await asyncio.get_event_loop().run_in_executor(None, ai_juice.coach, ctx)
+    return {"ai": result}
 
 
 @app.get("/api/status")

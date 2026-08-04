@@ -16,6 +16,7 @@ import db
 import valuation
 import model_health
 import dataos
+import backtest
 
 
 def _edge_pct(line: dict) -> Optional[float]:
@@ -48,9 +49,35 @@ def _opp_by_abbr() -> dict:
     return out
 
 
-def _drop(line: dict) -> dict:
+_ACCURACY_CACHE: dict = {"t": 0.0, "v": {}}
+_ACCURACY_SPORTS = ("MLB", "WNBA", "Tennis")
+
+
+def _accuracy_map() -> dict:
+    """{sport: {stat_type_lower: hit_rate}} from the real graded-ledger backtest — the
+    per-stat "Historical Accuracy" shown on a play card. Memoized 10 min (backtest.
+    current_accuracy scans the ledger, not free to call per-request)."""
+    import time as _time
+    if _time.time() - _ACCURACY_CACHE["t"] < 600 and _ACCURACY_CACHE["v"]:
+        return _ACCURACY_CACHE["v"]
+    out: dict = {}
+    for s in _ACCURACY_SPORTS:
+        try:
+            acc = backtest.current_accuracy(s)
+            out[s] = {st.lower(): m.get("hit_rate") for st, m in (acc.get("per_stat") or {}).items()
+                      if m.get("hit_rate") is not None}
+        except Exception:
+            out[s] = {}
+    _ACCURACY_CACHE.update(t=_time.time(), v=out)
+    return out
+
+
+def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
     opp = _opp_by_abbr().get(line.get("team")) if line.get("sport") == "MLB" else None
     rec = valuation.recommend_side(line.get("model_prob"), line)
+    acc = None
+    if acc_map is not None:
+        acc = (acc_map.get(line.get("sport")) or {}).get((line.get("stat_type") or "").lower())
     return {
         "id": line.get("id"),
         "player": line.get("player"),
@@ -93,6 +120,9 @@ def _drop(line: dict) -> dict:
         # produced their pick. Same fix as build_static.py's _KEEP for the static board.
         "model_version": line.get("model_version"),
         "data_snapshot": line.get("data_snapshot"),
+        "kellyPct": (round(k * 100, 1) if (k := valuation.kelly_fraction(line.get("model_prob"), line)) is not None else None),
+        "volatility": valuation.volatility_cv(line),
+        "historicalAccuracy": acc,
     }
 
 
@@ -120,6 +150,7 @@ def _tile(line: Optional[dict], value: Any, label: str) -> Optional[dict]:
         return None
     rec = valuation.recommend_side(line.get("model_prob"), line)
     return {
+        "id": line.get("id"),
         "player": line.get("player"), "team": line.get("team"),
         "stat": line.get("stat_type"), "line": line.get("line"),
         "side": rec["side"] if rec else None,
@@ -147,6 +178,57 @@ def _movers(limit: int = 5) -> dict:
     line_moves.sort(key=lambda x: abs(x["move"]), reverse=True)
     return {"proj_up": proj_up[:limit], "proj_down": proj_down[:limit],
             "line_moves": line_moves[:limit]}
+
+
+def _steam_moves(limit: int = 8) -> list[dict]:
+    """Same player+stat line moving the SAME direction on 2+ distinct books — real
+    cross-book synchronized movement, computed from today's already-tracked open/close
+    lines (db.recent_prop_moves). Unlike a single-book "line move", this is a genuine signal
+    multiple books independently reacted to the same way."""
+    rows = db.recent_prop_moves(limit=400)
+    groups: dict[tuple, dict] = {}
+    for r in rows:
+        move = (r.get("close_line") or 0) - (r.get("open_line") or 0)
+        if abs(move) < 1e-9:
+            continue
+        key = (r["player"], r["stat_type"], r["sport"])
+        g = groups.setdefault(key, {"player": r["player"], "stat": r["stat_type"],
+                                    "sport": r["sport"], "books": []})
+        g["books"].append({"book": r.get("source"), "move": round(move, 1)})
+    out = []
+    for g in groups.values():
+        # Same source can log >1 row per player+stat (odds_type variants share this key) —
+        # "steam" means DISTINCT books moving together, so dedupe by book before counting.
+        by_book: dict = {}
+        for b in g["books"]:
+            by_book[b["book"]] = b["move"]
+        signs = {1 if m > 0 else -1 for m in by_book.values()}
+        if len(by_book) >= 2 and len(signs) == 1:
+            g["books"] = [{"book": bk, "move": mv} for bk, mv in by_book.items()]
+            g["direction"] = "up" if signs.pop() > 0 else "down"
+            g["bookCount"] = len(by_book)
+            g["avgMove"] = round(sum(by_book.values()) / len(by_book), 1)
+            out.append(g)
+    out.sort(key=lambda x: abs(x["avgMove"]), reverse=True)
+    return out[:limit]
+
+
+def _most_offered(priced: list[dict], limit: int = 8) -> list[dict]:
+    """Props listed on the most distinct books — a real, measured proxy for market interest.
+    NOT betting volume (no such feed exists here) — deliberately labeled "Most Widely
+    Offered" in the UI rather than "Most Bet", so the number shown always means what it says."""
+    seen, out = set(), []
+    for l in sorted(priced, key=lambda x: x.get("market_book_count") or 0, reverse=True):
+        key = (l.get("player"), l.get("stat_type"))
+        if key in seen or not (l.get("market_book_count") or 0) >= 2:
+            continue
+        seen.add(key)
+        out.append({"player": l.get("player"), "stat": l.get("stat_type"),
+                    "sport": l.get("sport"), "bookCount": l.get("market_book_count"),
+                    "headshot": l.get("headshot")})
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _upcoming_games(lines: list[dict], limit: int = 6) -> list[dict]:
@@ -177,16 +259,37 @@ def build(lines: list[dict], updated_at: Optional[str],
     # demon/goblin are still fully browsable — with their real projection — on the Projections
     # page (see dashboard.projections()'s odds_types param), just not ranked alongside priced plays.
     priced = [l for l in pool if not valuation.is_unpriced(l)]
+    unpriced = [l for l in pool if valuation.is_unpriced(l)]
+    demons = [l for l in unpriced if (l.get("odds_type") or "").lower() == "demon"]
+    goblins = [l for l in unpriced if (l.get("odds_type") or "").lower() == "goblin"]
+    standard = [l for l in priced if (l.get("odds_type") or "standard").lower() == "standard"]
 
-    drops = sorted((_drop(l) for l in priced), key=lambda d: d["juiceScore"], reverse=True)
+    acc_map = _accuracy_map()
+    drops = sorted((_drop(l, acc_map) for l in priced), key=lambda d: d["juiceScore"], reverse=True)
 
     juice_leader = max(priced, key=lambda l: valuation.juice_score(l), default=None)
     top_edge = max(priced, key=lambda l: (_edge_pct(l) or -999), default=None)
     best_value = max(priced, key=lambda l: abs(l.get("model_edge") or 0), default=None)
+    highest_confidence = max(priced, key=lambda l: valuation.confidence_score(l), default=None)
+    best_standard = max(standard, key=lambda l: valuation.juice_score(l), default=None)
+    best_demon = max(demons, key=lambda l: valuation.juice_score(l), default=None)
+    best_goblin = max(goblins, key=lambda l: valuation.juice_score(l), default=None)
+    # Safest = confident AND stable (tight distribution relative to its own projection) —
+    # a real, different question than "Highest Confidence" alone (that tile can be a
+    # decisive-but-volatile prop; this one downweights volatility on top of confidence).
+    def _safety(l: dict) -> float:
+        conf = valuation.confidence_score(l)
+        cv = valuation.volatility_cv(l)
+        stability = 100.0 if cv is None else max(0.0, 100.0 - min(cv, 2.0) * 50.0)
+        return 0.6 * conf + 0.4 * stability
+    safest = max(priced, key=_safety, default=None)
     moves = db.recent_prop_moves(limit=1)
     big_move = moves[0] if moves else None
 
+    roi = db.roi_summary(days=7)
+
     tiles = {
+        "todays_roi": {"label": "Model ROI (Trailing 7D)", **roi},
         "juice_leader": _tile(juice_leader,
                               valuation.juice_score(juice_leader) if juice_leader else None,
                               "Juice Score Leader"),
@@ -201,17 +304,46 @@ def build(lines: list[dict], updated_at: Optional[str],
                             (round(abs(best_value.get("model_edge") or 0), 1)
                              if best_value else None),
                             "Best Value (PROJ vs LINE)"),
+        "highest_confidence": _tile(highest_confidence,
+                                    valuation.confidence_score(highest_confidence) if highest_confidence else None,
+                                    "Highest Confidence"),
+        "safest_play": _tile(safest, round(_safety(safest), 1) if safest else None, "Safest Play"),
+        "best_standard": _tile(best_standard, valuation.juice_score(best_standard) if best_standard else None,
+                               "Best Standard Play"),
+        "best_demon": _tile(best_demon, valuation.juice_score(best_demon) if best_demon else None,
+                            "Best Demon"),
+        "best_goblin": _tile(best_goblin, valuation.juice_score(best_goblin) if best_goblin else None,
+                             "Best Goblin"),
+    }
+
+    movers = _movers()
+    movers["steam"] = _steam_moves()
+
+    high_juice = sum(1 for d in drops if d["juiceScore"] >= 80)
+    med_juice = sum(1 for d in drops if 60 <= d["juiceScore"] < 80)
+    coach_context = {
+        "total_priced_props_today": len(priced),
+        "props_80plus_juice": high_juice,
+        "props_60to79_juice": med_juice,
+        "pct_of_pool_80plus_juice": round(100.0 * high_juice / len(priced), 1) if priced else 0,
+        "demon_count": len(demons), "goblin_count": len(goblins),
+        "trailing_7day_roi_pct": roi.get("roi_pct"),
+        "trailing_7day_sample_plays": roi.get("priced_plays"),
+        "top_drop_juice_score": drops[0]["juiceScore"] if drops else None,
+        "sport_filter": sport or "all",
     }
 
     return {
         "updated_at": updated_at,
         "tiles": tiles,
         "drops": drops[:12],
-        "movers": _movers(),
+        "movers": movers,
+        "most_offered": _most_offered(priced),
         "upcoming_games": _upcoming_games(pool),
         "factor_weights": model_health.FACTOR_WEIGHTS,
         "data_health": dataos.health(lines, updated_at, errors),
         "model_health_summary": _model_summary(),
+        "coach_context": coach_context,
     }
 
 

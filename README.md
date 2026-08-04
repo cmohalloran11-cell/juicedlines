@@ -19,6 +19,13 @@ calibration, and drift against graded outcomes.
   combo simulation, ensemble blending) between the raw engine and the board.
 - **`valuation.py`** — EV, Kelly fraction, Confidence, and the 7-component Juice Score,
   computed as pure functions of already-simulated data (no I/O, fully unit-tested).
+- **`optimizer.py`** — the Entry Optimizer: builds every legal same-book combination (2-6
+  Pick, Power/Flex) from the priced projection pool, excludes duplicate players and
+  correlated legs, and Monte Carlo simulates the survivors (>=100,000 sims on every entry
+  actually surfaced) for EV/Kelly/risk-of-ruin and a 0-100 Quality Score. Only PrizePicks has
+  a verified multi-pick payout table (`BOOK_PAYOUTS`) — Underdog/Sleeper are selectable but
+  return `unavailableReason` until a real published table for them is added. Served at
+  `GET /api/optimizer/today?book=` via `routes_optimizer.py`, mounted in `main.py`.
 - **`db.py` / `backtest.py` / `model_health.py`** — the graded CLV ledger and the
   self-monitoring stack: MAE/RMSE/bias/Brier/ECE/coverage, reliability diagrams, drift
   detection (sport-wide and per-stat), accuracy by player sample-depth, and accuracy by

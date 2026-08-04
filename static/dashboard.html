@@ -110,6 +110,60 @@ select,.ctl{padding:8px 12px;border-radius:9px;border:1px solid var(--line2);bac
 .empty{padding:60px 20px;text-align:center;color:var(--dim)}.empty .em{font-size:30px;margin-bottom:8px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 .learn-card{border:1px solid var(--line);border-radius:12px;padding:16px;background:#0e130d}.learn-card h4{margin:0 0 6px}.learn-card p{margin:0;color:var(--muted);font-size:12.5px}
+/* ── dashboard redesign: "what should I bet today" ── */
+.sec-hd{display:flex;align-items:flex-end;justify-content:space-between;margin:24px 0 12px}
+.sec-hd h2{margin:0;font-size:17px;font-weight:800;letter-spacing:-.3px}
+.sec-hd p{margin:2px 0 0;color:var(--muted);font-size:12px}
+.hero-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media (max-width:1350px){.hero-row{grid-template-columns:repeat(2,1fr)}}
+.hero{border:1px solid var(--line);border-radius:14px;padding:14px;background:linear-gradient(180deg,#111710,#0d120c);position:relative;overflow:hidden;min-height:112px}
+.hero.accent{background:linear-gradient(155deg,#182310,#0d120c);border-color:#31401f}
+.hero.purple{background:linear-gradient(155deg,#1c1428,#120d18);border-color:#3a2a55}
+.hero .cap{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.hero .big{font-size:23px;font-weight:900;letter-spacing:-.7px;line-height:1.15;margin-top:7px}
+.hero .sub{color:var(--muted);font-size:11.5px;margin-top:7px;line-height:1.4;max-width:calc(100% - 44px)}
+.hero .sub b{color:var(--text)}
+.hero .ph{position:absolute;right:12px;bottom:12px;width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--line2);background:#0a0e09}
+.entries-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.entry-card{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px;display:flex;flex-direction:column;gap:9px}
+.entry-card .ehd{display:flex;align-items:center;justify-content:space-between}
+.entry-card .ehd .lbl{font-weight:800;font-size:13.5px}
+.entry-card .stack{display:flex}
+.entry-card .stack img{width:22px;height:22px;border-radius:50%;object-fit:cover;border:2px solid var(--panel);background:#0a0e09;margin-left:-7px}
+.entry-card .stack img:first-child{margin-left:0}
+.entry-card .row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+.entry-card .row b{color:var(--text);font-weight:800}
+.play-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.play-card{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:15px;display:flex;flex-direction:column;gap:10px}
+.play-card .phd{display:flex;align-items:center;gap:10px}
+.play-card .phd img{width:38px;height:38px;border-radius:50%;object-fit:cover;background:#0a0e09;border:1px solid var(--line2)}
+.play-card .phd .nm{font-weight:800;font-size:13.5px}
+.play-card .phd .sub{color:var(--muted);font-size:11px}
+.play-card .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.play-card .m{background:#0e130d;border:1px solid var(--line);border-radius:9px;padding:7px 8px}
+.play-card .m .l{color:var(--dim);font-size:9px;text-transform:uppercase;font-weight:700;letter-spacing:.3px}
+.play-card .m .v{font-size:14px;font-weight:800;margin-top:2px}
+.play-card .why{background:#0e130d;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:11.5px;color:var(--muted)}
+.play-card .why b{color:var(--text)}
+.play-card .aibox2{border:1px dashed var(--line2);border-radius:9px;padding:9px 10px;font-size:11.5px;color:var(--muted);cursor:pointer}
+.play-card .aibox2:hover{border-color:var(--accent);color:var(--text)}
+.market-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.mk-row{display:flex;align-items:center;gap:9px;padding:8px 15px;border-top:1px solid #14190f;font-size:12px}
+.mk-row:first-child{border-top:0}
+.mk-row .nm{font-weight:700}.mk-row .sub{color:var(--muted);font-size:10.5px}
+.mk-row .val{margin-left:auto;font-weight:800;font-size:12px}
+.bankroll-card{border:1px solid var(--line2);border-radius:14px;background:linear-gradient(120deg,#111a10,#0e130d);padding:18px}
+.bk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;margin-top:14px}
+.bk-item .l{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px}
+.bk-item .v{font-size:19px;font-weight:800;margin-top:4px}
+.bk-item .v.sm{font-size:14px}
+.bk-set{display:flex;gap:8px;align-items:center}
+.bk-set input{width:130px;padding:7px 10px;border-radius:8px;border:1px solid var(--line2);background:#0e130d;color:var(--text);font-size:12.5px}
+.coach-card{border:1px solid var(--line2);border-radius:14px;background:linear-gradient(120deg,#161020,#0e130d);padding:18px;display:flex;gap:14px;align-items:flex-start}
+.coach-card .orb{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#3a2a55,#1c1428);display:flex;align-items:center;justify-content:center;color:var(--purple);font-weight:900;flex:0 0 34px}
+.coach-card h4{margin:0 0 6px;font-size:14.5px}
+.coach-card p{margin:0;color:var(--text);font-size:13px;line-height:1.55}
+.coach-card .tag{display:inline-block;margin-bottom:8px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--purple);background:#1c1428;padding:2px 8px;border-radius:20px}
 /* drawer */
 .scrim{position:fixed;inset:0;background:rgba(3,6,3,.6);backdrop-filter:blur(3px);z-index:80;display:none}
 .scrim.open{display:block}
@@ -220,6 +274,16 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
      scrollable now, and the rest of the page stays put. */
   .rtable,.drops{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
 }
+/* Entry Optimizer */
+.opt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.opt-card{border:1px solid var(--line);border-radius:12px;background:#0e130d;padding:14px}
+.opt-card.big{background:var(--panel);padding:18px}
+.opt-card-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.opt-fmt{font-weight:800;font-size:14px}
+.opt-legs{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.opt-leg{display:flex;align-items:center;gap:8px;font-size:12px}
+.opt-leg-t{display:flex;flex-direction:column;line-height:1.25}
+.opt-leg-t span{font-size:10.5px}
 </style>
 </head>
 <body>
@@ -365,6 +429,7 @@ async function staticApi(path){
     case '/api/model/health': return J('model_health.json');
     case '/api/backtest': return J('backtest.json');
     case '/api/model/drift': return J('drift.json');
+    case '/api/optimizer/today': return J('optimizer.json');
     case '/api/weather': return J('weather.json');
     case '/api/books': return J('books.json');
     case '/api/injuries': return J('injuries.json');
@@ -448,7 +513,7 @@ async function doGoogle(){if(!SB){$('#login-err').textContent='Auth is not confi
 const NAVGROUPS=[
   ['',[['Dashboard','dashboard','grid']]],
   ['Research',[['Projections','projections','bars'],['Players','players','user'],['Games','games','cal'],['Teams','teams','shield'],['Research Center','research','flask','New']]],
-  ['Analysis',[['AI Juice','ai-juice','spark'],['Simulations','simulations','wave'],['Correlations','correlations','link'],['Top Movers','movers','trend'],['Market Intel','market','pulse'],['Model Health','model-health','heart','New'],['Injuries','injuries','plus'],['Weather','weather','cloud']]],
+  ['Analysis',[['Entry Optimizer','optimizer','layers','New'],['AI Juice','ai-juice','spark'],['Simulations','simulations','wave'],['Correlations','correlations','link'],['Top Movers','movers','trend'],['Market Intel','market','pulse'],['Model Health','model-health','heart','New'],['Injuries','injuries','plus'],['Weather','weather','cloud']]],
   ['My Workspace',[['Portfolio','portfolio','folder','Pro'],['Watchlist','watchlist','star'],['Alerts','alerts','bell']]],
   ['Community',[['Leaderboards','leaderboards','trophy'],['Learn','learn','cap'],['Community','community','users','Soon']]],
 ];
@@ -506,60 +571,236 @@ const cur=()=>location.hash.slice(2)||'dashboard';
 // ══════════════════════════ VIEWS ══════════════════════════
 let sport='all';
 let DASH_D=null;
+// ── "What should I bet today?" dashboard ──
+let DASH_OPT=null;
 async function vDashboard(){
-  const d=await api('/api/dashboard?sport='+sport);
-  DASH_D=d;
-  const t=d.tiles||{},dh=d.data_health||{};
-  const tile=(cap,big,cls,sub,pho)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div>${pho?`<img class="ph" src="${ph(pho)}">`:''}</div>`;
-  const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move,bv=t.best_value;
+  const [d,injRes,opt]=await Promise.all([
+    api('/api/dashboard?sport='+sport),
+    api('/api/injuries').catch(()=>({injuries:[]})),
+    api('/api/optimizer/today?sport='+sport).catch(()=>({todaysBest:{},topEntries:[]})),
+  ]);
+  DASH_D=d; DASH_OPT=opt;
   $('#view').innerHTML=`
    <div class="tabs" id="tabs"></div>
-   <div class="ai-sum" style="margin-bottom:16px"><div class="orb">AI</div><div><h4>AI Briefing</h4><p id="ai-summary" class="skel">Checking AI Juice…</p></div><button class="btn" onclick="go('ai-juice')">Open AI Juice</button></div>
-   <div class="grid2"><div>
-    <div class="tiles">
-      ${tile('Juice Score Leader',jl?jl.value:'—','',jl?`<b>${jl.player}</b><br>${cap(jl.side)} ${fmt(jl.line)} ${jl.stat}`:'—',jl&&jl.headshot)}
-      ${tile('Top Projected EV %',te?pct(te.value):'—','pos',te?`<b>${te.player}</b><br>${cap(te.side)} ${fmt(te.line)} ${te.stat}`:'—',te&&te.headshot)}
-      ${tile('Biggest Line Move',lm?signed(lm.value):'—',lm&&lm.value>0?'pos':'neg',lm?`<b>${lm.player}</b><br>${lm.stat}`:'No moves logged')}
-      ${tile('Best Value',bv?signed(bv.value):'—','pos',bv?`<b>${bv.player}</b><br>${cap(bv.side)} ${fmt(bv.line)} ${bv.stat}`:'—',bv&&bv.headshot)}
-      <div class="tile meter"><div class="cap">Data Quality</div><div class="big">${dh.quality_score??'—'}<span style="font-size:14px;color:var(--muted)">/100</span></div><div class="sub"><b>${(dh.projected_lines||0).toLocaleString()}</b> projected · ${dh.live_sources||0} sources</div><div class="bar"><i style="width:${dh.quality_score||0}%"></i></div></div>
-    </div>
-    <div class="panel"><div class="phead"><h3>Daily Juice Drops <span class="hint">Top props our model loves today</span></h3><span class="lnk" onclick="go('projections')">View All →</span></div>${propTable((d.drops||[]).slice(0,7))}</div>
-    <div class="two">
-      <div class="panel"><div class="phead"><h3>Line Movement</h3><span class="hint" id="tsub"></span></div><div style="padding:6px 12px 14px"><svg class="spark" id="spark" viewBox="0 0 520 150" preserveAspectRatio="none"></svg></div></div>
-      <div class="panel"><div class="phead"><h3>Confidence Breakdown <span class="hint">top drop · real components</span></h3></div><div class="donutwrap"><svg width="150" height="150" viewBox="0 0 150 150" id="donut"></svg><div class="legend" id="legend"></div></div></div>
-    </div>
-   </div>
-   <div><div class="rcard"><div class="rhead"><h4>Alerts <span class="n" id="aln"></span></h4><span class="lnk" onclick="go('alerts')">View All</span></div><div id="ralerts"></div></div>
-    <div class="rcard"><div class="rhead"><h4>Top Movers</h4><span class="lnk" onclick="go('movers')">View All</span></div><div class="mtabs" id="mtabs"><span class="mtab active" data-k="proj_up">PROJ UP</span><span class="mtab" data-k="proj_down">PROJ DOWN</span><span class="mtab" data-k="line_moves">LINE MOVES</span></div><div id="movers"></div></div>
-    <div class="rcard"><div class="rhead"><h4>Upcoming Games</h4></div><div id="games"></div></div></div></div>`;
-  renderTabs(); renderDonut(d); renderRail(d); renderAlerts(d);
-  if(d.drops&&d.drops[0])loadSpark(d.drops[0]);
+   <div class="sec-hd"><div><h2>Today's Edge</h2><p>The board's best picks right now, by category.</p></div></div>
+   <div class="hero-row" id="heroRow"></div>
+
+   <div class="sec-hd"><div><h2>Today's Recommended Entries</h2><p>Monte-Carlo simulated multi-pick slips (100,000+ sims each) from <a onclick="go('optimizer')" style="color:var(--accent);cursor:pointer">Entry Optimizer</a>, published PrizePicks payout tables.</p></div></div>
+   <div class="entries-grid" id="entriesGrid"></div>
+
+   <div class="sec-hd"><div><h2>Top Individual Plays</h2><p>Every number traces to a real computation — click AI Explanation for a grounded read.</p></div></div>
+   <div class="play-grid" id="playGrid"></div>
+
+   <div class="sec-hd"><div><h2>Live Market</h2><p>What's moving right now, across books.</p></div></div>
+   <div class="market-grid" id="marketGrid"></div>
+
+   <div class="sec-hd"><div><h2>Bankroll</h2><p>Sizing guidance from today's board — set your bankroll to personalize it.</p></div></div>
+   <div class="bankroll-card" id="bankrollCard"></div>
+
+   <div class="sec-hd"><div><h2>AI Coach</h2></div></div>
+   <div class="coach-card"><div class="orb">${icon('sparkle',18)}</div><div style="flex:1;min-width:0"><span class="tag">Today's Strategy</span><p id="coachText" class="skel">Reading the slate…</p></div></div>
+  `;
+  renderTabs();
+  renderHero(d,opt);
+  renderEntries(opt);
+  renderPlayCards(d);
+  renderLiveMarket(d, injRes.injuries||[]);
+  renderBankroll(d,opt);
+  loadCoach(d,opt);
 }
 function renderTabs(){const S=[['All Sports','all'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis']];
   const box=$('#tabs');if(!box)return;box.innerHTML=S.map(([n,k])=>`<span class="tab ${k===sport?'active':''}" onclick="sport='${k}';render()">${k==='all'?icon('bolt',14,'currentColor'):leagueLogo(k,15)}${n}</span>`).join('');}
-let moverTab='proj_up';
-function renderRail(d){const m=(d.movers||{})[moverTab]||[];
-  $('#movers').innerHTML=m.length?m.map((x,i)=>`<div class="mv"><span class="rk">${i+1}</span><div style="flex:1"><div class="nm">${x.player}</div><div class="sub">${ico(x.sport)} ${x.stat}</div></div><span class="mval ${x.move>=0?'pos':'neg'}">${signed(x.move)}</span></div>`).join(''):'<div class="mv muted" style="border:0">No movement yet.</div>';
-  $('#mtabs').onclick=e=>{const t=e.target.closest('.mtab');if(!t)return;moverTab=t.dataset.k;[...$('#mtabs').children].forEach(c=>c.classList.toggle('active',c.dataset.k===moverTab));renderRail(d)};
-  const g=d.upcoming_games||[];$('#games').innerHTML=g.length?g.map(x=>`<div class="gm"><span class="lg">${ico(x.sport)}</span><div><div class="g">${x.team}</div><div class="lbl">${x.sport}</div></div><span class="tm2">${timeOf(x.startTime)}</span></div>`).join(''):'<div class="gm muted" style="border:0">No games.</div>';
+
+// ── Today's Edge: hero tiles ──
+function heroCard(cls,cap,big,sub,pho){
+  return `<div class="hero ${cls||''}"><div class="cap">${cap}</div><div class="big">${big}</div><div class="sub">${sub}</div>${pho?`<img class="ph" src="${ph(pho)}">`:''}</div>`;
 }
-function renderAlerts(d){const mv=d.movers||{},a=[];
-  (mv.proj_up||[]).slice(0,1).forEach(x=>a.push(['up','#16240f','var(--accent)','Projection Increase',`${x.player} · ${x.stat}`,signed(x.move)]));
-  (mv.line_moves||[]).slice(0,1).forEach(x=>a.push([x.move>=0?'up':'down','#241010',x.move>=0?'var(--accent)':'var(--down)','Line Movement',`${x.player} · ${x.stat}`,signed(x.move)]));
-  (mv.proj_down||[]).slice(0,1).forEach(x=>a.push(['warn','#24200f','var(--warn)','Projection Drop',`${x.player} · ${x.stat}`,signed(x.move)]));
-  $('#aln').textContent='('+a.length+')';
-  $('#ralerts').innerHTML=a.length?a.map(([ic,bg,c,h,dd,v])=>`<div class="alert"><div class="ai" style="background:${bg};color:${c}">${icon(ic,14)}</div><div style="flex:1;min-width:0"><div class="h">${h}</div><div class="d">${dd}</div></div><div class="t">${v}</div></div>`).join(''):'<div class="alert muted">No alerts yet.</div>';
+function playerSub(t){return t?`<b>${esc(t.player)}</b><br>${cap(t.side)} ${fmt(t.line)} ${esc(t.stat)}`:'Not enough live props yet.'}
+function renderHero(d,opt){
+  const t=d.tiles||{};
+  const be=(opt&&opt.topEntries&&opt.topEntries[0])||null, roi=t.todays_roi||{};
+  const cards=[
+    heroCard('accent','Today\'s Best Entry',be?be.format:'—',
+      be?`Profit chance <b>${Math.round(be.simulation.chanceOfProfit*100)}%</b> · ROI <b>${pct(be.simulation.expectedROI*100)}</b>`:'Not enough legs yet today.'),
+    heroCard('','Model ROI (Trailing 7D)',roi.roi_pct!=null?pct(roi.roi_pct):'—',
+      roi.priced_plays?`<b>${roi.priced_plays}</b> priced plays graded, last ${roi.days}d`:'A literal "today" figure is impossible — nothing has graded yet. This is the model\'s most recent measured run.'),
+    heroCard('','Highest Confidence',t.highest_confidence?Math.round(t.highest_confidence.value)+'%':'—',playerSub(t.highest_confidence),t.highest_confidence&&t.highest_confidence.headshot),
+    heroCard('','Best Demon',t.best_demon?t.best_demon.value:'—',playerSub(t.best_demon),t.best_demon&&t.best_demon.headshot),
+    heroCard('','Best Goblin',t.best_goblin?t.best_goblin.value:'—',playerSub(t.best_goblin),t.best_goblin&&t.best_goblin.headshot),
+    heroCard('','Best Standard Play',t.best_standard?t.best_standard.value:'—',playerSub(t.best_standard),t.best_standard&&t.best_standard.headshot),
+    heroCard('accent','Best Value',t.best_value?signed(t.best_value.value):'—',playerSub(t.best_value),t.best_value&&t.best_value.headshot),
+    heroCard('','Safest Play',t.safest_play?Math.round(t.safest_play.value)+'/100':'—',playerSub(t.safest_play),t.safest_play&&t.safest_play.headshot),
+  ];
+  $('#heroRow').innerHTML=cards.join('');
 }
-function renderDonut(d){const drop=d.drops&&d.drops[0];const f=(drop&&drop.confidenceFactors)||[];
-  const items=f.map(z=>[z.factor,z.value,CFCOL[z.factor]||'#5c675a']);
-  const sum=items.reduce((s,i)=>s+i[1],0),head=Math.max(0,100-sum);if(head>0.5)items.push(['Headroom',head,'#26311f']);
-  let a=-Math.PI/2,R=58,r=38,cx=75,cy=75,p='';const tot=items.reduce((s,x)=>s+x[1],0)||1;
-  items.forEach(([_n,w,col])=>{const ang=w/tot*2*Math.PI,a2=a+ang,P=(rad,an)=>[cx+rad*Math.cos(an),cy+rad*Math.sin(an)];const[x1,y1]=P(R,a),[x2,y2]=P(R,a2),[x3,y3]=P(r,a2),[x4,y4]=P(r,a),lg=ang>Math.PI?1:0;p+=`<path d="M${x1} ${y1}A${R} ${R} 0 ${lg} 1 ${x2} ${y2}L${x3} ${y3}A${r} ${r} 0 ${lg} 0 ${x4} ${y4}Z" fill="${col}"/>`;a=a2});
-  const conf=drop?Math.round(drop.confidence):0;
-  $('#donut').innerHTML=(p||'')+`<text x="75" y="72" text-anchor="middle" fill="#e9f0e6" font-size="22" font-weight="800">${conf}%</text><text x="75" y="88" text-anchor="middle" fill="#8b978a" font-size="9">Top Drop Conf.</text>`;
-  $('#legend').innerHTML=f.length?f.map(z=>`<div class="row"><span class="dot" style="background:${CFCOL[z.factor]||'#5c675a'}"></span>${z.factor}<span class="pct">${z.value}/${z.max}</span></div>`).join(''):'<div class="row muted">Breakdown updates with the next build.</div>';
+
+// ── Recommended Entries (from the Entry Optimizer's real Monte Carlo simulation) ──
+const DASH_ENTRY_FORMATS=['2_flex','2_power','3_flex','3_power','4_flex'];
+function avgLegConfidence(e){const l=e.legs||[];return l.length?l.reduce((s,x)=>s+(x.confidence||0),0)/l.length:0}
+function dashEntryCard(e){
+  if(!e)return `<div class="entry-card" style="align-items:center;justify-content:center;text-align:center;color:var(--dim);min-height:180px">Not enough independent, priced props today for this format.</div>`;
+  const s=e.simulation,roiCls=s.expectedROI>=0?'pos':'neg';
+  return `<div class="entry-card">
+    <div class="ehd"><span class="lbl">${e.format}</span><span class="js" style="width:28px;height:28px;font-size:11px;color:${jColor(e.qualityScore)};box-shadow:inset 0 0 0 2px ${jColor(e.qualityScore)}55">${e.qualityScore}</span></div>
+    <div class="stack">${e.legs.map(l=>`<img src="${ph(l.headshot)}" title="${esc(l.player)}">`).join('')}</div>
+    <div class="row">Expected ROI <b class="${roiCls}">${pct(s.expectedROI*100)}</b></div>
+    <div class="row">Confidence <b>${Math.round(avgLegConfidence(e))}%</b></div>
+    <div class="row">Projected Win % <b>${Math.round(s.chanceOfProfit*100)}%</b></div>
+    <div class="row">Stake Rec. <b>${(s.kellyFraction*100).toFixed(1)}% of bankroll</b></div>
+    <button class="btn pri" style="margin-top:2px;justify-content:center" onclick='openEntry(${JSON.stringify(e).replace(/'/g,"&#39;")})'>View Entry</button>
+  </div>`;
 }
-async function loadSpark(drop){$('#tsub').textContent=drop.player+' — '+drop.stat;let pts=[drop.line,drop.line];try{const h=(await api('/api/lines/history?id='+encodeURIComponent(drop.id)+'&limit=40')).history||[];const v=h.map(x=>x.line_value).filter(x=>x!=null);if(v.length>1)pts=v}catch(e){}drawSpark('#spark',pts,drop.projection,drop.line)}
+function renderEntries(opt){
+  const best=(opt&&opt.todaysBest)||{};
+  $('#entriesGrid').innerHTML=DASH_ENTRY_FORMATS.map(k=>dashEntryCard(best[k])).join('');
+}
+function openEntry(e){
+  const s=e.simulation,c=e.correlation;
+  $('#drawer').innerHTML=`<div class="dh"><div><div style="font-weight:800;font-size:15px">${e.format}</div><div class="muted" style="font-size:11.5px">${e.legs.length} legs · ${s.simCount.toLocaleString()} simulations</div></div><span class="x" onclick="closeDrawer()">${icon('x',18)}</span></div>
+   <div class="dsec"><h5>Legs</h5>${e.legs.map(l=>`<div class="pl" style="margin-bottom:10px"><img src="${ph(l.headshot)}"><div><div class="nm">${esc(l.player)}</div><div class="tm">${cap(l.side)} ${fmt(l.line)} ${esc(l.stat)} · ${prob(l.side==='under'?1-l.probability:l.probability)} win prob</div></div></div>`).join('')}</div>
+   <div class="dsec"><h5>Entry Math (${s.simCount.toLocaleString()} Monte Carlo sims)</h5>
+    <div class="kv">
+      <div class="b"><div class="l">Expected ROI</div><div class="v ${s.expectedROI>=0?'pos':'neg'}">${pct(s.expectedROI*100)}</div></div>
+      <div class="b"><div class="l">Chance of Profit</div><div class="v">${Math.round(s.chanceOfProfit*100)}%</div></div>
+      <div class="b"><div class="l">All-Hit Probability</div><div class="v">${Math.round(s.probabilityAllHit*100)}%</div></div>
+      <div class="b"><div class="l">Kelly Stake</div><div class="v">${(s.kellyFraction*100).toFixed(1)}%</div></div>
+      <div class="b"><div class="l">Risk of Ruin</div><div class="v" style="color:${s.riskOfRuin>0.3?'var(--down)':s.riskOfRuin>0.12?'var(--warn)':'var(--accent)'}">${Math.round(s.riskOfRuin*100)}%</div></div>
+      <div class="b"><div class="l">Quality Score</div><div class="v">${e.qualityScore}</div></div>
+    </div>
+    <p class="muted" style="font-size:11px;margin-top:12px">${esc(e.reason)}. Correlation: ${c.level} risk${c.linkedPairs?` (${c.linkedPairs} linked pair(s))`:''}. Payouts from PrizePicks' published multiplier table.</p>
+   </div>`;
+  $('#scrim').classList.add('open');$('#drawer').classList.add('open');
+}
+
+// ── Top Individual Plays ──
+const hitPct=x=>x.probability==null?null:(x.side==='under'?1-x.probability:x.probability);
+function whyWeLikeIt(x){
+  const top=[...(x.juiceFactors||[])].sort((a,b)=>b.value-a.value).slice(0,2);
+  if(!top.length)return 'No breakdown available yet.';
+  return top.map(f=>`<b>${f.factor}</b> (${f.detail})`).join(' + ');
+}
+function playCard(x){
+  const box=`ai-${x.id}`.replace(/[^a-zA-Z0-9_-]/g,'');
+  return `<div class="play-card">
+    <div class="phd"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)}</div><div class="sub">${x.team&&x.team!==x.player?esc(x.team)+' · ':''}${cap(x.side)} ${fmt(x.line)} ${esc(x.stat)}</div></div>
+      <span class="js" style="margin-left:auto;width:32px;height:32px;font-size:12px;color:${jColor(x.juiceScore)};box-shadow:inset 0 0 0 2px ${jColor(x.juiceScore)}55">${x.juiceScore}</span></div>
+    <div class="metrics">
+      <div class="m"><div class="l">Projection</div><div class="v">${fmt(dispProj(x))}</div></div>
+      <div class="m"><div class="l">Hit %</div><div class="v">${hitPct(x)==null?'—':Math.round(hitPct(x)*100)+'%'}</div></div>
+      <div class="m"><div class="l">Confidence</div><div class="v">${Math.round(x.confidence)}%</div></div>
+      <div class="m"><div class="l">Edge</div><div class="v ${x.edge>=0?'pos':'neg'}">${signed(x.edge)}</div></div>
+      <div class="m"><div class="l">EV</div><div class="v ${x.edgePct>=0?'pos':'neg'}">${x.unpriced?'n/a':pct(x.edgePct)}</div></div>
+      <div class="m"><div class="l">Kelly %</div><div class="v">${x.kellyPct==null?'—':x.kellyPct+'%'}</div></div>
+      <div class="m"><div class="l">Volatility</div><div class="v">${x.volatility==null?'—':'CV '+x.volatility}</div></div>
+      <div class="m"><div class="l">Historical Acc.</div><div class="v">${x.historicalAccuracy==null?'—':Math.round(x.historicalAccuracy*100)+'%'}</div></div>
+      <div class="m" style="cursor:pointer" onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'><div class="l">Full Detail</div><div class="v" style="color:var(--accent)">Open →</div></div>
+    </div>
+    <div class="why"><b>Why We Like It:</b> ${whyWeLikeIt(x)}</div>
+    <div class="aibox2" id="${box}" onclick="loadAIExplain(${JSON.stringify(x).replace(/"/g,'&quot;')},'#${box}')">${icon('sparkle',13)} AI Explanation — click to generate</div>
+  </div>`;
+}
+function renderPlayCards(d){
+  const rows=(d.drops||[]).slice(0,9);
+  $('#playGrid').innerHTML=rows.length?rows.map(playCard).join(''):'<div class="empty" style="grid-column:1/-1">No projected props right now.</div>';
+}
+
+// ── Live Market ──
+function mkPanel(title,sub,rows){
+  return `<div class="panel"><div class="phead"><h3>${title}</h3><span class="hint">${sub}</span></div>${rows}</div>`;
+}
+function renderLiveMarket(d,injuries){
+  const mv=d.movers||{};
+  const offered=(d.most_offered||[]).map((x,i)=>`<div class="mk-row"><span class="rk">${i+1}</span><div><div class="nm">${esc(x.player)}</div><div class="sub">${ico(x.sport)} ${esc(x.stat)}</div></div><span class="val">${x.bookCount} books</span></div>`).join('')||'<div class="mk-row muted">No multi-book props yet.</div>';
+  const steam=(mv.steam||[]).map(x=>`<div class="mk-row"><span class="${x.direction==='up'?'pos':'neg'}">${icon(x.direction,14)}</span><div><div class="nm">${esc(x.player)}</div><div class="sub">${ico(x.sport)} ${esc(x.stat)} · ${x.bookCount} books</div></div><span class="val ${x.direction==='up'?'pos':'neg'}">${signed(x.avgMove)}</span></div>`).join('')||'<div class="mk-row muted">No synchronized cross-book moves yet.</div>';
+  const changes=[...(mv.proj_up||[]).map(x=>({...x,dir:1})),...(mv.proj_down||[]).map(x=>({...x,dir:-1}))]
+    .sort((a,b)=>Math.abs(b.move)-Math.abs(a.move)).slice(0,6)
+    .map(x=>`<div class="mk-row"><span class="${x.dir>0?'pos':'neg'}">${icon(x.dir>0?'up':'down',14)}</span><div><div class="nm">${esc(x.player)}</div><div class="sub">${ico(x.sport)} ${esc(x.stat)}</div></div><span class="val ${x.dir>0?'pos':'neg'}">${signed(x.move)}</span></div>`).join('')||'<div class="mk-row muted">No projection changes logged yet.</div>';
+  const inj=injuries.slice(0,6).map(x=>`<div class="mk-row"><img class="legav" src="${ph(x.headshot)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;background:#0a0e09"><div><div class="nm">${esc(x.player)}</div><div class="sub">${esc(x.team)||''} · ${esc(x.note)}</div></div><span class="chip ${x.status==='OUT'?'r':'y'}">${x.status}</span></div>`).join('')||'<div class="mk-row muted">No flagged injuries right now.</div>';
+  $('#marketGrid').innerHTML=[
+    mkPanel('Most Widely Offered','not betting volume — no such feed exists; this is real cross-book listing overlap',offered),
+    mkPanel('Steam Moves','same line moving the same direction on 2+ books — the honest signal behind "sharp money"',steam),
+    mkPanel('Biggest Projection Changes','model re-runs since this morning',changes),
+    mkPanel('Line Movement','today\'s single biggest mover',`<div style="padding:6px 12px 14px"><span class="hint" id="mktsub" style="display:block;margin-bottom:4px"></span><svg class="spark" id="mktspark" viewBox="0 0 520 150" preserveAspectRatio="none"></svg></div>`),
+    mkPanel('Injury Impact','scratches + workload-capped returns flagged on today\'s board',inj),
+  ].join('');
+  const topMove=(mv.line_moves||[])[0];
+  if(topMove)loadMarketSpark(topMove);
+  else if(d.drops&&d.drops[0])loadMarketSpark({player:d.drops[0].player,stat:d.drops[0].stat,id:d.drops[0].id,move:0});
+}
+async function loadMarketSpark(m){
+  const sub=$('#mktsub');if(sub)sub.textContent=m.player+' — '+m.stat;
+  let pts=[m.open_line,m.close_line].filter(v=>v!=null);
+  if(pts.length<2){const drop=(DASH_D&&DASH_D.drops||[])[0];pts=drop?[drop.line,drop.line]:[0,0]}
+  drawSpark('#mktspark',pts,pts[pts.length-1],pts[0]);
+}
+
+// ── Bankroll ──
+const BK={get:()=>{const v=localStorage.getItem('juiced_bankroll');return v?+v:null},
+  set:v=>localStorage.setItem('juiced_bankroll','' + v)};
+function riskLabel(pct80){
+  if(pct80==null)return['—','muted'];
+  if(pct80<5)return['Conservative Slate','y'];
+  if(pct80>15)return['Aggressive-Favorable','g'];
+  return['Moderate Slate','muted'];
+}
+function renderBankroll(d,opt){
+  const bk=BK.get();
+  const drops=(d.drops||[]).slice(0,5).filter(x=>x.kellyPct!=null);
+  // A "unit" is a conservative, repeatable single-play size, not the average of the 5
+  // MOST aggressive picks on the board (that would just recommend max-Kelly every time) —
+  // capped at 5% here, well under the per-play Kelly cap (25%) shown on individual cards.
+  const avgKelly=drops.length?Math.min(5,drops.reduce((s,x)=>s+x.kellyPct,0)/drops.length):0;
+  const entryList=DASH_ENTRY_FORMATS.map(k=>(opt&&opt.todaysBest||{})[k]).filter(Boolean);
+  const suggested=entryList.filter(e=>e.qualityScore>=70);
+  const maxRiskPct=Math.min(20,entryList.reduce((s,e)=>s+e.simulation.kellyFraction*100,0));
+  const best=opt&&opt.topEntries&&opt.topEntries[0];
+  const ctx=d.coach_context||{};
+  const [rlabel,rcls]=riskLabel(ctx.pct_of_pool_80plus_juice);
+  const money=n=>bk?'$'+Math.round(n).toLocaleString():'—';
+  $('#bankrollCard').innerHTML=`
+    <div class="bk-set">
+      <span class="muted" style="font-size:12px">Set your bankroll</span>
+      <input id="bkInput" type="number" min="0" step="1" placeholder="e.g. 500" value="${bk||''}" onchange="setBankroll(this.value)">
+      <span class="chip ${rcls}">${rlabel}</span>
+    </div>
+    <div class="bk-grid">
+      <div class="bk-item"><div class="l">Current Bankroll</div><div class="v">${money(bk||0)}</div></div>
+      <div class="bk-item"><div class="l">Recommended Unit Size</div><div class="v sm">${bk?money(bk*avgKelly/100):'Set bankroll'}</div></div>
+      <div class="bk-item"><div class="l">Today's Max Risk</div><div class="v sm">${bk?money(bk*maxRiskPct/100)+' ('+maxRiskPct.toFixed(1)+'%)':'Set bankroll'}</div></div>
+      <div class="bk-item"><div class="l">Today's Suggested Entries</div><div class="v">${suggested.length} of ${entryList.length}</div></div>
+      <div class="bk-item"><div class="l">Kelly Recommendation</div><div class="v sm">${best?(best.simulation.kellyFraction*100).toFixed(1)+'% on '+best.format:'—'}</div></div>
+      <div class="bk-item"><div class="l">Risk Level</div><div class="v sm">${rlabel}</div></div>
+    </div>`;
+}
+function setBankroll(v){const n=+v;if(!isFinite(n)||n<0)return;BK.set(n);if(DASH_D)renderBankroll(DASH_D,DASH_OPT)}
+
+// ── AI Coach ──
+function coachFallback(d,opt){
+  const c=(d&&d.coach_context)||{};
+  if(!c.total_priced_props_today)return 'Not enough live props yet to build a strategy read.';
+  const bits=[`${c.props_80plus_juice} of ${c.total_priced_props_today} props (${c.pct_of_pool_80plus_juice}%) clear 80+ Juice today.`];
+  if(c.pct_of_pool_80plus_juice<5)bits.push('That\'s a thinner slate than usual — play smaller and fewer entries, and be selective on Demon plays.');
+  else if(c.pct_of_pool_80plus_juice>15)bits.push('That\'s a strong slate — the model has real conviction across more of the board than usual.');
+  else bits.push('A fairly typical slate — size entries normally.');
+  const best=opt&&opt.topEntries&&opt.topEntries[0];
+  if(best)bits.push(`Best combo right now: ${best.format} (${Math.round(best.simulation.chanceOfProfit*100)}% chance of profit, ${pct(best.simulation.expectedROI*100)} expected ROI).`);
+  return bits.join(' ');
+}
+async function loadCoach(d,opt){
+  const box=$('#coachText');if(!box)return;
+  try{
+    let ctx=d.coach_context||{};
+    const best=opt&&opt.topEntries&&opt.topEntries[0];
+    if(best)ctx={...ctx,best_entry_format:best.format,best_entry_quality_score:best.qualityScore,
+      best_entry_expected_roi_pct:Math.round(best.simulation.expectedROI*1000)/10,
+      best_entry_chance_of_profit_pct:Math.round(best.simulation.chanceOfProfit*1000)/10};
+    const r=STATIC?await api('/api/ai/coach',{method:'POST',body:ctx})
+                  :await api('/api/ai/coach?sport='+sport);
+    box.className='';
+    box.textContent=(r.ai&&r.ai.available)?r.ai.strategy:coachFallback(d,opt);
+  }catch(e){box.className='';box.textContent=coachFallback(d,opt)}
+}
+
 function drawSpark(sel,vals,proj,line){const S=$(sel);if(!S)return;const W=520,H=150,pad=14,mn=Math.min(...vals,proj),mx=Math.max(...vals,proj),rng=(mx-mn)||1,X=i=>pad+i*(W-2*pad)/Math.max(1,vals.length-1),Y=v=>H-pad-((v-mn)/rng)*(H-2*pad);let d='';vals.forEach((v,i)=>d+=(i?'L':'M')+X(i)+' '+Y(v));const py=Y(proj);
   // No <text> in the SVG: preserveAspectRatio="none" stretches the viewBox non-uniformly to
   // fill a much-wider container, which distorts SVG glyphs badly (the "proj X.X" label looked
@@ -918,6 +1159,71 @@ async function loadCorrLive(){
     box.innerHTML=`<h3 style="margin:0 0 4px">Live Example</h3><p class="muted" style="font-size:11.5px;margin:0 0 12px"><b style="color:var(--text)">${combo.player}</b> — the combo's own simulated probability already accounts for how these three move together; it is NOT the product of the three individual probabilities.</p>
      <table class="drops" style="margin:0"><thead><tr><th>Stat</th><th>Line</th><th>Proj</th><th>P(Over)</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
   }catch(e){box.innerHTML='<h3 style="margin:0 0 8px">Live Example</h3><p class="muted">Could not load a live example.</p>'}
+}
+// ══════════════════════ ENTRY OPTIMIZER ══════════════════════
+const OPT_FORMATS=[[2,'power'],[3,'power'],[3,'flex'],[4,'power'],[4,'flex'],[5,'power'],[5,'flex'],[6,'flex']];
+const fmtSigned=n=>n==null?'—':(n>0?'+':'')+(n*100).toFixed(1)+'%';
+const riskColor=r=>r==null?'var(--muted)':r>0.3?'var(--red)':r>0.12?'#e8c84a':'var(--green)';
+function entryLegsMini(legs){
+  return (legs||[]).map(l=>`<div class="opt-leg"><img src="${ph(l.headshot)}" style="width:22px;height:22px;border-radius:50%;background:#0a0e09;object-fit:cover;flex:none">
+    <div class="opt-leg-t"><b>${esc(l.player)}</b><span class="muted">${cap(l.side)} ${fmt(l.line)} · ${esc(l.stat)||''}${l.team?' · '+esc(l.team):''}</span></div>
+    <span class="muted mono" style="margin-left:auto;font-size:11px">${prob(l.probability!=null?(l.side==='under'?1-l.probability:l.probability):null)}</span></div>`).join('');
+}
+function entryCard(entry,big){
+  if(!entry)return `<div class="opt-card" style="text-align:center;color:var(--dim);padding:26px 14px">Not enough independent, priced props today to build this format.</div>`;
+  const s=entry.simulation,c=entry.correlation;
+  return `<div class="opt-card ${big?'big':''}">
+    <div class="opt-card-h">
+      <div><div class="opt-fmt">${entry.format}</div><div class="muted" style="font-size:11px;margin-top:2px">${esc(entry.reason)}</div></div>
+      <div style="display:flex;align-items:center;gap:6px;flex:none">
+        ${entry.reviewFlag?`<span class="chip" style="background:#3a2a0c;color:#e8c84a;cursor:help" title="${esc(entry.reviewFlag.reason)}">${icon('warn',12)} Review</span>`:''}
+        <span class="jspill" style="color:${jColor(entry.qualityScore)};border-color:${jColor(entry.qualityScore)}66" title="Quality Score">${entry.qualityScore}</span>
+      </div>
+    </div>
+    <div class="kv" style="grid-template-columns:repeat(4,1fr);margin:12px 0">
+      <div class="b"><div class="l">Expected ROI</div><div class="v ${s.expectedROI>=0?'pos':'neg'}" style="font-size:16px">${fmtSigned(s.expectedROI)}</div></div>
+      <div class="b"><div class="l">Profit Chance</div><div class="v" style="font-size:16px">${Math.round(s.chanceOfProfit*100)}%</div></div>
+      <div class="b"><div class="l">Kelly</div><div class="v" style="font-size:16px">${(s.kellyFraction*100).toFixed(1)}%</div></div>
+      <div class="b"><div class="l">Risk of Ruin</div><div class="v" style="font-size:16px;color:${riskColor(s.riskOfRuin)}">${Math.round(s.riskOfRuin*100)}%</div></div>
+    </div>
+    <div class="muted" style="font-size:10.5px;margin-bottom:10px">Median ${fmtSigned(s.medianReturn)} · Worst 10% ${fmtSigned(s.worst10)} · Best 10% ${fmtSigned(s.best10)} · ${(s.simCount||0).toLocaleString()} simulations · correlation risk: ${c.level}</div>
+    <div class="opt-legs">${entryLegsMini(entry.legs)}</div>
+  </div>`;
+}
+async function vOptimizer(){
+  // Book availability is queried live (not hardcoded) so this selector never drifts from
+  // optimizer.py's real BOOK_PAYOUTS — an unavailable book is disabled, not just labeled.
+  let bookOpts=`<option value="prizepicks">PrizePicks</option><option value="underdog">Underdog</option><option value="sleeper">Sleeper</option>`;
+  if(!STATIC){
+    try{
+      const bs=(await api('/api/optimizer/books')).books||[];
+      if(bs.length)bookOpts=bs.map(b=>`<option value="${b.id}" ${b.available?'':'disabled'}>${cap(b.id)}${b.available?'':' (soon)'}</option>`).join('');
+    }catch(e){/* keep the fallback options above */}
+  }
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Entry Optimizer <span class="chip g">New</span></h2><p>JUICED scores every priced prop, builds every legal combination for the book you pick, and Monte-Carlo simulates each one (100,000+ sims on every entry shown) — ranked by Quality Score, so you don't have to build a slip by hand.</p></div>
+    ${STATIC?'':`<div style="display:flex;gap:8px;flex:none">
+      <select id="opt-book" class="ctl" onchange="loadOptimizer()" style="width:150px" title="Every leg in an entry must come from the same book">${bookOpts}</select>
+      <select id="opt-sport" class="ctl" onchange="loadOptimizer()" style="width:140px"><option value="all">All Sports</option><option value="MLB">MLB</option><option value="WNBA">WNBA</option><option value="Tennis">Tennis</option></select>
+    </div>`}</div>
+   <div id="opt-content"><div class="panel" style="padding:40px;text-align:center"><span class="muted skel">Running the combination search and Monte Carlo simulation…</span></div></div>`;
+  loadOptimizer();
+}
+async function loadOptimizer(){
+  const sport=$('#opt-sport')?.value||'all';
+  const book=$('#opt-book')?.value||'prizepicks';
+  const content=$('#opt-content');if(!content)return;
+  content.innerHTML='<div class="panel" style="padding:40px;text-align:center"><span class="muted skel">Running the combination search and Monte Carlo simulation…</span></div>';
+  let r;
+  try{r=await api('/api/optimizer/today?sport='+sport+'&book='+book);}catch(e){content.innerHTML='<div class="panel"><div class="empty">Could not load the optimizer.</div></div>';return}
+  if(!r||!r.todaysBest){content.innerHTML='<div class="panel"><div class="empty">Optimizer data isn\'t available yet — check back once today\'s slate is projected.</div></div>';return}
+  if(r.unavailableReason){content.innerHTML=`<div class="panel"><div class="empty">${bookLogo(book,28)}<div style="margin-top:10px;max-width:440px;margin-left:auto;margin-right:auto">${esc(r.unavailableReason)}</div></div></div>`;return}
+  const bookName=cap(book);
+  const top=(r.topEntries||[]).slice(0,5);
+  const grid=OPT_FORMATS.map(([p,k])=>entryCard(r.todaysBest[`${p}_${k}`],false)).join('');
+  content.innerHTML=`
+   ${top.length?`<div class="panel" style="padding:16px 16px 4px"><div class="phead" style="padding:0 0 10px"><h3>#1 Best Entry</h3><span class="hint">${bookLogo(book,15)} ${r.poolSize} ${bookName} props scanned</span></div>${entryCard(top[0],true)}</div>`:''}
+   <div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Today's Best</h3><span class="hint">one top entry per ${bookName} format</span></div><div class="opt-grid">${grid}</div></div>
+   ${top.length>1?`<div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Top Entries — All Formats</h3><span class="hint">ranked by Quality Score</span></div><div class="opt-grid">${top.slice(1).map(e=>entryCard(e,false)).join('')}</div></div>`:''}`;
 }
 function demoTable(kind,cols,rows,emptyEm,emptyMsg){
   return rows.length?`<table class="drops"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows}</tbody></table>`
@@ -1367,7 +1673,7 @@ async function vModelHealth(){
 }
 function mhGoSport(sp){MH_SPORT=sp;vModelHealth()}
 
-const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,'model-health':vModelHealth,leaderboards:vLeaderboards,correlations:vCorrelations,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade,admin:vAdmin};
+const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,'model-health':vModelHealth,leaderboards:vLeaderboards,correlations:vCorrelations,optimizer:vOptimizer,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade,admin:vAdmin};
 
 // ── prop detail drawer ──
 // Colors for the REAL confidence components (from valuation.confidence_factors). No fake weights.

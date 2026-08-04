@@ -1,0 +1,3 @@
+{	"title": "Complete Coverage Report for Underdog and PrizePicks", 
+	"description": "This report reflects the complete coverage percentage based on both successfully fetched prop lines and required exclusions.", 
+	"exclusions": ["market_type: futures", "market_type: props"]}

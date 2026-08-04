@@ -154,6 +154,79 @@ def _call_anthropic(prompt: str) -> dict:
             else {"available": False, "reason": "AI returned an empty explanation."})
 
 
+_COACH_SYSTEM = """You are the AI Coach for the Juiced sports-prop research platform. You give \
+a short, actionable STRATEGY recommendation for today's slate as a whole — not a single prop.
+
+Hard rules — follow exactly:
+1. Use ONLY the numbers in the DATA block. Never invent a count, percentage, player name, or \
+market condition that is not present there.
+2. Never guarantee an outcome or use "lock"/"guaranteed"/"free money" language. This is \
+strategy guidance (how aggressively to play, what to avoid), not a pick.
+3. Be concrete and directive: 2-4 short sentences, plain language, aimed at someone deciding \
+how many entries to play and how big. Reference the actual counts from DATA when you make a \
+recommendation (e.g. "only N props clear 80+ Juice today" rather than a vague "a few").
+4. If the slate has fewer high-confidence edges than usual (few 80+ Juice props relative to \
+the total pool, or the top entry's projected win% is low), say so plainly and recommend \
+playing smaller/fewer entries. If the slate is strong, say so and explain what makes it strong \
+using the real numbers."""
+
+
+def _coach_context(summary: dict[str, Any]) -> str:
+    rows = [f"- {k}: {v}" for k, v in summary.items() if v is not None]
+    return "DATA (the only facts you may use):\n" + "\n".join(rows)
+
+
+def coach(summary: dict[str, Any]) -> dict:
+    """Grounded slate-level strategy recommendation — the AI Coach panel. `summary` is a
+    small dict of already-computed real aggregate numbers (see dashboard.coach_context());
+    this function never touches the DB or the board directly, same no-fabrication contract
+    as explain(). Never raises; degrades cleanly when unconfigured."""
+    if not available():
+        return {"available": False, "reason": status()["reason"]}
+    ctx = _coach_context(summary)
+    prompt = f"{ctx}\n\nGive today's strategy recommendation."
+    if PROVIDER == "gemini":
+        url = _GEMINI_URL.format(model=AI_MODEL)
+        body = {
+            "systemInstruction": {"parts": [{"text": _COACH_SYSTEM}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": 400, "temperature": 0.4},
+        }
+        try:
+            r = requests.post(url, params={"key": _gemini_key()}, json=body, timeout=25)
+        except Exception as exc:
+            return {"available": False, "reason": f"AI request failed: {exc}"}
+        if r.status_code != 200:
+            return {"available": False, "reason": f"AI request rejected ({r.status_code})."}
+        data = r.json()
+        cands = data.get("candidates") or []
+        if not cands:
+            return {"available": False, "reason": "AI returned no candidates."}
+        parts = (cands[0].get("content") or {}).get("parts") or []
+        text = "".join(p.get("text", "") for p in parts).strip()
+        if not text:
+            return {"available": False, "reason": "AI returned an empty recommendation."}
+        return {"available": True, "strategy": text, "provider": PROVIDER, "model": AI_MODEL,
+                "grounded_on": summary}
+    if PROVIDER == "anthropic":
+        try:
+            import anthropic
+        except Exception as exc:  # pragma: no cover
+            return {"available": False, "reason": f"AI SDK unavailable: {exc}"}
+        client = anthropic.Anthropic(api_key=_anthropic_key())
+        try:
+            resp = client.messages.create(model=AI_MODEL, max_tokens=400, system=_COACH_SYSTEM,
+                                          messages=[{"role": "user", "content": prompt}])
+        except Exception as exc:
+            return {"available": False, "reason": f"AI request failed: {exc}"}
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        if not text:
+            return {"available": False, "reason": "AI returned an empty recommendation."}
+        return {"available": True, "strategy": text, "provider": PROVIDER, "model": AI_MODEL,
+                "grounded_on": summary}
+    return {"available": False, "reason": "No AI provider configured."}
+
+
 def explain(line: dict[str, Any]) -> dict:
     """Grounded explanation of one projection. Never raises. On success returns
     {available, explanation, provider, model, grounded_on}."""

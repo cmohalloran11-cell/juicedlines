@@ -103,6 +103,26 @@ def test_projected_excludes_props_with_no_priced_available_side():
     assert dashboard._drop(out[0])["side"] == "over"
 
 
+def test_new_hero_tiles_scoped_correctly():
+    # best_demon/best_goblin must come from the unpriced lane, best_standard from the
+    # standard-only subset, highest_confidence/safest_play from the full priced pool —
+    # never leak a demon/goblin into the priced-only tiles (same guard as the existing tests).
+    lines = _slate()
+    d = dashboard.build(lines, updated_at="2026-01-01T00:00:00Z")
+    assert d["tiles"]["best_demon"]["player"] == "Demon Guy 0"
+    assert d["tiles"]["best_standard"]["player"] == "Standard Guy"
+    assert d["tiles"]["highest_confidence"]["player"] == "Standard Guy"  # only priced prop here
+    assert d["tiles"]["best_goblin"] is None  # no goblin props in this slate
+
+
+def test_coach_context_has_only_real_computed_numbers():
+    lines = _slate()
+    d = dashboard.build(lines, updated_at="2026-01-01T00:00:00Z")
+    ctx = d["coach_context"]
+    assert ctx["demon_count"] == 20
+    assert ctx["total_priced_props_today"] == 1
+
+
 def test_projections_default_excludes_demon_goblin_opt_in_includes():
     lines = _slate()
     default_rows = dashboard.projections(lines, limit=50)

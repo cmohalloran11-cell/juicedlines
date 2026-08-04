@@ -435,10 +435,17 @@ def main() -> None:
         if not FAST:
             import model_health as _mh
             import backtest as _bt
+            import optimizer as _opt
             _w("model_health.json", _mh.health())
             _w("backtest.json", {"current": _bt.current_accuracy("MLB")})
             _w("drift.json", _bt.drift("MLB"))
-            extra_json = "/model_health/backtest/drift"
+            # Entry Optimizer (optimizer.py): candidate search + Monte Carlo across all 8
+            # PrizePicks formats — real work (not free like the other JSON above), so it only
+            # runs on FULL cycles, same as model_health/backtest/drift right above it. Static
+            # deploy has no live /api/optimizer/today, so this file IS that endpoint for the
+            # static SPA (see dashboard.html's staticApi()).
+            _w("optimizer.json", _opt.today_report(lines))
+            extra_json = "/model_health/backtest/drift/optimizer"
         print(f"  wrote SPA JSON: projections/dashboard/injuries/weather/books/auth{extra_json}")
     except Exception as exc:
         print(f"  dashboard SPA JSON SKIPPED ({exc})")

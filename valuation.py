@@ -306,6 +306,18 @@ def _juice_components(line: dict[str, Any], model_prob: Optional[float]) -> dict
     return out
 
 
+def model_agreement_score(line: dict[str, Any]) -> Optional[float]:
+    """Public accessor for the same 0..1 'does the model agree with itself/the market' signal
+    used inside juice_score's agreement component (tennis's real 3-way agreement, else the
+    raw-vs-blended-projection proxy — see _juice_components). Exposed standalone for callers
+    (e.g. the Entry Optimizer) that want the raw number without recomputing the full Juice
+    Score breakdown. None when there's no probability to score against."""
+    prob = line.get("model_prob")
+    if prob is None:
+        return None
+    return round(_juice_components(line, prob)["agreement"][0], 3)
+
+
 def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int:
     """
     0–100 composite ranking how attractive a prop is OVERALL — not a re-skin of Confidence
@@ -347,6 +359,17 @@ def _std_from_band(line: dict[str, Any]) -> Optional[float]:
     if lo is None or hi is None or hi <= lo:
         return None
     return round((float(hi) - float(lo)) / 2.5631, 3)
+
+
+def volatility_cv(line: dict[str, Any]) -> Optional[float]:
+    """Coefficient of variation (SD / |projection|) from the shipped p10-p90 band — the same
+    real signal _juice_components' stability factor uses, exposed publicly so callers outside
+    this module (e.g. dashboard.py's play cards) can show a real "Volatility" number instead
+    of re-deriving it. None when there's no band or no projection."""
+    sd, proj = _std_from_band(line), line.get("model_proj")
+    if sd is None or proj is None or abs(float(proj)) < 1e-9:
+        return None
+    return round(sd / max(abs(float(proj)), 0.5), 3)
 
 
 def simulation_object(line: dict[str, Any]) -> Optional[dict]:

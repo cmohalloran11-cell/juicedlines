@@ -565,6 +565,62 @@ def scorecard(sport: str | None = None, edge: float = 0.5) -> dict:
     }
 
 
+def _american_to_decimal_local(price: Any) -> float | None:
+    try:
+        a = float(price)
+    except (TypeError, ValueError):
+        return None
+    if a > 0:
+        return 1.0 + a / 100.0
+    if a < 0:
+        return 1.0 + 100.0 / abs(a)
+    return None
+
+
+def roi_summary(sport: str | None = None, days: int = 7, edge: float = 0.5,
+                stake: float = 1.0) -> dict:
+    """Realized ROI on flat-$1-staked "plays" (|model−line| ≥ edge) over the last N graded
+    game-days — the honest answer behind a "Today's ROI" tile. A literal *today* figure is
+    impossible (today's games haven't graded yet); this is the model's most recent MEASURED
+    performance, which is what a "should I trust today's picks" question is really asking.
+
+    Only rows with a real recorded price (close_over_price/close_under_price) are staked —
+    PrizePicks standard legs carry no per-side price in the ledger (flat pick'em payout, not
+    captured here), so this necessarily undercounts volume in exchange for never inventing a
+    price. Demon/goblin excluded (warped lines, no real payout exposed — see valuation.py).
+    """
+    q = ("SELECT * FROM prop_clv WHERE actual IS NOT NULL AND close_line IS NOT NULL "
+         "AND close_proj IS NOT NULL AND game_date >= date('now', ?) "
+         "AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))")
+    args: list[Any] = [f"-{int(days)} days"]
+    if sport:
+        q += " AND sport = ?"; args.append(sport)
+    with _lock, _conn() as c:
+        rows = [dict(r) for r in c.execute(q, args).fetchall()]
+
+    n = priced_n = 0
+    profit = 0.0
+    for r in rows:
+        cl, cp, act = r["close_line"], r["close_proj"], r["actual"]
+        if act == cl or abs(cp - cl) < edge:
+            continue
+        n += 1
+        rp = r.get("model_raw_prob") or r.get("close_prob")
+        pick_over = (rp > 0.5) if rp is not None else (cp > cl)
+        price = r.get("close_over_price") if pick_over else r.get("close_under_price")
+        d = _american_to_decimal_local(price)
+        if d is None:
+            continue
+        priced_n += 1
+        won = (act > cl) == pick_over
+        profit += stake * (d - 1.0) if won else -stake
+    return {
+        "sport": sport or "all", "days": days, "plays": n, "priced_plays": priced_n,
+        "staked": round(priced_n * stake, 2), "profit": round(profit, 2),
+        "roi_pct": round(100.0 * profit / (priced_n * stake), 2) if priced_n else None,
+    }
+
+
 def recent_prop_moves(limit: int = 400) -> list[dict]:
     """Today's props with their open→close line and projection movement (for the dashboard's
     Top Movers / Biggest Line Move widgets). Reads the CLV ledger, which already tracks the

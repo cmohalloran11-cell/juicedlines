@@ -102,6 +102,24 @@ def test_dashboard_endpoint(client):
     assert r.status_code == 200
     body = r.json()
     assert "tiles" in body
+    assert "coach_context" in body
+
+
+def test_optimizer_endpoint(client):
+    # This endpoint previously existed only inside build_static.py (the static-deploy JSON
+    # export) -- the live server had no route for it, so the live Entry Optimizer page 404'd.
+    r = client.get("/api/optimizer/today?sport=all")
+    assert r.status_code == 200
+    body = r.json()
+    assert "todaysBest" in body and "topEntries" in body
+    assert set(body["todaysBest"].keys()) == {"2_power", "3_power", "4_power", "5_power",
+                                               "2_flex", "3_flex", "4_flex", "5_flex", "6_flex"}
+
+
+def test_ai_coach_endpoint_shape(client):
+    r = client.get("/api/ai/coach?sport=all")
+    assert r.status_code == 200
+    assert "ai" in r.json()
 
 
 def test_injuries_and_books_endpoints(client):
