@@ -442,6 +442,19 @@ def main() -> None:
         # for the static SPA (see dashboard.html's staticApi()).
         import optimizer as _opt
         _w("optimizer.json", _opt.today_report(lines))
+        _w("optimizer_books.json", {"books": [{"id": b, "available": bool(_opt.BOOK_PAYOUTS.get(b))}
+                                              for b in _opt.SUPPORTED_BOOKS]})
+        # Per-sport files (PrizePicks only — the only book with a real published payout
+        # table) so the static site's sport filter changes what's actually shown, not just
+        # the label — the live /api/optimizer/today would recompute this per-request, but
+        # the static deploy has no live backend to re-query with different params.
+        for _sp in ("MLB", "WNBA", "Tennis"):
+            _w(f"optimizer_{_sp.lower()}.json", _opt.today_report(lines, sport=_sp))
+        # Per-book files for books with no verified payout table yet (optimizer.BOOK_PAYOUTS)
+        # — today_report's result is identical regardless of sport for these (always the
+        # same unavailableReason), so one file per book covers every sport selection.
+        for _bk in ("underdog", "sleeper"):
+            _w(f"optimizer_{_bk}.json", _opt.today_report(lines, book=_bk))
         extra_json = ""
         if not FAST:
             import model_health as _mh

@@ -37,6 +37,12 @@ static/model_health.json
 static/backtest.json
 static/drift.json
 static/optimizer.json
+static/optimizer_books.json
+static/optimizer_mlb.json
+static/optimizer_wnba.json
+static/optimizer_tennis.json
+static/optimizer_underdog.json
+static/optimizer_sleeper.json
 # clv_seed.db IS committed on purpose — it bootstraps the Action's ledger with the
 # already-graded rows (the edge-regression asset). Without it the first Action run starts
 # empty, publishes an empty ledger, and every later run then prefers that empty data-branch

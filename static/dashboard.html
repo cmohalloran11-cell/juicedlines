@@ -430,7 +430,17 @@ async function staticApi(path){
     case '/api/model/health': return J('model_health.json');
     case '/api/backtest': return J('backtest.json');
     case '/api/model/drift': return J('drift.json');
-    case '/api/optimizer/today': return J('optimizer.json');
+    case '/api/optimizer/today': {
+      // No live backend to re-query with different params, so pick the matching precomputed
+      // file (see build_static.py) — one per sport for PrizePicks (the only book with a
+      // real published payout table), one per unavailable book regardless of sport (the
+      // result is the same unavailableReason either way).
+      const book=(q.get('book')||'prizepicks').toLowerCase();
+      const sport=(q.get('sport')||'all').toLowerCase();
+      if(book!=='prizepicks')return J(`optimizer_${book}.json`);
+      return J(sport==='all'?'optimizer.json':`optimizer_${sport}.json`);
+    }
+    case '/api/optimizer/books': return J('optimizer_books.json');
     case '/api/weather': return J('weather.json');
     case '/api/books': return J('books.json');
     case '/api/injuries': return J('injuries.json');
@@ -1213,18 +1223,18 @@ function entryCard(entry,big){
 async function vOptimizer(){
   // Book availability is queried live (not hardcoded) so this selector never drifts from
   // optimizer.py's real BOOK_PAYOUTS — an unavailable book is disabled, not just labeled.
+  // Works in both live and static mode: static reads a prebuilt optimizer_books.json (see
+  // staticApi()) — production IS the static deploy, so this can no longer be live-only.
   let bookOpts=`<option value="prizepicks">PrizePicks</option><option value="underdog">Underdog</option><option value="sleeper">Sleeper</option>`;
-  if(!STATIC){
-    try{
-      const bs=(await api('/api/optimizer/books')).books||[];
-      if(bs.length)bookOpts=bs.map(b=>`<option value="${b.id}" ${b.available?'':'disabled'}>${cap(b.id)}${b.available?'':' (soon)'}</option>`).join('');
-    }catch(e){/* keep the fallback options above */}
-  }
+  try{
+    const bs=(await api('/api/optimizer/books')).books||[];
+    if(bs.length)bookOpts=bs.map(b=>`<option value="${b.id}" ${b.available?'':'disabled'}>${cap(b.id)}${b.available?'':' (soon)'}</option>`).join('');
+  }catch(e){/* keep the fallback options above */}
   $('#view').innerHTML=`<div class="ph2"><div><h2>Entry Optimizer <span class="chip g">New</span></h2><p>JUICED scores every priced prop, builds every legal combination for the book you pick, and Monte-Carlo simulates each one (100,000+ sims on every entry shown) — ranked by Quality Score, so you don't have to build a slip by hand.</p></div>
-    ${STATIC?'':`<div style="display:flex;gap:8px;flex:none">
+    <div style="display:flex;gap:8px;flex:none">
       <select id="opt-book" class="ctl" onchange="loadOptimizer()" style="width:150px" title="Every leg in an entry must come from the same book">${bookOpts}</select>
       <select id="opt-sport" class="ctl" onchange="loadOptimizer()" style="width:140px"><option value="all">All Sports</option><option value="MLB">MLB</option><option value="WNBA">WNBA</option><option value="Tennis">Tennis</option></select>
-    </div>`}</div>
+    </div></div>
    <div id="opt-content"><div class="panel" style="padding:40px;text-align:center"><span class="muted skel">Running the combination search and Monte Carlo simulation…</span></div></div>`;
   loadOptimizer();
 }
