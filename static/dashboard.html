@@ -798,6 +798,11 @@ const _coachCache={};
 const _COACH_OK_TTL=20*60*1000, _COACH_FAIL_TTL=5*60*1000;
 async function loadCoach(d,opt){
   const box=$('#coachText');if(!box)return;
+  // AI Juice now requires sign-in (real per-user daily quota — see main.py's
+  // api_ai_explain/api_ai_coach). Anonymous visitors get the honest rule-based fallback
+  // instead of a nagging "sign in" on every dashboard load — coachFallback is real,
+  // number-grounded content, not a placeholder.
+  if(!AUTH.token){box.className='';box.textContent=coachFallback(d,opt);return}
   const hit=_coachCache[sport];
   if(hit&&Date.now()-hit.t<hit.ttl){box.className='';box.textContent=hit.text;return}
   try{
@@ -812,6 +817,7 @@ async function loadCoach(d,opt){
     const text=ok?r.ai.strategy:coachFallback(d,opt);
     box.className='';box.textContent=text;
     _coachCache[sport]={t:Date.now(),text,ttl:ok?_COACH_OK_TTL:_COACH_FAIL_TTL};
+    loadAiUsage();
   }catch(e){box.className='';box.textContent=coachFallback(d,opt)}
 }
 
@@ -1793,11 +1799,15 @@ function aiContext(x){const cf={};(x.confidenceFactors||[]).forEach(f=>cf[f.fact
   return {player:x.player,team:x.team,sport:x.sport,stat:x.stat,line:x.line,projection:x.projection,
     edge:x.edge,edgePct:x.edgePct,probability:x.probability,floor:x.floor,ceiling:x.ceiling,
     confidence:x.confidence,side:x.side,sample_games:m?+m[1]:null};}
-async function loadAIExplain(x,sel='#aibox'){const box=$(sel);if(!box)return;box.textContent='Generating a grounded explanation…';
+async function loadAIExplain(x,sel='#aibox'){const box=$(sel);if(!box)return;
+  if(!AUTH.token){box.className='aibox';box.textContent='Sign in to use AI Juice.';return}
+  box.textContent='Generating a grounded explanation…';
   try{const r=STATIC?await api('/api/ai/explain',{method:'POST',body:aiContext(x)})
                     :await api('/api/ai/explain?id='+encodeURIComponent(x.id));
     if(r.ai&&r.ai.available){box.className='aibox filled';box.textContent=r.ai.explanation}
-    else{box.className='aibox';box.textContent=(r.ai&&r.ai.reason)||'AI unavailable.'}}catch(e){box.textContent='AI request failed.'}}
+    else{box.className='aibox';box.textContent=(r.ai&&r.ai.reason)||'AI unavailable.'}
+    loadAiUsage();
+  }catch(e){box.textContent='AI request failed.'}}
 // Real recent-games + hit-rate from /api/analytics (replaces the old raw-JSON dump).
 async function loadRecent(x,sel='#recentbox'){const box=$(sel);if(!box)return;
   try{const r=await api('/api/analytics?id='+encodeURIComponent(x.id));const a=r.analytics||{};
@@ -1849,9 +1859,20 @@ window.addEventListener('keydown',e=>{
   }
 });
 
+// Real per-user daily AI Juice usage (server-enforced — main.py's /api/ai/usage or the
+// static deploy's usage.js, same store.AiUsageRepository/Postgres table either way). "Off"
+// only when AI isn't configured at all, "Sign in" when it is but there's no session, else
+// the real used/limit for the viewer's own tier — never a made-up figure.
+async function loadAiUsage(){
+  const el=$('#aijuice-val');if(!el)return;
+  if(!AUTH.ai){el.textContent='Off';return}
+  if(!AUTH.token){el.textContent='Sign in';return}
+  try{const u=await api('/api/ai/usage');el.textContent=(u&&u.signed_in)?`${u.used}/${u.limit}`:'Sign in';}
+  catch(e){el.textContent='On'}
+}
 async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
   // On static, auth.json can't know if the Vercel AI function has a key — probe it.
-  if(STATIC){try{const s=await api('/api/ai/status');if(s&&typeof s.available==='boolean'){AUTH.ai=s.available;AUTH.ai_rpm_limit=s.rpm_limit}}catch(e){}}
+  if(STATIC){try{const s=await api('/api/ai/status');if(s&&typeof s.available==='boolean')AUTH.ai=s.available}catch(e){}}
   // Real Supabase auth when the server provides the public client config.
   if(AUTH.supabase_url && AUTH.supabase_anon_key && window.supabase){
     try{
@@ -1861,18 +1882,14 @@ async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}
         {auth:{flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
       const {data}=await SB.auth.getSession(); setSession(data.session);
       let first=true;
-      SB.auth.onAuthStateChange(async (ev,s)=>{setSession(s);await refreshWatched();renderAuthUI();
+      SB.auth.onAuthStateChange(async (ev,s)=>{setSession(s);await refreshWatched();renderAuthUI();await loadAiUsage();
         if(ev==='SIGNED_IN'&&!first){toast('Signed in');render()} first=false;});
     }catch(e){}
   }
   await refreshWatched();
   renderAuthUI();
   applyCollapsed();
-  // Real number, not a decorative symbol: Gemini's actual free-tier requests-per-minute cap
-  // (ai_juice.GEMINI_FREE_TIER_RPM / status.js, measured live from the API's own error body).
-  // Falls back to "On" only if AI is configured but no published limit is tracked here (e.g.
-  // Anthropic) — never a made-up figure, and "Off" when AI isn't configured at all.
-  $('#aijuice-val').textContent=AUTH.ai?(AUTH.ai_rpm_limit?AUTH.ai_rpm_limit+'/min':'On'):'Off';
+  await loadAiUsage();
   if(!location.hash)location.hash='/dashboard';
   render();
   setInterval(()=>{if(cur()==='dashboard')render()},60000);

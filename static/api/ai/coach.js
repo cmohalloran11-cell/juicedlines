@@ -4,6 +4,9 @@
 // passed in the request body (the dashboard's own coach_context, already computed from real
 // board data) — it cannot fabricate a count or percentage. Set GEMINI_API_KEY (and optionally
 // AI_MODEL) in Vercel -> Project -> Settings -> Environment Variables.
+// Requires sign-in and consumes one of the caller's daily AI Juice calls — see _lib.js.
+
+const { checkQuota } = require("./_lib");
 
 const SYSTEM = `You are the AI Coach for the Juiced sports-prop research platform. You give a short, actionable STRATEGY recommendation for today's slate as a whole — not a single prop.
 
@@ -19,6 +22,10 @@ module.exports = async function handler(req, res) {
   if (!key) {
     return res.status(200).json({ ai: { available: false,
       reason: "AI Coach isn't configured — set GEMINI_API_KEY in Vercel." } });
+  }
+  const quota = await checkQuota(req);
+  if (!quota.ok) {
+    return res.status(200).json({ ai: quota.response });
   }
   let d = {};
   try { d = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {}); }

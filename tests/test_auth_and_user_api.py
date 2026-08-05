@@ -21,9 +21,11 @@ import pytest
 SECRET = "test-jwt-secret-0123456789-abcdefghijklmnop"  # ≥32 bytes for HS256
 
 
-def _token(sub: str, email: str, exp_offset: int = 3600) -> str:
+def _token(sub: str, email: str, exp_offset: int = 3600, plan: str | None = None) -> str:
     payload = {"sub": sub, "email": email, "aud": "authenticated",
                "exp": int(time.time()) + exp_offset, "iat": int(time.time())}
+    if plan is not None:
+        payload["user_metadata"] = {"plan": plan}
     return jwt.encode(payload, SECRET, algorithm="HS256")
 
 
@@ -71,12 +73,62 @@ def test_unauthenticated_is_rejected(client):
 
 
 def test_me_provisions_user(client):
+    # No user_metadata.plan on the token at all — same as the frontend's isPremium()
+    # treating a missing plan as the 'lifetime' founding-member default, NOT free. Locks
+    # in the auth.py sync added for the AI Juice daily-limit gate (tier must never disagree
+    # with what the rest of the app already calls "Pro").
     h = {"Authorization": f"Bearer {_token('uid-alice', 'alice@x.com')}"}
     r = client.get("/api/me", headers=h)
     assert r.status_code == 200
     u = r.json()["user"]
     assert u["id"] == "uid-alice" and u["email"] == "alice@x.com"
-    assert u["role"] == "USER" and u["tier"] == "FREE"
+    assert u["role"] == "USER" and u["tier"] == "ELITE"
+
+
+def test_explicit_free_plan_maps_to_free_tier(client):
+    h = {"Authorization": f"Bearer {_token('uid-bob', 'bob@x.com', plan='free')}"}
+    u = client.get("/api/me", headers=h).json()["user"]
+    assert u["tier"] == "FREE"
+
+
+def test_explicit_non_free_plan_maps_to_elite_tier(client):
+    h = {"Authorization": f"Bearer {_token('uid-carol', 'carol@x.com', plan='lifetime')}"}
+    u = client.get("/api/me", headers=h).json()["user"]
+    assert u["tier"] == "ELITE"
+
+
+def test_ai_usage_endpoint_shape(client):
+    assert client.get("/api/ai/usage").json() == {"signed_in": False}
+    h = {"Authorization": f"Bearer {_token('uid-dave', 'dave@x.com', plan='free')}"}
+    r = client.get("/api/ai/usage", headers=h).json()
+    assert r == {"signed_in": True, "used": 0, "limit": 10, "tier": "FREE"}
+
+
+def test_ai_coach_consumes_quota_and_enforces_the_daily_limit(client):
+    # FREE tier = 10/day (ai_juice.AI_DAILY_LIMITS). No GEMINI_API_KEY in this test env, so
+    # every call under quota returns ai.available=False for "not configured" — the point
+    # here is the quota mechanics (counting + the 11th call refused), not the Gemini call.
+    h = {"Authorization": f"Bearer {_token('uid-erin', 'erin@x.com', plan='free')}"}
+    for i in range(1, 11):
+        r = client.get("/api/ai/coach?sport=all", headers=h)
+        assert r.status_code == 200
+        assert client.get("/api/ai/usage", headers=h).json()["used"] == i
+    r = client.get("/api/ai/coach?sport=all", headers=h)
+    assert r.status_code == 200   # the endpoint itself always 200s; the payload says no
+    reason = r.json()["ai"]["reason"]
+    assert "10/10" in reason and "reached" in reason.lower()
+    # still refused, and the count doesn't climb past the limit
+    assert client.get("/api/ai/usage", headers=h).json()["used"] == 10
+
+
+def test_ai_quota_is_per_user_and_per_tier(client):
+    free_h = {"Authorization": f"Bearer {_token('uid-frank', 'frank@x.com', plan='free')}"}
+    elite_h = {"Authorization": f"Bearer {_token('uid-gina', 'gina@x.com', plan='lifetime')}"}
+    client.get("/api/ai/coach?sport=all", headers=free_h)
+    assert client.get("/api/ai/usage", headers=free_h).json()["used"] == 1
+    # Gina's own count is untouched by Frank's call, and her limit reflects her own tier.
+    gina_usage = client.get("/api/ai/usage", headers=elite_h).json()
+    assert gina_usage == {"signed_in": True, "used": 0, "limit": 100, "tier": "ELITE"}
 
 
 def test_invalid_and_expired_tokens_rejected(client):

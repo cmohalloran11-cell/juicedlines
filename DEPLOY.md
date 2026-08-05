@@ -40,6 +40,24 @@ continuous updates are Option B.)
 4. Open the URL. The board self-updates every ~5 min from the `data` branch via raw — the
    host never has to redeploy for a data change.
 
+### AI Juice on the static deploy (Vercel Project → Settings → Environment Variables)
+The `static/api/ai/*.js` serverless functions are separate from the table below (those are
+`main.py`/Render env vars) — set on Vercel directly:
+- `GEMINI_API_KEY` (+ optional `AI_MODEL`) — same as the live server.
+- `SUPABASE_URL` / `SUPABASE_ANON_KEY` — to verify who's calling (AI Juice requires sign-in;
+  see the daily-quota note below).
+- `SUPABASE_SERVICE_ROLE_KEY` — **new, server-side only, never sent to the browser.**
+  Project Settings → API → `service_role` secret. Lets the serverless function read/write
+  another user's row in `ai_usage` (bypassing RLS) to enforce the daily AI limit. Missing ⇒
+  AI Juice fails safe with "usage tracking isn't configured", not unmetered access.
+- **One-time schema migration required**: the `ai_usage` table (10/day free, 100/day Pro —
+  `ai_juice.AI_DAILY_LIMITS`) is created by `store/schema.py`'s `init_schema()`, which only
+  runs when `main.py` starts against this project's Postgres (its FastAPI `lifespan` calls
+  it automatically). If the live server has never been pointed at production `DATABASE_URL`,
+  run it once: `DATABASE_URL=<prod connection string> python -c "import store; store.init_schema(store.get_database())"`.
+  Until then, AI Juice on the static site fails safe the same way (usage tracking
+  unavailable) rather than allowing unmetered calls.
+
 `BOARD_URL` in `index.html` points at this repo's raw `data/board.json` (update it if you
 fork/rename). Locally the page just loads `./board.json`, so the same file works in dev
 (live server) and in production (static).

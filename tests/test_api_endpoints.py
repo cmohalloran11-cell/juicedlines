@@ -116,10 +116,19 @@ def test_optimizer_endpoint(client):
                                                "2_flex", "3_flex", "4_flex", "5_flex", "6_flex"}
 
 
-def test_ai_coach_endpoint_shape(client):
+def test_ai_coach_requires_sign_in(client):
+    # AI Juice now enforces a real per-user daily quota (store.AiUsageRepository), which
+    # needs an identity to count against — unauthenticated access must be rejected, not
+    # silently allowed through unmetered. Authenticated-path behavior (quota consumed,
+    # exhaustion) is covered in test_auth_and_user_api.py, which already has JWT
+    # infrastructure set up; this fixture deliberately runs with auth unconfigured.
     r = client.get("/api/ai/coach?sport=all")
-    assert r.status_code == 200
-    assert "ai" in r.json()
+    assert r.status_code == 401
+
+
+def test_ai_explain_requires_sign_in(client):
+    r = client.get("/api/ai/explain?id=doesnotmatter")
+    assert r.status_code == 401
 
 
 def test_injuries_and_books_endpoints(client):

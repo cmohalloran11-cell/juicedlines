@@ -21,7 +21,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, Query, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,7 +41,7 @@ import optimizer as optimizer_mod
 import weather as weather_mod
 import books
 import middleware
-from auth import require_role, optional_user
+from auth import require_role, optional_user, get_current_user
 from routes_user import router as user_router
 from routes_optimizer import router as optimizer_router
 from pullers import fetch_prizepicks, fetch_underdog, mock_lines
@@ -449,6 +449,38 @@ def api_ai_status():
     return ai_juice.status()
 
 
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _ai_quota_check(user: dict) -> Optional[dict]:
+    """None (and consumes one call) if `user` has AI Juice quota left today; else the
+    rejection payload, same {available, reason} shape ai_juice's own failures use. The
+    client-shown limit (ai_juice.daily_limit) is a business decision, not a UI hint — this
+    is the actual enforcement point, checked server-side against store.AiUsageRepository."""
+    usage = store.AiUsageRepository(store.get_database())
+    today = _today_utc()
+    limit = ai_juice.daily_limit(user.get("tier"))
+    used = usage.get_count(user["id"], today)
+    if used >= limit:
+        return {"available": False,
+                "reason": f"Daily AI Juice limit reached ({used}/{limit}). Resets at midnight UTC."}
+    usage.increment(user["id"], today)
+    return None
+
+
+@app.get("/api/ai/usage")
+def api_ai_usage(user: Optional[dict] = Depends(optional_user)):
+    """Today's real AI Juice usage for the signed-in user — what the header indicator
+    displays. Never increments (that only happens on an actual explain/coach call)."""
+    if not user:
+        return {"signed_in": False}
+    usage = store.AiUsageRepository(store.get_database())
+    limit = ai_juice.daily_limit(user.get("tier"))
+    used = usage.get_count(user["id"], _today_utc())
+    return {"signed_in": True, "used": used, "limit": limit, "tier": user.get("tier")}
+
+
 @app.get("/api/simulation")
 def api_simulation(id: str = Query(..., description="line_id to value")):
     """SimulationOS: the projection's distribution object + EV / Kelly / Juice / confidence."""
@@ -571,21 +603,31 @@ def api_admin_calibration(sport: str = Query("MLB"),
 
 
 @app.get("/api/ai/explain")
-async def api_ai_explain(id: str = Query(..., description="line_id to explain")):
+async def api_ai_explain(id: str = Query(..., description="line_id to explain"),
+                         user: dict = Depends(get_current_user)):
     """A grounded, plain-language explanation of one projection. AI Juice may cite ONLY
-    that projection's own numbers (no fabrication); degrades cleanly when unconfigured."""
+    that projection's own numbers (no fabrication); degrades cleanly when unconfigured.
+    Requires sign-in and consumes one of the user's daily AI Juice calls (see
+    ai_juice.AI_DAILY_LIMITS) — the shared Gemini key has no per-user isolation otherwise."""
     line = _line_by_id.get(id)
     if not line:
         raise HTTPException(status_code=404, detail=f"Unknown line id: {id}")
+    quota_err = _ai_quota_check(user)
+    if quota_err:
+        return {"line_id": id, "ai": quota_err}
     # Off the event loop — the AI call is blocking network I/O.
     result = await asyncio.get_event_loop().run_in_executor(None, ai_juice.explain, line)
     return {"line_id": id, "ai": result}
 
 
 @app.get("/api/ai/coach")
-async def api_ai_coach(sport: str = Query("all")):
+async def api_ai_coach(sport: str = Query("all"), user: dict = Depends(get_current_user)):
     """Grounded slate-level strategy recommendation (AI Coach panel) — built from the same
-    real aggregate numbers already shown on the dashboard, never invented."""
+    real aggregate numbers already shown on the dashboard, never invented. Requires sign-in
+    and consumes one of the user's daily AI Juice calls — see api_ai_explain."""
+    quota_err = _ai_quota_check(user)
+    if quota_err:
+        return {"ai": quota_err}
     lines = _cache.get("lines") or []
     d = dashboard_mod.build(lines, _cache.get("updated_at"), _cache.get("errors"), sport=sport)
     ctx = dict(d.get("coach_context") or {})

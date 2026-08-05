@@ -81,12 +81,25 @@ def verify_token(token: str) -> dict[str, Any]:
 
 
 def _identity_from_claims(claims: dict[str, Any]) -> dict[str, Any]:
-    """Upsert the verified identity into our users table and return the local user row."""
+    """Upsert the verified identity into our users table and return the local user row.
+
+    Also syncs `tier` from the JWT's real user_metadata.plan — the SAME field the frontend's
+    isPremium() already reads (dashboard.html: `(plan||'lifetime')!=='free'`, the founding-
+    member grandfather clause: every signup is stamped 'lifetime' while PAYWALL_LIVE=false).
+    Mirrored exactly here so our own tier column (used for the AI Juice daily-limit gate)
+    never disagrees with what the rest of the app already calls "Pro" — a missing plan still
+    means premium, only an explicit 'free' means FREE, same as the frontend."""
     db = store.get_database()
     users = store.UserRepository(db)
-    email = claims.get("email") or (claims.get("user_metadata") or {}).get("email")
-    name = (claims.get("user_metadata") or {}).get("full_name")
-    return users.upsert(claims["sub"], email, name)
+    meta = claims.get("user_metadata") or {}
+    email = claims.get("email") or meta.get("email")
+    name = meta.get("full_name")
+    user = users.upsert(claims["sub"], email, name)
+    tier = "FREE" if str(meta.get("plan") or "lifetime").lower() == "free" else "ELITE"
+    if user.get("tier") != tier:
+        users.set_tier(claims["sub"], tier)
+        user["tier"] = tier
+    return user
 
 
 def _bearer(authorization: Optional[str]) -> Optional[str]:

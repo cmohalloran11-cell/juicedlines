@@ -3,6 +3,9 @@
 // It mirrors ai_juice.py: it may ONLY use the numbers passed in the request body — it cannot
 // fabricate a stat. Set GEMINI_API_KEY (and optionally AI_MODEL) in Vercel → Project →
 // Settings → Environment Variables. Runs on Vercel's Node runtime (global fetch, Node 18+).
+// Requires sign-in and consumes one of the caller's daily AI Juice calls — see _lib.js.
+
+const { checkQuota } = require("./_lib");
 
 const SYSTEM = `You are AI Juice, the analyst voice of the Juiced sports-prop research platform. You explain, in plain language, WHY a statistical projection landed where it did and HOW UNCERTAIN it is.
 
@@ -19,6 +22,10 @@ module.exports = async function handler(req, res) {
   if (!key) {
     return res.status(200).json({ ai: { available: false,
       reason: "AI Juice isn't configured — set GEMINI_API_KEY in Vercel." } });
+  }
+  const quota = await checkQuota(req);
+  if (!quota.ok) {
+    return res.status(200).json({ ai: quota.response });
   }
   let d = {};
   try { d = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {}); }

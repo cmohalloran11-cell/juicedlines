@@ -13,6 +13,7 @@ from .repositories import (
     WatchlistRepository,
     PortfolioRepository,
     AlertRepository,
+    AiUsageRepository,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "WatchlistRepository",
     "PortfolioRepository",
     "AlertRepository",
+    "AiUsageRepository",
 ]

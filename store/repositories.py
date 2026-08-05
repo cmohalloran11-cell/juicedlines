@@ -52,6 +52,35 @@ class UserRepository:
                         (tier, _now(), user_id))
 
 
+class AiUsageRepository:
+    """Daily AI Juice call count per user (UTC calendar day) — backs the enforced free/Pro
+    rate limit. Same check-then-write pattern as UserRepository.upsert (this codebase's
+    existing style here; not a hardened atomic increment, but a double-click race costs at
+    worst one extra counted call, not a security issue)."""
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get_count(self, user_id: str, usage_date: str) -> int:
+        rows = self.db.query(
+            "SELECT count FROM ai_usage WHERE user_id=? AND usage_date=?", (user_id, usage_date))
+        return rows[0]["count"] if rows else 0
+
+    def increment(self, user_id: str, usage_date: str) -> int:
+        """Bump today's count and return the new total."""
+        existing = self.db.query(
+            "SELECT count FROM ai_usage WHERE user_id=? AND usage_date=?", (user_id, usage_date))
+        if not existing:
+            self.db.execute(
+                "INSERT INTO ai_usage (user_id, usage_date, count, updated_at) VALUES (?,?,1,?)",
+                (user_id, usage_date, _now()))
+            return 1
+        new_count = existing[0]["count"] + 1
+        self.db.execute(
+            "UPDATE ai_usage SET count=?, updated_at=? WHERE user_id=? AND usage_date=?",
+            (new_count, _now(), user_id, usage_date))
+        return new_count
+
+
 class WatchlistRepository:
     def __init__(self, db: Database):
         self.db = db

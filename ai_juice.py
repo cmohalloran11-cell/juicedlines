@@ -59,6 +59,17 @@ def available() -> bool:
 # codebase knows to display). No equivalent published number exists for Anthropic here.
 GEMINI_FREE_TIER_RPM = 20
 
+# Per-user AI Juice calls allowed per UTC day, by tier — a PRODUCT-level quota (a business
+# decision, protecting the shared Gemini key from any one user), distinct from
+# GEMINI_FREE_TIER_RPM above (the provider's raw per-minute ceiling, shared by everyone
+# combined regardless of tier). Enforced server-side (main.py + the Vercel serverless twins)
+# against store.AiUsageRepository, never trusted from the client.
+AI_DAILY_LIMITS = {"FREE": 10, "ELITE": 100}
+
+
+def daily_limit(tier: str | None) -> int:
+    return AI_DAILY_LIMITS.get((tier or "FREE").upper(), AI_DAILY_LIMITS["FREE"])
+
 
 def status() -> dict:
     return {

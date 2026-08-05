@@ -86,6 +86,18 @@ _TABLES: tuple[str, ...] = (
         recorded_at   TEXT NOT NULL
     )
     """,
+    # Daily AI Juice call count per user (UTC calendar day) — backs the real, enforced free/
+    # Pro rate limit (10/day free, 100/day Pro): one row per (user, day), incremented on every
+    # successful AI Juice/Coach call, checked before the next one is allowed through.
+    """
+    CREATE TABLE IF NOT EXISTS ai_usage (
+        user_id     TEXT NOT NULL,
+        usage_date  TEXT NOT NULL,
+        count       INTEGER NOT NULL DEFAULT 0,
+        updated_at  TEXT NOT NULL,
+        PRIMARY KEY (user_id, usage_date)
+    )
+    """,
     # A user alert: fire when a prop's metric crosses a threshold (spec Ch 35).
     """
     CREATE TABLE IF NOT EXISTS alerts (
