@@ -106,7 +106,7 @@ select,.ctl{padding:8px 12px;border-radius:9px;border:1px solid var(--line2);bac
 .btn.pri{background:var(--accent);color:#0a120a;border-color:var(--accent)}.btn.pri:hover{background:var(--accent2);color:#0a120a}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:800;background:#161d12;color:var(--muted)}
 .chip.g{background:#16240f;color:var(--accent)}.chip.r{background:#241010;color:var(--down)}.chip.y{background:#241f0f;color:var(--warn)}
-.kv{display:grid;grid-template-columns:1fr 1fr;gap:12px}.kv .b{border:1px solid var(--line);border-radius:11px;padding:12px;background:#0e130d}.kv .b .l{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}.kv .b .v{font-size:20px;font-weight:800;margin-top:3px}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:12px}.kv .b{border:1px solid var(--line);border-radius:11px;padding:12px;background:#0e130d;min-width:0}.kv .b .l{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}.kv .b .v{font-size:20px;font-weight:800;margin-top:3px}
 .empty{padding:60px 20px;text-align:center;color:var(--dim)}.empty .em{font-size:30px;margin-bottom:8px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 .learn-card{border:1px solid var(--line);border-radius:12px;padding:16px;background:#0e130d}.learn-card h4{margin:0 0 6px}.learn-card p{margin:0;color:var(--muted);font-size:12.5px}
@@ -282,8 +282,9 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
 .opt-fmt{font-weight:800;font-size:14px}
 .opt-legs{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .opt-leg{display:flex;align-items:center;gap:8px;font-size:12px}
-.opt-leg-t{display:flex;flex-direction:column;line-height:1.25}
-.opt-leg-t span{font-size:10.5px}
+.opt-leg-t{display:flex;flex-direction:column;line-height:1.25;min-width:0;overflow:hidden}
+.opt-leg-t b,.opt-leg-t span{font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opt-leg-t b{font-size:12px}
 </style>
 </head>
 <body>
@@ -1193,7 +1194,7 @@ function entryCard(entry,big){
         <span class="jspill" style="color:${jColor(entry.qualityScore)};border-color:${jColor(entry.qualityScore)}66" title="Quality Score">${entry.qualityScore}</span>
       </div>
     </div>
-    <div class="kv" style="grid-template-columns:repeat(4,1fr);margin:12px 0">
+    <div class="kv" style="margin:12px 0">
       <div class="b"><div class="l">Expected ROI</div><div class="v ${s.expectedROI>=0?'pos':'neg'}" style="font-size:16px">${fmtSigned(s.expectedROI)}</div></div>
       <div class="b"><div class="l">Profit Chance</div><div class="v" style="font-size:16px">${Math.round(s.chanceOfProfit*100)}%</div></div>
       <div class="b"><div class="l">Kelly</div><div class="v" style="font-size:16px">${(s.kellyFraction*100).toFixed(1)}%</div></div>
