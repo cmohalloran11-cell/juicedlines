@@ -187,7 +187,7 @@ def test_juice_factors_sum_to_juice_score():
             "line": 1.5, "model_edge": 0.7, "over_implied": 0.5, "under_implied": 0.5,
             "market_book_count": 2}
     factors = valuation.juice_factors(line)
-    assert len(factors) == 7   # ev, confidence, stability, agreement, market_quality, line_value, data_quality
+    assert len(factors) == 7   # proj_diff, ev, confidence, stability, agreement, market_quality, data_quality
     assert round(sum(f["value"] for f in factors)) == valuation.juice_score(line)
     assert round(sum(f["max"] for f in factors)) == 100
     assert all(0 <= f["value"] <= f["max"] for f in factors)
@@ -219,7 +219,8 @@ def test_juice_ev_component_scales_with_measured_stat_trust():
 
     assert ev_untrusted["value"] == 0.0, "gamma=0 must fully zero out the EV component"
     # gamma=0.5 (neutral, no data yet) must NOT be penalized -- same as no data at all
-    assert ev_neutral["value"] == valuation.juice_factors(base)[0]["value"]
+    ev_base = next(f for f in valuation.juice_factors(base) if f["factor"] == "Expected Value")
+    assert ev_neutral["value"] == ev_base["value"]
     # gamma>=0.5 is capped at full credit, not further boosted
     assert ev_trusted["value"] == ev_neutral["value"]
     assert valuation.juice_score(untrusted) < valuation.juice_score(neutral)

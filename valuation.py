@@ -227,10 +227,20 @@ def _scale(x: Optional[float], lo: float, hi: float, default: float = 0.5) -> fl
 # that, so their Model Agreement instead compares the model's RAW opinion (model_raw, the
 # pre-market-anchor mean) against the final blended projection — a real, if narrower,
 # "does the model's own read agree with what the market nudged it toward" signal.
+# 2026-08-05 rebalance: proj_diff (the edge's size relative to the line — formerly
+# "line_value" at a mere 5%) is now the DOMINANT factor at 35%, on explicit product
+# direction that Juice Score should go a lot more off of how far the projection sits from
+# the book's line. Every other weight scaled down by the same factor (0.65/0.95 ≈ 0.684) so
+# their RELATIVE proportions to each other are unchanged — EV is still the second-largest
+# factor, Confidence third, etc. — only proj_diff's share of the total grew. The underlying
+# formula is untouched (still % of the line, not a raw diff or a volatility-normalized
+# z-score — see _juice_components below for why: a 1.6 edge on an 18.5 line means more than
+# the same 1.6 on a 3.5 line, and this is already safe for near-zero lines via the 0.5 floor).
 _JUICE_WEIGHTS = {
-    "ev": 0.30, "confidence": 0.25,
-    "stability": 0.15,   # merged Projection Stability (10%) + Volatility (5%) — see below
-    "agreement": 0.10, "market_quality": 0.10, "line_value": 0.05, "data_quality": 0.05,
+    "proj_diff": 0.35,
+    "ev": 0.21, "confidence": 0.17,
+    "stability": 0.10,   # merged Projection Stability (10%) + Volatility (5%) — see below
+    "agreement": 0.07, "market_quality": 0.07, "data_quality": 0.03,
 }
 
 
@@ -290,11 +300,12 @@ def _juice_components(line: dict[str, Any], model_prob: Optional[float]) -> dict
     mq = _clamp(0.5 + 0.25 * (min(n_books, 3) - 1)) if n_books else 0.5
     out["market_quality"] = (mq, f"{n_books or 1} book{'s' if (n_books or 1) != 1 else ''}")
 
-    # 6. Line value — the edge's size relative to the line itself (a +1.6 edge on an 18.5
-    # line means more than the same +1.6 on a 3.5 line).
+    # 6. Projection diff — the edge's size relative to the line itself (a +1.6 edge on an
+    # 18.5 line means more than the same +1.6 on a 3.5 line). The DOMINANT component as of
+    # 2026-08-05 (see _JUICE_WEIGHTS) — formerly "line_value" at a token 5%.
     edge, ln = line.get("model_edge"), line.get("line")
     lv = (abs(float(edge)) / max(abs(float(ln)), 0.5)) if (edge is not None and ln is not None) else None
-    out["line_value"] = (_scale(lv, 0.0, 0.5), f"{lv*100:.0f}% of line" if lv is not None else "n/a")
+    out["proj_diff"] = (_scale(lv, 0.0, 0.5), f"{lv*100:.0f}% of line" if lv is not None else "n/a")
 
     # 7. Data quality — sample size + lineup certainty (reuses model_n/lineup_status, but as
     # a DATA-COMPLETENESS signal, not a trust-in-the-math signal like Confidence's use of n).
@@ -321,10 +332,12 @@ def model_agreement_score(line: dict[str, Any]) -> Optional[float]:
 def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int:
     """
     0–100 composite ranking how attractive a prop is OVERALL — not a re-skin of Confidence
-    or EV, but a blend of both plus distribution stability, model-vs-market agreement,
-    cross-book market quality, line value, and data completeness (see _JUICE_WEIGHTS and
-    _juice_components). Deliberately selective: a coin-flip, single-book, thin-sample prop
-    should NOT land in the same range as a stable, well-agreed, cross-validated one.
+    or EV, but a blend led by how far the projection sits from the line (proj_diff, the
+    dominant factor as of 2026-08-05) plus EV, confidence, distribution stability,
+    model-vs-market agreement, cross-book market quality, and data completeness (see
+    _JUICE_WEIGHTS and _juice_components). Deliberately selective: a coin-flip, single-book,
+    thin-sample prop should NOT land in the same range as a stable, well-agreed,
+    cross-validated one with a real edge.
     """
     prob = model_prob if model_prob is not None else line.get("model_prob")
     if prob is None:
@@ -342,9 +355,9 @@ def juice_factors(line: dict[str, Any], model_prob: Optional[float] = None) -> l
     if prob is None:
         return []
     components = _juice_components(line, prob)
-    labels = {"ev": "Expected Value", "confidence": "Confidence", "stability": "Stability",
-              "agreement": "Model Agreement", "market_quality": "Market Quality",
-              "line_value": "Line Value", "data_quality": "Data Quality"}
+    labels = {"proj_diff": "Proj vs Line", "ev": "Expected Value", "confidence": "Confidence",
+              "stability": "Stability", "agreement": "Model Agreement",
+              "market_quality": "Market Quality", "data_quality": "Data Quality"}
     return [
         {"factor": labels[k], "value": round(_JUICE_WEIGHTS[k] * components[k][0] * 100, 1),
          "max": round(_JUICE_WEIGHTS[k] * 100, 1), "detail": components[k][1]}
