@@ -175,7 +175,9 @@ def refresh_lines(sport: str = "all") -> dict[str, Any]:
     # Attach per-row model projections. This
     # also pre-warms the game-log cache, so the research drawer opens fast.
     try:
-        analytics.attach_projections(lines)
+        for k, v in analytics.attach_projections(lines).items():
+            errors[k] = v
+            log.warning("%s attach failed: %s", k, v)
     except Exception as exc:
         log.warning("attach_projections failed: %s", exc)
 

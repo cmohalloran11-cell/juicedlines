@@ -259,6 +259,25 @@ def _prop_is_pitcher(stat_label: str | None) -> Optional[bool]:
     return None
 
 
+def _last_name_index() -> dict:
+    """(normalized last name, team_id) -> candidate list. Fallback for when a prop feed's
+    name doesn't match statsapi's official fullName even after mlb._norm_name — the gap is
+    nicknames/short first names (e.g. "Vlad Guerrero Jr." vs statsapi's "Vladimir Guerrero
+    Jr."), which strip-accents-and-suffixes normalization can't bridge. Measured 2026-08-05:
+    336 MLB players had at least one unprojected prop; several (Vladimir Guerrero Jr. among
+    them) purely from this gap, not genuinely thin data."""
+    def produce():
+        idx: dict[tuple[str, int], list] = {}
+        for cands in _player_meta().values():
+            for c in cands:
+                name = c.get("name")
+                last = mlb._norm_name(name).split(" ")[-1] if name else ""
+                if last:
+                    idx.setdefault((last, c.get("team_id")), []).append(c)
+        return idx
+    return _cached(f"last_name_idx_{mlb.season()}", 12 * 3600, produce)
+
+
 def _resolve_player(name: str | None, team_abbr: str | None = None,
                     want_pitcher: Optional[bool] = None) -> Optional[dict]:
     """
@@ -268,7 +287,16 @@ def _resolve_player(name: str | None, team_abbr: str | None = None,
     """
     if not name:
         return None
-    cands = _player_meta().get(mlb._norm_name(name), [])
+    normed = mlb._norm_name(name)
+    cands = _player_meta().get(normed, [])
+    if not cands and team_abbr:
+        # Last-name+team fallback — only reached when the exact full-name match already
+        # failed, so a name that already resolves correctly can't regress. See
+        # _last_name_index for why this gap exists.
+        last = normed.split(" ")[-1] if normed else ""
+        team_id = (_team_map().get(team_abbr.strip().upper()) or {}).get("id")
+        if last and team_id:
+            cands = _last_name_index().get((last, team_id), [])
     if not cands:
         return None
     if len(cands) == 1:
@@ -1377,14 +1405,22 @@ def _mlb_muted_today() -> bool:
     return datetime.now(timezone.utc).date().isoformat() in _MLB_MUTE_DATES
 
 
-def attach_projections(lines: list[dict]) -> None:
+def attach_projections(lines: list[dict]) -> dict[str, str]:
     """
     Attach `model_proj` + `model_edge` (+ `proj_kind`) to every line so the board
     can show a projection per row.
       • MLB  → empirical recent-game average for the prop's stat ("model").
     MLB All-Star props (AL/NL teams) are skipped — an exhibition with unknown playing
     time can't be projected from full-game logs (see _is_allstar_mlb).
+
+    Returns any tennis/basketball/provenance sub-step failures ({} when all succeeded).
+    Each runs in its own try/except so one sport's failure can't block the others, but a
+    caught exception with nowhere to surface is a silent, invisible board gap — measured
+    2026-08-05: WNBA was 100% unprojected for a full cycle with no error visible anywhere a
+    human could actually see it (just a print() into a CI log). Callers should fold this
+    into their own `errors` dict (already surfaced via dataos.health()).
     """
+    sub_errors: dict[str, str] = {}
     if _MLB_OK:
         mlb_muted = _mlb_muted_today()      # per-day override — no MLB projections today
         resolved: dict[str, tuple] = {}
@@ -1611,6 +1647,7 @@ def attach_projections(lines: list[dict]) -> None:
         from tennis.board import attach_tennis
         attach_tennis(lines)
     except Exception as exc:
+        sub_errors["tennis"] = str(exc)
         print(f"[tennis] attach failed: {exc}")
 
     # basketball: per-possession core on live WNBA prop lines
@@ -1618,6 +1655,7 @@ def attach_projections(lines: list[dict]) -> None:
         from basketball.board import attach_basketball
         attach_basketball(lines)
     except Exception as exc:
+        sub_errors["basketball"] = str(exc)
         print(f"[basketball] attach failed: {exc}")
 
     # Reproducibility: stamp model/feature/sim versions + data snapshot onto every
@@ -1626,7 +1664,10 @@ def attach_projections(lines: list[dict]) -> None:
     try:
         provenance.stamp_lines(lines)
     except Exception as exc:
+        sub_errors["provenance"] = str(exc)
         print(f"[provenance] stamp failed: {exc}")
+
+    return sub_errors
 
 
 # ─────────────────────────────────────────────── dispatcher ──────────────────

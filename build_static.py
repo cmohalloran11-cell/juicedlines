@@ -165,7 +165,7 @@ def main() -> None:
     except Exception as exc:
         errors["game_ids"] = str(exc)
     try:
-        analytics.attach_projections(lines)
+        errors.update(analytics.attach_projections(lines))
     except Exception as exc:
         errors["projections"] = str(exc)
     try:
