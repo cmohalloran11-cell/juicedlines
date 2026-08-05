@@ -238,18 +238,23 @@ def test_today_report_end_to_end():
     report = optimizer.today_report(lines, sport="MLB")
     assert report["poolSize"] == 40
     assert set(report["todaysBest"].keys()) == {f"{p}_{k}" for p, k in optimizer.FORMATS}
-    for entry in report["todaysBest"].values():
-        if entry is None:
-            continue
-        assert 0 <= entry["qualityScore"] <= 100
-        assert entry["simulation"]["simCount"] >= 100_000
-        assert len(entry["legs"]) == entry["picks"]
-        assert len({l["player"] for l in entry["legs"]}) == entry["picks"]
+    for entries in report["todaysBest"].values():
+        assert isinstance(entries, list)
+        assert len(entries) <= optimizer.TODAYS_BEST_N
+        seen_legsets = set()
+        for entry in entries:
+            assert 0 <= entry["qualityScore"] <= 100
+            assert entry["simulation"]["simCount"] >= 100_000
+            assert len(entry["legs"]) == entry["picks"]
+            assert len({l["player"] for l in entry["legs"]}) == entry["picks"]
+            legset = frozenset(l["id"] for l in entry["legs"])
+            assert legset not in seen_legsets  # each entry in a format is a distinct combo
+            seen_legsets.add(legset)
     assert isinstance(report["topEntries"], list)
 
 
 def test_today_report_empty_pool_degrades_gracefully():
     report = optimizer.today_report([], sport="MLB")
     assert report["poolSize"] == 0
-    assert all(v is None for v in report["todaysBest"].values())
+    assert all(v == [] for v in report["todaysBest"].values())
     assert report["topEntries"] == []

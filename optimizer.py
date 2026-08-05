@@ -467,14 +467,19 @@ def best_entries(pool: list[dict], picks: int, kind: str, top_n: int = 1, shortl
     return entries
 
 
+TODAYS_BEST_N = 3  # distinct entries surfaced per format — see best_entries' shortlist=8
+                   # default, which comfortably supports re-simulating this many finalists.
+
+
 def todays_best(pool: list[dict], sport: Optional[str] = None,
-                book: str = DEFAULT_BOOK) -> dict[str, Optional[dict]]:
-    """One top entry per format supported on `book` — the "Today's Best" grid. Empty dict
-    when the book has no verified payout table yet."""
-    out: dict[str, Optional[dict]] = {}
+                book: str = DEFAULT_BOOK, top_n: int = TODAYS_BEST_N) -> dict[str, list[dict]]:
+    """Up to `top_n` distinct entries per format supported on `book` — the "Today's Best"
+    grid. Each list is ranked by Quality Score and can be shorter than `top_n` (or empty)
+    when the pool doesn't have enough independent legal combinations for that format. Empty
+    dict entirely when the book has no verified payout table yet."""
+    out: dict[str, list[dict]] = {}
     for picks, kind in BOOK_PAYOUTS.get(book.lower(), {}):
-        entries = best_entries(pool, picks, kind, top_n=1, sport=sport, book=book)
-        out[f"{picks}_{kind}"] = entries[0] if entries else None
+        out[f"{picks}_{kind}"] = best_entries(pool, picks, kind, top_n=top_n, sport=sport, book=book)
     return out
 
 

@@ -663,7 +663,7 @@ function dashEntryCard(e){
 }
 function renderEntries(opt){
   const best=(opt&&opt.todaysBest)||{};
-  $('#entriesGrid').innerHTML=DASH_ENTRY_FORMATS.map(k=>dashEntryCard(best[k])).join('');
+  $('#entriesGrid').innerHTML=DASH_ENTRY_FORMATS.map(k=>dashEntryCard((best[k]||[])[0])).join('');
 }
 function openEntry(e){
   const s=e.simulation,c=e.correlation;
@@ -761,7 +761,7 @@ function renderBankroll(d,opt){
   // MOST aggressive picks on the board (that would just recommend max-Kelly every time) —
   // capped at 5% here, well under the per-play Kelly cap (25%) shown on individual cards.
   const avgKelly=drops.length?Math.min(5,drops.reduce((s,x)=>s+x.kellyPct,0)/drops.length):0;
-  const entryList=DASH_ENTRY_FORMATS.map(k=>(opt&&opt.todaysBest||{})[k]).filter(Boolean);
+  const entryList=DASH_ENTRY_FORMATS.map(k=>((opt&&opt.todaysBest||{})[k]||[])[0]).filter(Boolean);
   const suggested=entryList.filter(e=>e.qualityScore>=70);
   const maxRiskPct=Math.min(20,entryList.reduce((s,e)=>s+e.simulation.kellyFraction*100,0));
   const best=opt&&opt.topEntries&&opt.topEntries[0];
@@ -1199,12 +1199,12 @@ function entryLegsMini(legs){
     <div class="opt-leg-t"><b>${esc(l.player)}</b><span class="muted">${cap(l.side)} ${fmt(l.line)} · ${esc(l.stat)||''}${l.team?' · '+esc(l.team):''}</span></div>
     <span class="muted mono" style="margin-left:auto;font-size:11px">${prob(l.probability!=null?(l.side==='under'?1-l.probability:l.probability):null)}</span></div>`).join('');
 }
-function entryCard(entry,big){
+function entryCard(entry,big,rank){
   if(!entry)return `<div class="opt-card" style="text-align:center;color:var(--dim);padding:26px 14px">Not enough independent, priced props today to build this format.</div>`;
   const s=entry.simulation,c=entry.correlation;
   return `<div class="opt-card ${big?'big':''}">
     <div class="opt-card-h">
-      <div><div class="opt-fmt">${entry.format}</div><div class="muted" style="font-size:11px;margin-top:2px">${esc(entry.reason)}</div></div>
+      <div><div class="opt-fmt">${rank?`<span class="muted" style="font-weight:700">#${rank}</span> `:''}${entry.format}</div><div class="muted" style="font-size:11px;margin-top:2px">${esc(entry.reason)}</div></div>
       <div style="display:flex;align-items:center;gap:6px;flex:none">
         ${entry.reviewFlag?`<span class="chip" style="background:#3a2a0c;color:#e8c84a;cursor:help" title="${esc(entry.reviewFlag.reason)}">${icon('warn',12)} Review</span>`:''}
         <span class="jspill" style="color:${jColor(entry.qualityScore)};border-color:${jColor(entry.qualityScore)}66" title="Quality Score">${entry.qualityScore}</span>
@@ -1249,10 +1249,18 @@ async function loadOptimizer(){
   if(r.unavailableReason){content.innerHTML=`<div class="panel"><div class="empty">${bookLogo(book,28)}<div style="margin-top:10px;max-width:440px;margin-left:auto;margin-right:auto">${esc(r.unavailableReason)}</div></div></div>`;return}
   const bookName=cap(book);
   const top=(r.topEntries||[]).slice(0,5);
-  const grid=OPT_FORMATS.map(([p,k])=>entryCard(r.todaysBest[`${p}_${k}`],false)).join('');
+  const formatGroups=OPT_FORMATS.map(([p,k])=>{
+    const entries=r.todaysBest[`${p}_${k}`]||[];
+    const label=`${p} Pick ${cap(k)}`;
+    const cards=entries.length?entries.map((e,i)=>entryCard(e,false,i+1)).join(''):entryCard(null,false);
+    return `<div class="opt-fmt-group" style="margin-bottom:18px">
+      <div class="muted" style="font-size:12px;font-weight:800;letter-spacing:.02em;margin-bottom:8px">${label}${entries.length>1?` · ${entries.length} entries`:''}</div>
+      <div class="opt-grid">${cards}</div>
+    </div>`;
+  }).join('');
   content.innerHTML=`
    ${top.length?`<div class="panel" style="padding:16px 16px 4px"><div class="phead" style="padding:0 0 10px"><h3>#1 Best Entry</h3><span class="hint">${bookLogo(book,15)} ${r.poolSize} ${bookName} props scanned</span></div>${entryCard(top[0],true)}</div>`:''}
-   <div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Today's Best</h3><span class="hint">one top entry per ${bookName} format</span></div><div class="opt-grid">${grid}</div></div>
+   <div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Today's Best</h3><span class="hint">up to ${Math.max(1,...Object.values(r.todaysBest).map(e=>(e||[]).length))} distinct entries per ${bookName} format, ranked by Quality Score</span></div>${formatGroups}</div>
    ${top.length>1?`<div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Top Entries — All Formats</h3><span class="hint">ranked by Quality Score</span></div><div class="opt-grid">${top.slice(1).map(e=>entryCard(e,false)).join('')}</div></div>`:''}`;
 }
 function demoTable(kind,cols,rows,emptyEm,emptyMsg){
