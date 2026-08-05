@@ -181,6 +181,15 @@ def refresh_lines(sport: str = "all") -> dict[str, Any]:
     except Exception as exc:
         log.warning("attach_projections failed: %s", exc)
 
+    # juice_score's measured-per-stat-trust signal + the MLB shrinkage/losing-side flag it
+    # carries (see analytics.attach_stat_trust) — build_static.py already calls this for the
+    # static deploy; the live server never did, so this path was missing both the shrinkage
+    # and the confirmed-losing-side suppression entirely.
+    try:
+        analytics.attach_stat_trust(lines)
+    except Exception as exc:
+        log.warning("attach_stat_trust failed: %s", exc)
+
     _cache["lines"] = lines
     _cache["updated_at"] = _now_iso()
     _cache["errors"] = errors

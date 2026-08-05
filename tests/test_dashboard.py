@@ -31,7 +31,8 @@ def _temp_db(monkeypatch, tmp_path):
     _db.init_db()
 
 
-def _line(id_, player, odds_type="standard", model_prob=0.6, model_edge=0.5):
+def _line(id_, player, odds_type="standard", model_prob=0.6, model_edge=0.5,
+         stat_side_losing=False):
     return {
         "id": id_, "player": player, "team": "NYY", "sport": "MLB", "stat_type": "Hits",
         "source": "prizepicks", "line": 1.5, "model_proj": 2.0, "model_prob": model_prob,
@@ -40,6 +41,7 @@ def _line(id_, player, odds_type="standard", model_prob=0.6, model_edge=0.5):
         # real PrizePicks standard legs always carry a flat pick'em price (595/595 in
         # production); demon/goblin never do (valuation.is_unpriced gates those separately).
         "pickem_price": None if odds_type in ("demon", "goblin") else -137,
+        "stat_side_losing": stat_side_losing,
     }
 
 
@@ -121,6 +123,24 @@ def test_coach_context_has_only_real_computed_numbers():
     ctx = d["coach_context"]
     assert ctx["demon_count"] == 20
     assert ctx["total_priced_props_today"] == 1
+
+
+def test_build_priced_pool_excludes_confirmed_losing_stat_sides():
+    # analytics.attach_stat_trust's stat_side_losing flag (2026-08-05) — a stat/side the
+    # model's own graded history shows losing (e.g. MLB Pitching Outs Under, 33.8% hit
+    # rate). Excluded from ranked surfaces the same way demon/goblin are, for a different
+    # reason — still real and visible on Projections, just not featured as a recommendation.
+    losing = _line("l1", "Losing Guy", odds_type="standard", model_prob=0.95, model_edge=2.0,
+                   stat_side_losing=True)
+    lines = [_line("s1", "Standard Guy", odds_type="standard", model_prob=0.6, model_edge=0.5),
+            losing]
+    d = dashboard.build(lines, updated_at="2026-01-01T00:00:00Z")
+    assert [row["player"] for row in d["drops"]] == ["Standard Guy"]
+    for tile_key in ("juice_leader", "top_edge", "best_value", "highest_confidence"):
+        tile = d["tiles"][tile_key]
+        assert tile is not None and tile["player"] == "Standard Guy"
+    # still fully visible, unhidden, on Projections
+    assert "Losing Guy" in [r["player"] for r in dashboard.projections(lines, limit=50)]
 
 
 def test_projections_default_excludes_demon_goblin_opt_in_includes():

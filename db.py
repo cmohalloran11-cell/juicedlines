@@ -390,6 +390,54 @@ def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
     return out
 
 
+def stat_side_losing(sport: str = "MLB", min_n: int = 60, k: float = 50.0,
+                     breakeven: float = 0.5238, model_version: str | None = None) -> dict:
+    """
+    {(lowercased stat, "over"|"under"): {hit_rate, shrunk_hit_rate, n}} for a (stat, side)
+    pair where the side the model actually RECOMMENDS on that stat (model_prob>0.5 -> over,
+    else under) has measurably LOST — a different, more severe finding than stat_gammas'
+    "no proven edge" (gamma~=0 means uncorrelated with outcomes; this means the model's own
+    picks have hit below breakeven often enough that shrinking the raw rate toward
+    `breakeven` itself (empirical-Bayes, pseudo-count k, same pattern as stat_gammas) still
+    leaves it below breakeven — a thin, noisy sample can't trigger this on its own.
+
+    Found live 2026-08-05: MLB "pitching outs" recommended Under 91.4% of the time on the
+    live board, but Unders there hit only 33.8% (n=139) while the rarely-recommended Over
+    hit 53.8% — a wrong-direction signal, not merely an unproven one. stat_trust_gamma's
+    shrinkage (see analytics.attach_stat_trust) can only soften an overconfident-but-
+    correctly-directed pick toward a coin flip; it cannot fix one pointed the wrong way.
+
+    Scoped to model_version (default: current) — same reasoning as stat_gammas: a
+    deliberate engine change shouldn't be judged on the era before it.
+    """
+    mv = model_version if model_version is not None else provenance.model_version(sport)
+    with _lock, _conn() as c:
+        rows = c.execute(
+            """SELECT LOWER(stat_type) st, close_line L, actual y,
+                      COALESCE(model_raw_prob, close_prob) p
+               FROM prop_clv WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL
+               AND COALESCE(model_raw_prob, close_prob) IS NOT NULL AND model_version=?
+               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
+            (sport, mv)).fetchall()
+    by: dict[tuple[str, str], list[bool]] = {}
+    for r in rows:
+        if r["p"] is None or r["L"] is None or r["y"] == r["L"]:
+            continue
+        side = "over" if r["p"] > 0.5 else "under"
+        won = (r["y"] > r["L"]) == (side == "over")
+        by.setdefault((r["st"], side), []).append(won)
+    out: dict[tuple[str, str], dict] = {}
+    for key, wins in by.items():
+        n = len(wins)
+        if n < min_n:
+            continue
+        raw = sum(wins) / n
+        shrunk = (raw * n + breakeven * k) / (n + k)
+        if shrunk < breakeven:
+            out[key] = {"hit_rate": round(raw, 4), "shrunk_hit_rate": round(shrunk, 4), "n": n}
+    return out
+
+
 def prob_calibration(sport: str = "MLB", min_n: int = 400,
                      model_version: str | None = None) -> dict:
     """Platt calibration of P(over) — {"a":…, "b":…} for p_cal = sigmoid(a·logit(p)+b). The model's

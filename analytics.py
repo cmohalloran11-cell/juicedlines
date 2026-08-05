@@ -1184,8 +1184,21 @@ def attach_stat_trust(lines: list[dict]) -> None:
     would double-shrink. model_raw/model_raw_prob preserve the PRE-shrinkage values (MLB's
     empirical path never set these before) so stat_gammas' own future measurement — which
     reads model_raw, never the anchored value — can't feed back on itself.
+
+    2026-08-05: also attaches `stat_side_losing` (bool) + `stat_side_losing_detail` from
+    db.stat_side_losing — this is a DIFFERENT, more severe finding than low gamma. Gamma≈0
+    means "uncorrelated with outcomes" (fixed above by softening confidence toward a coin
+    flip, which can never flip a recommendation). A confirmed-losing side means the model's
+    actual picks have measured BELOW breakeven — a wrong-direction signal that shrink-
+    toward-neutral cannot fix, since it can only move a probability toward 0.5, never past
+    it. Callers (dashboard.py's `priced` pool, optimizer.py's candidate pool) exclude these
+    from ranked/recommended surfaces — the prop is still visible on Projections (transparent,
+    not hidden), just not featured as a recommendation the same way demon/goblin are already
+    excluded from ranked surfaces for a different reason. MLB-only, same rationale as the
+    shrinkage above.
     """
     by_sport: dict[str, dict] = {}
+    losing_mlb: Optional[dict] = None
     for l in lines:
         sport = l.get("sport")
         stat = l.get("stat_type")
@@ -1213,6 +1226,22 @@ def attach_stat_trust(lines: list[dict]) -> None:
             l["model_edge"] = round(l["model_proj"] - line_val, 2)
             if prob is not None:
                 l["model_prob"] = round(0.5 + gamma * (float(prob) - 0.5), 4)
+
+        if sport == "MLB" and (l.get("model_raw_prob") if "model_raw_prob" in l else l.get("model_prob")) is not None:
+            if losing_mlb is None:
+                try:
+                    losing_mlb = db.stat_side_losing("MLB")
+                except Exception:
+                    losing_mlb = {}
+            # Read the PRE-shrinkage probability when available — a gamma=0 stat collapses
+            # model_prob to exactly 0.5, which would otherwise tie-break every one of its
+            # props to "under" here regardless of each player's real original lean.
+            side_prob = l["model_raw_prob"] if "model_raw_prob" in l else l["model_prob"]
+            side = "over" if float(side_prob) > 0.5 else "under"
+            detail = losing_mlb.get((stat.lower(), side))
+            l["stat_side_losing"] = detail is not None
+            if detail is not None:
+                l["stat_side_losing_detail"] = {"side": side, **detail}
 
 
 def attach_game_ids(lines: list[dict]) -> None:

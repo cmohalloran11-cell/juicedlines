@@ -154,6 +154,10 @@ def build_pool(lines: list[dict]) -> list[dict]:
         if row.get("historicalAccuracy") is None:
             row["historicalAccuracy"] = hist.get(sport, {}).get(stat)
         row["modelAgreement"] = valuation.model_agreement_score(l)
+        # analytics.attach_stat_trust — the model's recommended side on this stat has
+        # measured below breakeven (not in dashboard._drop's own field list, so pulled
+        # from the raw line here, same as calibration/modelAgreement above).
+        row["statSideLosing"] = bool(l.get("stat_side_losing"))
         pool.append(row)
     return pool
 
@@ -196,7 +200,8 @@ def candidate_legsets(pool: list[dict], picks: int, sport: Optional[str] = None,
     (already the product's real composite quality signal — see valuation.juice_score) to
     shortlist before the expensive Monte Carlo pass."""
     eligible = [l for l in pool if l.get("side") and l.get("probability") is not None
-               and (l.get("source") or "").lower() == book.lower()]
+               and (l.get("source") or "").lower() == book.lower()
+               and not l.get("statSideLosing")]
     if sport and sport.lower() != "all":
         eligible = [l for l in eligible if (l.get("sport") or "").lower() == sport.lower()]
     if len(eligible) < picks:

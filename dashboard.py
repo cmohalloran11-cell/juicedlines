@@ -258,7 +258,11 @@ def build(lines: list[dict], updated_at: Optional[str],
     # picks. The dashboard's "picks" surfaces are scoped to priced (standard/boosted) props;
     # demon/goblin are still fully browsable — with their real projection — on the Projections
     # page (see dashboard.projections()'s odds_types param), just not ranked alongside priced plays.
-    priced = [l for l in pool if not valuation.is_unpriced(l)]
+    # stat_side_losing (analytics.attach_stat_trust) — the model's own recommended side on
+    # this stat has measured below breakeven (e.g. MLB Pitching Outs Under, 33.8% hit rate).
+    # Excluded from ranked/recommended surfaces the same way demon/goblin are just above,
+    # for a different reason — still fully visible, real, and unhidden on Projections.
+    priced = [l for l in pool if not valuation.is_unpriced(l) and not l.get("stat_side_losing")]
     unpriced = [l for l in pool if valuation.is_unpriced(l)]
     demons = [l for l in unpriced if (l.get("odds_type") or "").lower() == "demon"]
     goblins = [l for l in unpriced if (l.get("odds_type") or "").lower() == "goblin"]

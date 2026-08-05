@@ -25,7 +25,7 @@ def _temp_db(monkeypatch, tmp_path):
 
 
 def _line(id_, player, team, sport="MLB", model_prob=0.6, opponent=None, stat="Hits",
-         start_time="2026-08-04T23:05:00Z"):
+         start_time="2026-08-04T23:05:00Z", stat_side_losing=False):
     return {
         "id": id_, "player": player, "team": team, "opponent": opponent, "sport": sport,
         "stat": stat, "line": 1.5, "projection": 1.9, "median": 1.5, "edge": 0.4,
@@ -33,7 +33,7 @@ def _line(id_, player, team, sport="MLB", model_prob=0.6, opponent=None, stat="H
         "juiceScore": int(round(model_prob * 100)), "confidence": 70, "calibration": 0.5,
         "historicalAccuracy": 0.6, "modelAgreement": 0.6, "volatility": 0.6,
         "floor": 0.2, "ceiling": 3.2, "startTime": start_time, "source": "prizepicks",
-        "oddsType": "standard", "headshot": None,
+        "oddsType": "standard", "headshot": None, "statSideLosing": stat_side_losing,
     }
 
 
@@ -108,6 +108,20 @@ def test_candidate_legsets_excludes_correlated_pairs_by_default():
 
 def test_candidate_legsets_too_few_eligible_legs_returns_empty():
     assert optimizer.candidate_legsets(_pool(1), picks=3) == []
+
+
+def test_candidate_legsets_excludes_confirmed_losing_stat_sides():
+    # analytics.attach_stat_trust's stat_side_losing flag (2026-08-05) — a stat/side the
+    # model's own graded history shows losing (e.g. MLB Pitching Outs Under, 33.8% hit
+    # rate). Still real, still visible on Projections; just not eligible for a
+    # recommended/ranked entry — same treatment as duplicate players and correlated pairs.
+    pool = _pool(10)
+    pool[3] = dict(pool[3], statSideLosing=True)
+    combos = optimizer.candidate_legsets(pool, picks=3, shortlist=200)
+    losing_id = pool[3]["id"]
+    assert combos, "should still find combos among the other 9 legs"
+    for combo in combos:
+        assert losing_id not in {l["id"] for l in combo}
 
 
 # ── Monte Carlo sanity at the probability extremes ──────────────────────────
