@@ -1169,6 +1169,21 @@ def attach_stat_trust(lines: list[dict]) -> None:
     Default 0.5 (neutral — neither rewarded nor punished) for any stat with too little graded
     history yet to have a measured gamma. Call AFTER attach_projections, same as
     attach_market_quality.
+
+    2026-08-05: for MLB, also SHRINKS model_proj/model_prob toward the market line by this
+    same gamma — db.stat_gammas' own docstring already specifies the formula
+    ("proj = line + γ·(model−line)") but nothing ever applied it; gamma only ever discounted
+    juice_score's EV component (a ranking signal), leaving the raw projection/probability —
+    and therefore the actual recommended side — fully UNSHRUNK regardless of measured trust.
+    Live audit found the gap: MLB "Pitching Outs" measured gamma=0.0 (proven zero edge) yet
+    was recommended Under 91.4% of the time on live board data, hitting only 33.8% (the
+    rarely-recommended Over hit 53.8% instead) — confidently wrong on exactly the stat the
+    model had already proven it about. Scoped to MLB only: WNBA already anchors its own
+    projection toward the market via basketball.board's trust/sample_weight blend, and
+    tennis is documented as already fully market-deferred — applying this on top of either
+    would double-shrink. model_raw/model_raw_prob preserve the PRE-shrinkage values (MLB's
+    empirical path never set these before) so stat_gammas' own future measurement — which
+    reads model_raw, never the anchored value — can't feed back on itself.
     """
     by_sport: dict[str, dict] = {}
     for l in lines:
@@ -1182,7 +1197,22 @@ def attach_stat_trust(lines: list[dict]) -> None:
             except Exception:
                 by_sport[sport] = {}
         gammas = by_sport[sport]
-        l["stat_trust_gamma"] = gammas.get(stat.lower(), 0.5)
+        gamma = gammas.get(stat.lower(), 0.5)
+        l["stat_trust_gamma"] = gamma
+
+        if sport == "MLB" and l.get("model_proj") is not None and l.get("line") is not None:
+            # Read from model_raw when already set, not model_proj — makes this idempotent
+            # under a repeated call (would otherwise shrink an already-shrunk value again).
+            proj = float(l["model_raw"]) if "model_raw" in l else float(l["model_proj"])
+            prob = l["model_raw_prob"] if "model_raw_prob" in l else l.get("model_prob")
+            line_val = float(l["line"])
+            l.setdefault("model_raw", proj)
+            if prob is not None:
+                l.setdefault("model_raw_prob", prob)
+            l["model_proj"] = round(line_val + gamma * (proj - line_val), 2)
+            l["model_edge"] = round(l["model_proj"] - line_val, 2)
+            if prob is not None:
+                l["model_prob"] = round(0.5 + gamma * (float(prob) - 0.5), 4)
 
 
 def attach_game_ids(lines: list[dict]) -> None:
