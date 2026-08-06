@@ -46,7 +46,8 @@ calibration, and drift against graded outcomes.
   the only adapter implemented so far (`nflverse_adapter.py`) is a disclosed historical-
   performance baseline, not a licensed predictive model (a commercial provider is still TBD).
   Sleeper's `/v1/players/nfl` dump is synced at most once a day by a background job, never on
-  a request path. No UI yet — this phase is data layer + scoring engine only.
+  a request path. UI lives at `#/fantasy` in `static/dashboard.html` (live-server only — same
+  `/api/ai/*`-style exception as AI Juice, not served from the static/prebuilt-JSON deploy).
 
 ## Quickstart (local)
 

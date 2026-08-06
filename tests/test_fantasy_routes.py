@@ -91,6 +91,15 @@ def test_import_league_persists_real_scoring_and_roster_shape(app_as, monkeypatc
     assert len(saved) == 1
 
 
+def test_league_drafts_returns_sleeper_drafts_list(app_as, monkeypatch):
+    drafts = [{"draft_id": "D1", "status": "drafting"}]
+    monkeypatch.setattr(sleeper_client, "get_league_drafts", lambda league_id: drafts)
+    client = app_as(USER)
+    resp = client.get("/api/fantasy/leagues/L1/drafts")
+    assert resp.status_code == 200
+    assert resp.json()["drafts"] == drafts
+
+
 def test_import_league_404s_on_unknown_sleeper_league(app_as, monkeypatch):
     monkeypatch.setattr(sleeper_client, "get_league", lambda league_id: None)
     client = app_as(USER)

@@ -70,6 +70,16 @@ def league_detail(sleeper_league_id: str):
     return league
 
 
+@router.get("/leagues/{sleeper_league_id}/drafts")
+def league_drafts(sleeper_league_id: str):
+    """The league's draft(s) -- lets the UI find a live draft_id without the user hunting it
+    down manually. Most recent draft first (Sleeper's own ordering)."""
+    key = f"drafts:{sleeper_league_id}"
+    drafts = _cached(key, _LEAGUE_CACHE_TTL,
+                     lambda: sleeper_client.get_league_drafts(sleeper_league_id))
+    return {"drafts": drafts}
+
+
 # ── league import ────────────────────────────────────────────────────────────────────────
 
 class LeagueImportIn(BaseModel):

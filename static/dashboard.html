@@ -354,7 +354,9 @@ function _cachedProjectionsFetch(url,doFetch){
 const api=(p,opt={})=>{
   // Static: prebuilt JSON for everything EXCEPT /api/ai/* — those hit the Vercel serverless
   // function (which holds the Gemini key). Relative URL so it resolves under the site root.
-  if(STATIC && p.startsWith('/api/') && !p.startsWith('/api/ai/')) return staticApi(p);
+  // /api/fantasy/* is inherently a live-server, signed-in feature (Sleeper reads, per-user
+  // league storage) — same exception as /api/ai/*, never served from prebuilt static JSON.
+  if(STATIC && p.startsWith('/api/') && !p.startsWith('/api/ai/') && !p.startsWith('/api/fantasy/')) return staticApi(p);
   const h={'Content-Type':'application/json'};
   if(AUTH.token)h['Authorization']='Bearer '+AUTH.token; else if(AUTH.dev)h['X-Dev-User']='demo';
   const url=(STATIC && p.startsWith('/api/'))?'.'+p:p;
@@ -526,6 +528,7 @@ const NAVGROUPS=[
   ['Research',[['Projections','projections','bars'],['Players','players','user'],['Games','games','cal'],['Teams','teams','shield'],['Research Center','research','flask','New']]],
   ['Analysis',[['Entry Optimizer','optimizer','layers','New'],['AI Juice','ai-juice','spark'],['Simulations','simulations','wave'],['Correlations','correlations','link'],['Top Movers','movers','trend'],['Market Intel','market','pulse'],['Model Health','model-health','heart','New'],['Injuries','injuries','plus'],['Weather','weather','cloud']]],
   ['My Workspace',[['Portfolio','portfolio','folder','Pro'],['Watchlist','watchlist','star'],['Alerts','alerts','bell']]],
+  ['Fantasy',[['Draft Assistant','fantasy','layers','New']]],
   ['Community',[['Leaderboards','leaderboards','trophy'],['Learn','learn','cap'],['Community','community','users','Soon']]],
 ];
 const NAVBOTTOM=[['Upgrade to Pro','upgrade','spark','Pro'],['Admin Panel','admin','shield'],['Settings','settings','gear'],['Help & Support','help','life']];
@@ -1478,6 +1481,132 @@ async function vUpgrade(){const free=['Live projections board','Juice Scores & e
 }
 function upgradeClick(){if(AUTH.user)toast('Pro is free during beta — you are all set');else openLogin();}
 
+// ══════════════════════ FANTASY DRAFT ASSISTANT ══════════════════════
+// Sleeper reads + the draft board/live-draft computation all happen server-side
+// (routes_fantasy.py) — this is UI only, no client-side Sleeper calls, no client-side scoring.
+const FS={tab:'import', username:'', season:String(new Date().getFullYear()),
+  foundLeagues:[], myLeagues:[], activeLeagueId:null, draftId:'', rosterId:'', live:null};
+const fsGo=t=>{FS.tab=t;vFantasy()};
+function fsSignInPrompt(){return `<div class="panel"><div class="empty"><div class="em">${icon('user',30)}</div><b>Sign in to use the draft board and live draft mode.</b><br><span class="muted" style="font-size:12px">League import is saved to your account.</span><br><button class="btn pri" style="margin-top:14px" onclick="openLogin()">Sign in</button></div></div>`}
+
+async function vFantasy(){
+  if(STATIC){
+    $('#view').innerHTML=`<div class="ph2"><div><h2>Fantasy Draft Assistant <span class="chip g">New</span></h2><p>Sleeper league import, VOR draft boards, and live draft assistance.</p></div></div>
+     <div class="panel"><div class="empty"><div class="em">${icon('cloud',30)}</div>The Fantasy Draft Assistant needs the live server — not available on this static deploy.</div></div>`;
+    return;
+  }
+  const tabs=[['import','Import League'],['board','Draft Board'],['live','Live Draft']];
+  const sub=tabs.map(([k,n])=>`<span class="dtab ${FS.tab===k?'on':''}" onclick="fsGo('${k}')">${n}</span>`).join('');
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Fantasy Draft Assistant <span class="chip g">New</span></h2><p>Import a real Sleeper league, then draft with a VOR board built from that league's actual scoring rules and roster shape — not a hardcoded PPR assumption.</p></div></div>
+   <div class="dtabs">${sub}</div><div id="fsbody"><div class="panel" style="padding:40px;text-align:center"><span class="muted skel">Loading…</span></div></div>`;
+  const body=$('#fsbody');if(!body)return;
+  try{
+    if(FS.tab==='import')body.innerHTML=await fsImportView();
+    else if(FS.tab==='board')body.innerHTML=await fsBoardView();
+    else body.innerHTML=await fsLiveView();
+  }catch(e){body.innerHTML=`<div class="panel"><div class="empty">Could not load this tab.<br><span class="muted">${e}</span></div></div>`}
+}
+
+async function fsImportView(){
+  if(!signedIn())return fsSignInPrompt();
+  try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}
+  const myLeaguesHtml=FS.myLeagues.length
+    ?`<table class="drops"><thead><tr><th>League</th><th>Season</th><th>Size</th><th></th></tr></thead><tbody>${FS.myLeagues.map(l=>`<tr><td style="font-weight:700">${esc(l.name||l.sleeper_league_id)}</td><td>${esc(l.season||'')}</td><td>${l.league_size??'—'}</td><td><button class="btn" onclick="fsUseLeague('${l.id}')">Use for Draft</button></td></tr>`).join('')}</tbody></table>`
+    :`<div class="empty"><div class="em">${icon('users',30)}</div>No leagues imported yet.</div>`;
+  const found=FS.foundLeagues.length
+    ?`<table class="drops"><thead><tr><th>League</th><th>Size</th><th></th></tr></thead><tbody>${FS.foundLeagues.map(l=>`<tr><td style="font-weight:700">${esc(l.name)}</td><td>${l.total_rosters??'—'}</td><td><button class="btn pri" onclick="fsImportLeague('${l.league_id}')">Import</button></td></tr>`).join('')}</tbody></table>`
+    :'';
+  return `
+   <div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Find your Sleeper leagues</h3><span class="hint">Read-only, server-side — Sleeper is never called from your browser</span></div>
+     <div class="controls" style="margin:0">
+       <input class="ctl" id="fs-username" placeholder="Sleeper username" value="${esc(FS.username)}" style="width:200px">
+       <input class="ctl" id="fs-season" placeholder="Season" value="${esc(FS.season)}" style="width:100px">
+       <button class="btn pri" onclick="fsFindLeagues()">Find Leagues</button>
+     </div>
+     <div id="fs-found" style="margin-top:12px">${found}</div>
+   </div>
+   <div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>My Imported Leagues</h3></div>${myLeaguesHtml}</div>`;
+}
+async function fsFindLeagues(){
+  const username=($('#fs-username').value||'').trim();
+  const season=($('#fs-season').value||'').trim();
+  if(!username)return toast('Enter a Sleeper username');
+  FS.username=username;FS.season=season;
+  try{
+    const user=await api('/api/fantasy/sleeper/user/'+encodeURIComponent(username));
+    if(!user||!user.user_id){toast('Sleeper username not found');return}
+    const r=await api(`/api/fantasy/sleeper/leagues/${user.user_id}?season=${encodeURIComponent(season)}`);
+    FS.foundLeagues=r.leagues||[];
+    if(!FS.foundLeagues.length)toast('No leagues found for that username/season');
+    vFantasy();
+  }catch(e){toast('Could not reach Sleeper')}
+}
+async function fsImportLeague(sleeperLeagueId){
+  try{await api('/api/fantasy/leagues/import',{method:'POST',body:{sleeper_league_id:sleeperLeagueId}});toast('League imported');vFantasy();}
+  catch(e){toast('Could not import league')}
+}
+function fsUseLeague(leagueId){FS.activeLeagueId=leagueId;FS.draftId='';FS.rosterId='';FS.live=null;fsGo('board');}
+function fsActiveLeague(){return FS.myLeagues.find(l=>l.id===FS.activeLeagueId)}
+function fsLeagueSelector(){
+  if(FS.myLeagues.length<2)return '';
+  return `<div class="controls">${icon('users',15)}<select class="ctl" onchange="fsSwitchLeague(this.value)">${FS.myLeagues.map(l=>`<option value="${l.id}" ${l.id===FS.activeLeagueId?'selected':''}>${esc(l.name||l.sleeper_league_id)}</option>`).join('')}</select></div>`;
+}
+function fsSwitchLeague(id){FS.activeLeagueId=id;FS.draftId='';FS.live=null;vFantasy();}
+
+async function fsBoardView(){
+  if(!signedIn())return fsSignInPrompt();
+  if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
+  if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
+  if(!FS.activeLeagueId)return `<div class="empty"><div class="em">${icon('target',30)}</div>Import a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
+  const selector=fsLeagueSelector();
+  let board;
+  try{board=(await api('/api/fantasy/draft-board?league_id='+FS.activeLeagueId)).board||[];}
+  catch(e){return selector+`<div class="panel"><div class="empty">Could not load the draft board.</div></div>`}
+  if(!board.length)return selector+`<div class="panel"><div class="empty"><div class="em">${icon('target',30)}</div>No projections available for this league's players yet — the nflverse sync may still be warming up.</div></div>`;
+  const rows=board.map(p=>`<tr><td><span class="chip">T${p.tier}</span></td><td style="font-weight:700">${esc(p.name)}</td><td>${esc(p.position||'')}</td><td>${esc(p.team||'')}</td><td class="mono">${fmt(p.fantasy_points)}</td><td class="mono">${p.vor==null?'—':fmt(p.vor)}</td></tr>`).join('');
+  return selector+`<div class="panel"><div class="phead" style="padding:14px 16px 6px"><h3>Draft Board</h3><span class="hint">Ranked by VOR — tiers are natural gaps, not fixed cutoffs</span></div><table class="drops"><thead><tr><th>Tier</th><th>Player</th><th>Pos</th><th>Team</th><th>Proj Pts</th><th>VOR</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+async function fsLiveView(){
+  if(!signedIn())return fsSignInPrompt();
+  if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
+  if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
+  if(!FS.activeLeagueId)return `<div class="empty">Import and select a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
+  const league=fsActiveLeague();
+  if(!FS.draftId&&league){
+    try{const r=await api(`/api/fantasy/leagues/${league.sleeper_league_id}/drafts`);const d=(r.drafts||[])[0];if(d)FS.draftId=d.draft_id;}catch(e){}
+  }
+  return fsLeagueSelector()+`
+   <div class="panel" style="padding:16px"><div class="controls" style="margin:0">
+     <input class="ctl" id="fs-draftid" placeholder="Sleeper Draft ID" value="${esc(FS.draftId)}" style="width:220px">
+     <input class="ctl" id="fs-rosterid" placeholder="Your Roster ID (optional)" value="${esc(FS.rosterId)}" style="width:200px">
+     <button class="btn pri" onclick="fsStartLive()">Track This Draft</button>
+   </div></div>
+   <div id="fs-live">${FS.live?fsLiveBody(FS.live):`<div class="empty">Enter the draft to start tracking it live — polls Sleeper every 10 seconds while this tab is open.</div>`}</div>`;
+}
+function fsStartLive(){
+  FS.draftId=($('#fs-draftid').value||'').trim();FS.rosterId=($('#fs-rosterid').value||'').trim();
+  if(!FS.draftId)return toast('Enter a Sleeper draft ID');
+  refreshLiveDraft(true);
+}
+async function refreshLiveDraft(force){
+  if(!FS.draftId||!FS.activeLeagueId)return;
+  if(!force&&!(cur()==='fantasy'&&FS.tab==='live'))return;
+  try{
+    const q=`league_id=${encodeURIComponent(FS.activeLeagueId)}${FS.rosterId?`&roster_id=${encodeURIComponent(FS.rosterId)}`:''}`;
+    const live=await api(`/api/fantasy/draft/${encodeURIComponent(FS.draftId)}/live?${q}`);
+    FS.live=live;
+    const el=$('#fs-live');if(el)el.innerHTML=fsLiveBody(live);
+  }catch(e){/* transient poll failure — next tick retries, don't spam a toast every 10s */}
+}
+function fsLiveBody(live){
+  const runs=Object.entries(live.positional_runs||{});
+  const runsHtml=runs.length?`<div class="controls" style="margin:0 0 14px">${runs.map(([pos,n])=>`<span class="chip r">${esc(pos)} run — ${n} of last 5 picks</span>`).join('')}</div>`:'';
+  const recs=(live.recommendations||[]).slice(0,10).map((p,i)=>`<tr><td class="mono">${i+1}</td><td style="font-weight:700">${esc(p.name)}</td><td>${esc(p.position||'')}</td><td class="mono">${p.vor==null?'—':fmt(p.vor)}</td><td class="mono">${fmt(p.recommendation_score)}</td></tr>`).join('');
+  return `<div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Recommended Picks</h3><span class="hint">${live.picks_made||0} picks made · ${(live.available||[]).length} available · weighted by your remaining roster needs</span></div>${runsHtml}
+   ${recs?`<table class="drops"><thead><tr><th>#</th><th>Player</th><th>Pos</th><th>VOR</th><th>Rec Score</th></tr></thead><tbody>${recs}</tbody></table>`:`<div class="empty">No recommendations yet.</div>`}</div>`;
+}
+
 // ══════════════════════ PLAYER PAGE ══════════════════════
 const goPlayer=name=>{location.hash='/player/'+encodeURIComponent(name)};
 let PPTAB='overview';
@@ -1711,7 +1840,7 @@ async function vModelHealth(){
 }
 function mhGoSport(sp){MH_SPORT=sp;vModelHealth()}
 
-const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,'model-health':vModelHealth,leaderboards:vLeaderboards,correlations:vCorrelations,optimizer:vOptimizer,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade,admin:vAdmin};
+const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,'model-health':vModelHealth,leaderboards:vLeaderboards,correlations:vCorrelations,optimizer:vOptimizer,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,fantasy:vFantasy,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade,admin:vAdmin};
 
 // ── prop detail drawer ──
 // Colors for the REAL confidence components (from valuation.confidence_factors). No fake weights.
@@ -1911,6 +2040,9 @@ async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}
   if(!location.hash)location.hash='/dashboard';
   render();
   setInterval(()=>{if(cur()==='dashboard')render()},60000);
+  // Live draft picks (10s, matches Sleeper draft cadence) — only while the Live Draft tab is
+  // actually open; refreshLiveDraft() itself no-ops once you navigate away.
+  setInterval(()=>refreshLiveDraft(false),10000);
 }
 document.addEventListener('click',e=>{if(!e.target.closest('#avatar')&&!e.target.closest('#umenu'))$('#umenu').classList.remove('open')});
 // fill dashboard AI summary after render
