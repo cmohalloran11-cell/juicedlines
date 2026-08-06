@@ -41,9 +41,12 @@ import optimizer as optimizer_mod
 import weather as weather_mod
 import books
 import middleware
+import fantasy
+from fantasy import players_sync as fantasy_players_sync
 from auth import require_role, optional_user, get_current_user
 from routes_user import router as user_router
 from routes_optimizer import router as optimizer_router
+from routes_fantasy import router as fantasy_router
 from pullers import fetch_prizepicks, fetch_underdog, mock_lines
 
 FALLBACK_TO_MOCK = os.getenv("FALLBACK_TO_MOCK", "1").lower() not in ("0", "false", "no")
@@ -256,6 +259,31 @@ async def _snapshot_loop() -> None:
         await asyncio.sleep(SNAPSHOT_INTERVAL)
 
 
+async def _fantasy_sync_loop() -> None:
+    """Checks about once an hour whether Sleeper's /v1/players/nfl dump needs re-fetching
+    (fantasy_players_sync_log-gated, so the once-a-day request-cap survives restarts) and, if
+    so, runs it off the event loop. Sleeper's ~5MB player dump must never be fetched from a
+    request path -- see fantasy.sleeper_client's module docstring.
+
+    Respects USE_MOCK like refresh_lines() -- otherwise every test/CI process that boots the
+    full app (TestClient(main.app), same pattern as test_api_endpoints.py) would fire a real,
+    uncontrolled Sleeper request on startup."""
+    if USE_MOCK:
+        log.info("USE_MOCK set -- fantasy players sync loop disabled.")
+        return
+    loop = asyncio.get_event_loop()
+    while True:
+        try:
+            db_ = store.get_database()
+            if await loop.run_in_executor(None, fantasy_players_sync.should_sync, db_):
+                log.info("Fantasy players sync due — fetching Sleeper /v1/players/nfl …")
+                result = await loop.run_in_executor(None, fantasy_players_sync.sync_players, db_)
+                log.info("Fantasy players sync complete: %s", result)
+        except Exception as exc:
+            log.exception("Fantasy players sync failed: %s", exc)
+        await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
@@ -263,14 +291,17 @@ async def lifespan(app: FastAPI):
     # Postgres in production via DATABASE_URL. Idempotent.
     try:
         store.init_schema(store.get_database())
+        fantasy.init_schema(store.get_database())
     except Exception as exc:
         log.warning("store schema init failed: %s", exc)
     # Don't block startup on the (slow) warm-up — the server accepts connections
     # immediately and the loop's first iteration fills the cache in a thread. The
     # board shows "warming up" for a few seconds instead of being unreachable.
     task = asyncio.create_task(_snapshot_loop())
+    fantasy_task = asyncio.create_task(_fantasy_sync_loop())
     yield
     task.cancel()
+    fantasy_task.cancel()
 
 
 app = FastAPI(title="Sports Edge", lifespan=lifespan)
@@ -283,6 +314,7 @@ app.add_middleware(
 
 app.include_router(user_router)
 app.include_router(optimizer_router)
+app.include_router(fantasy_router)
 
 # Backend hardening: request-id + timing logs, error envelope, optional rate limit (Vol III).
 middleware.install(app)

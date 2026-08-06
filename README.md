@@ -39,6 +39,14 @@ calibration, and drift against graded outcomes.
   build step, no framework.
 - **`store/`** — the Postgres-or-SQLite relational layer for users, watchlists, portfolio,
   alerts, and the model-run registry.
+- **`fantasy/`** — data layer for the fantasy football draft assistant (`/api/fantasy/*`,
+  `routes_fantasy.py`): a canonical player table with source-id mapping + fuzzy-match review
+  log, Sleeper league import, a pure league-scoring-rules engine, VOR/tiering, and live-draft
+  state. Projections come from a swappable `ProjectionsProvider` (`fantasy/projections/`) --
+  the only adapter implemented so far (`nflverse_adapter.py`) is a disclosed historical-
+  performance baseline, not a licensed predictive model (a commercial provider is still TBD).
+  Sleeper's `/v1/players/nfl` dump is synced at most once a day by a background job, never on
+  a request path. No UI yet — this phase is data layer + scoring engine only.
 
 ## Quickstart (local)
 
