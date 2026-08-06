@@ -74,6 +74,12 @@ def get_draft_picks(draft_id: str) -> list[dict]:
     return _get(f"/draft/{draft_id}/picks") or []
 
 
+def get_nfl_state() -> Optional[dict]:
+    """Sleeper's own clock: current season/week. Used to default `season`/`week` params
+    instead of hardcoding a year -- see routes_fantasy.py's lineup route."""
+    return _get("/state/nfl")
+
+
 def fetch_all_players(sport: str = "nfl") -> dict[str, dict]:
     """The ~5MB player dump (Sleeper id -> player object). ONLY call from
     fantasy.players_sync's scheduled job -- see module docstring."""

@@ -118,7 +118,23 @@ def test_provider_skips_players_without_a_canonical_mapping(db, monkeypatch):
     assert "stats" in row and "methodology" in row
 
 
-def test_provider_rejects_weekly_projections_in_phase_1():
+def test_provider_weekly_projection_is_unmultiplied_per_game_rate(db, monkeypatch):
+    players = PlayerRepository(db)
+    mapper = PlayerMappingRepository(db)
+    p = players.create(full_name="Weekly Guy", position="RB", team="SEA")
+    mapper.map(p["id"], "nflverse_gsis", "00-WEEKLY")
+
+    rows = [
+        _row("00-WEEKLY", 2025, 1, "RB", rushing_yards=100, name="Weekly Guy"),
+        _row("00-WEEKLY", 2025, 2, "RB", rushing_yards=100, name="Weekly Guy"),
+    ]
+    monkeypatch.setattr(nfl, "fetch_rows", lambda *a, **k: iter(rows))
+
     provider = NflverseProjectionsProvider()
-    with pytest.raises(NotImplementedError):
-        provider.get_projections(season=2026, week=3)
+    season_out = provider.get_projections(season=2026)[0]
+    week_out = provider.get_projections(season=2026, week=3)[0]
+
+    # week value = season value / PROJECTED_GAMES (17) since it's the same shrunk per-game
+    # rate, just not multiplied across a season -- not a different, week-specific model.
+    assert week_out["stats"]["rush_yd"] == round(season_out["stats"]["rush_yd"] / 17, 2)
+    assert "flat to every week" in week_out["methodology"]

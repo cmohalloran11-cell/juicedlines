@@ -1,7 +1,9 @@
 """
 fantasy — data layer for the fantasy football draft assistant (Sleeper leagues + a swappable
-projections provider). Phase 1: canonical player/mapping tables, league import, a pure scoring
-engine, VOR + tiering, and live-draft state -- see routes_fantasy.py for the HTTP surface.
+projections provider) and everything built on it: draft board (VOR + tiering, draft_state),
+lineup optimizer (lineup), waiver wire (composed from vor + draft_state in routes_fantasy.py),
+and trade analyzer (trade). All of it shares the same canonical player table, league config,
+and scoring engine -- see routes_fantasy.py for the HTTP surface.
 
 Public surface:
     init_schema(db)          -> create the fantasy_* tables (idempotent)

@@ -178,13 +178,20 @@ class NflverseProjectionsProvider(ProjectionsProvider):
     name = "nflverse"
 
     def get_projections(self, season: int, week: Optional[int] = None) -> list[dict]:
-        if week is not None:
-            raise NotImplementedError(
-                "the nflverse adapter only supports season-long (redraft) projections in "
-                "phase 1; weekly in-season projections are a later-phase feature.")
+        """Season-long (week=None): the shrunk per-game rate x PROJECTED_GAMES, as documented
+        on the module. Weekly (week=<int>): the SAME shrunk per-game rate, unmultiplied --
+        this adapter has no matchup/injury/depth-chart signal to differentiate one week from
+        another, so every week in a season gets an identical flat number. That's disclosed in
+        `methodology`, not presented as week-granular modeling this adapter doesn't have."""
         seasons = {season - i for i in range(1, LOOKBACK_SEASONS + 1)}
         per_player_season = aggregate_seasons(fetch_rows(), seasons)
-        players = project_players(per_player_season, target_season=season)
+        games = 1 if week is not None else PROJECTED_GAMES
+        players = project_players(per_player_season, target_season=season, projected_games=games)
+        if week is not None:
+            for p in players:
+                p["methodology"] += (
+                    " Applied flat to every week in the season -- no per-week matchup/injury "
+                    "signal in this adapter.")
 
         # Resolve nflverse GSIS ids to our canonical player_id via the mapping layer. Players
         # with no mapping yet are skipped (not silently zero-scored) -- they'll surface once

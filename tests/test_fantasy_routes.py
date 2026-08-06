@@ -30,6 +30,13 @@ def db(tmp_path, monkeypatch):
     store.reset_singleton()
     monkeypatch.setattr(store.database, "_singleton", d, raising=False)
     routes_fantasy._cache.clear()  # TTL cache is module-level; don't leak between tests
+    # _scored_board() calls these before reading fantasy_projections -- tests seed
+    # ProjectionRepository directly (see _seed_league_and_players), so the provider sync
+    # itself is a no-op here; this only stops a real network call to nflverse on every test.
+    monkeypatch.setattr(routes_fantasy.projections_sync, "ensure_season_projections",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(routes_fantasy.projections_sync, "ensure_week_projections",
+                        lambda *a, **k: None)
     return d
 
 
@@ -173,6 +180,125 @@ def test_live_draft_removes_drafted_players_and_flags_runs(app_as, monkeypatch, 
     assert rb1["id"] not in available_ids           # drafted player removed from the board
     assert rb2["id"] in available_ids and wr1["id"] in available_ids
     assert body["positional_runs"].get("RB") == 3    # 3 RB picks in the recent window
+
+
+def test_waivers_excludes_every_rostered_player_and_ranks_by_need(app_as, monkeypatch, db):
+    rb1, rb2, wr1 = _seed_league_and_players(db)
+    league = LeagueRepository(db).list_for_user(USER["id"])[0]
+
+    rosters = [
+        {"roster_id": "1", "players": ["s1"]},   # mine: rb1 (Sleeper id s1)
+        {"roster_id": "2", "players": ["s2"]},   # someone else's: rb2 (Sleeper id s2)
+    ]
+    monkeypatch.setattr(sleeper_client, "get_league_rosters", lambda league_id: rosters)
+
+    client = app_as(USER)
+    resp = client.get("/api/fantasy/waivers",
+                      params={"league_id": league["id"], "roster_id": "1"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available_count"] == 1   # only wr1 (s3) is unrostered anywhere in the league
+    assert body["recommendations"][0]["player_id"] == wr1["id"]
+    # my only open starting need is WR (I already have my one RB slot filled by rb1)
+    assert body["recommendations"][0]["need_weight"] == 1.15
+
+
+def test_waivers_404_for_league_not_owned_by_caller(app_as, db):
+    _seed_league_and_players(db)
+    league = LeagueRepository(db).list_for_user(USER["id"])[0]
+    other_client = app_as({"id": "someone-else", "role": "USER"})
+    resp = other_client.get("/api/fantasy/waivers",
+                            params={"league_id": league["id"], "roster_id": "1"})
+    assert resp.status_code == 404
+
+
+def test_trade_analyze_reports_vor_gain_direction(app_as, db):
+    rb1, rb2, wr1 = _seed_league_and_players(db)
+    league = LeagueRepository(db).list_for_user(USER["id"])[0]
+
+    client = app_as(USER)
+    resp = client.post("/api/fantasy/trade/analyze", json={
+        "league_id": league["id"], "side_a": [rb1["id"]], "side_b": [rb2["id"], wr1["id"]]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["side_a"]["total_vor"] == 128.0    # 180 - replacement(52)
+    assert body["side_b"]["total_vor"] == 0.0       # rb2 and wr1 are each their own replacement
+    assert body["verdict"] == "Side A gains 128.0 VOR"
+
+
+def test_trade_analyze_rejects_empty_side(app_as, db):
+    _seed_league_and_players(db)
+    league = LeagueRepository(db).list_for_user(USER["id"])[0]
+    client = app_as(USER)
+    resp = client.post("/api/fantasy/trade/analyze",
+                       json={"league_id": league["id"], "side_a": [], "side_b": ["x"]})
+    assert resp.status_code == 422
+
+
+def _seed_lineup_league(db):
+    LeagueRepository(db).upsert(
+        USER["id"], "L2", "Lineup League", "2026", league_size=2,
+        scoring_settings={"pass_yd": 0.04, "pass_td": 4.0, "rush_yd": 0.1, "rush_td": 6.0,
+                          "rec": 1.0, "rec_yd": 0.1},
+        roster_positions=["QB", "RB", "WR", "BN"])
+    players = PlayerRepository(db)
+    mapper = PlayerMappingRepository(db)
+    proj = ProjectionRepository(db)
+
+    qb1 = players.create(full_name="Star QB", position="QB", team="KC")
+    rb1 = players.create(full_name="Star RB", position="RB", team="SF")
+    wr1 = players.create(full_name="Star WR", position="WR", team="MIA")
+    for p, sid in ((qb1, "s1"), (rb1, "s2"), (wr1, "s3")):
+        mapper.map(p["id"], "sleeper", sid)
+
+    proj.upsert(qb1["id"], "nflverse", 2026, 1, {"pass_yd": 300, "pass_td": 2}, "m")   # 20.0
+    proj.upsert(rb1["id"], "nflverse", 2026, 1, {"rush_yd": 100, "rush_td": 1}, "m")   # 16.0
+    proj.upsert(wr1["id"], "nflverse", 2026, 1, {"rec": 5, "rec_yd": 50}, "m")         # 10.0
+    return qb1, rb1, wr1
+
+
+def test_lineup_optimizes_and_reports_delta_against_current_starters(app_as, monkeypatch, db):
+    qb1, rb1, wr1 = _seed_lineup_league(db)
+    league = LeagueRepository(db).list_for_user(USER["id"])[0]
+
+    roster = {"roster_id": "1", "players": ["s1", "s2", "s3"], "starters": ["s1", "s2"]}
+    monkeypatch.setattr(sleeper_client, "get_league_rosters", lambda league_id: [roster])
+
+    client = app_as(USER)
+    resp = client.get("/api/fantasy/lineup",
+                      params={"league_id": league["id"], "roster_id": "1", "week": 1})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["week"] == 1
+    assert body["projected_points"] == 46.0   # 20 + 16 + 10
+    started_ids = {s["player"]["player_id"] for s in body["starters"] if s["player"]}
+    assert started_ids == {qb1["id"], rb1["id"], wr1["id"]}
+    assert body["delta"]["current_points"] == 36.0     # 20 + 16, wr1 wasn't started
+    assert body["delta"]["points_gained"] == 10.0
+    assert body["delta"]["start"] == [wr1["id"]]
+
+
+def test_lineup_defaults_week_from_sleeper_nfl_state(app_as, monkeypatch, db):
+    qb1, rb1, wr1 = _seed_lineup_league(db)
+    league = LeagueRepository(db).list_for_user(USER["id"])[0]
+    roster = {"roster_id": "1", "players": ["s1", "s2", "s3"], "starters": []}
+    monkeypatch.setattr(sleeper_client, "get_league_rosters", lambda league_id: [roster])
+    monkeypatch.setattr(sleeper_client, "get_nfl_state", lambda: {"season": "2026", "week": 1})
+
+    client = app_as(USER)
+    resp = client.get("/api/fantasy/lineup", params={"league_id": league["id"], "roster_id": "1"})
+    assert resp.status_code == 200
+    assert resp.json()["week"] == 1   # no ?week= given -- resolved from Sleeper's own clock
+
+
+def test_lineup_404_for_unknown_roster(app_as, monkeypatch, db):
+    _seed_lineup_league(db)
+    league = LeagueRepository(db).list_for_user(USER["id"])[0]
+    monkeypatch.setattr(sleeper_client, "get_league_rosters", lambda league_id: [])
+    client = app_as(USER)
+    resp = client.get("/api/fantasy/lineup",
+                      params={"league_id": league["id"], "roster_id": "99", "week": 1})
+    assert resp.status_code == 404
 
 
 def test_unmatched_players_requires_admin(app_as, db):

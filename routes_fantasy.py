@@ -17,10 +17,10 @@ from pydantic import BaseModel
 
 import store
 from auth import get_current_user
-from fantasy import draft_state, scoring, vor
+from fantasy import draft_state, lineup, projections_sync, scoring, trade, vor
 from fantasy import sleeper_client
-from fantasy.repositories import LeagueRepository, PlayerRepository, ProjectionRepository, \
-    UnmatchedPlayerRepository
+from fantasy.repositories import LeagueRepository, PlayerMappingRepository, PlayerRepository, \
+    ProjectionRepository, UnmatchedPlayerRepository
 
 router = APIRouter(prefix="/api/fantasy", tags=["fantasy"])
 
@@ -117,15 +117,25 @@ def _league_or_404(user_id: str, league_id: str) -> dict:
     return league
 
 
-def _scored_board(league: dict) -> list[dict]:
+def _scored_board(league: dict, week: Optional[int] = None) -> list[dict]:
     """VOR-ranked, tiered board for one league's actual scoring rules + roster shape.
     fantasy_projections rows only carry player_id/stats (provider-agnostic, league-agnostic);
     position/name come from the canonical player table, joined here rather than duplicated
-    onto every projection row."""
-    season = int(league["season"]) if league.get("season") else time.gmtime().tm_year
-    projections = ProjectionRepository(_db()).for_season(provider="nflverse", season=season)
+    onto every projection row.
 
-    players_repo = PlayerRepository(_db())
+    week=None: season-long (redraft) board, used by the draft board/live draft/waivers/trade
+    routes. week=<int>: that week's projections, used by the lineup route -- VOR/tiers get
+    computed the same way either way (harmless unused fields for lineup's purposes, which only
+    reads fantasy_points/position), reusing one code path instead of two near-duplicates."""
+    db = _db()
+    season = int(league["season"]) if league.get("season") else time.gmtime().tm_year
+    if week is None:
+        projections_sync.ensure_season_projections(db, season)
+    else:
+        projections_sync.ensure_week_projections(db, season, week)
+    projections = ProjectionRepository(db).for_season(provider="nflverse", season=season, week=week)
+
+    players_repo = PlayerRepository(db)
     enriched = []
     for proj in projections:
         player = players_repo.get(proj["player_id"])
@@ -185,6 +195,98 @@ def live_draft(draft_id: str, league_id: str = Query(...),
         "draft_id": draft_id, "picks_made": len(picks), "available": available,
         "positional_runs": runs, "recommendations": recs,
     }
+
+
+# ── roster resolution (shared by lineup + waivers) ──────────────────────────────────────
+
+def _league_rosters(sleeper_league_id: str) -> list[dict]:
+    return _cached(f"rosters:{sleeper_league_id}", _LEAGUE_CACHE_TTL,
+                   lambda: sleeper_client.get_league_rosters(sleeper_league_id))
+
+
+def _find_roster(sleeper_league_id: str, roster_id: str) -> dict:
+    for r in _league_rosters(sleeper_league_id):
+        if str(r.get("roster_id")) == str(roster_id):
+            return r
+    raise HTTPException(status_code=404, detail="roster not found in this league")
+
+
+def _resolve_sleeper_ids(sleeper_ids: list[str]) -> list[str]:
+    """Sleeper player ids -> canonical player_id, silently skipping anything unmapped -- same
+    "omit rather than mis-map" policy as the projections provider (fantasy.player_matching
+    logs unresolved players for review; it never guesses here)."""
+    mapper = PlayerMappingRepository(_db())
+    return [pid for pid in (mapper.resolve("sleeper", sid) for sid in (sleeper_ids or [])) if pid]
+
+
+# ── lineup optimizer (phase 2) ───────────────────────────────────────────────────────────
+
+@router.get("/lineup")
+def lineup_route(league_id: str = Query(...), roster_id: str = Query(...),
+                 week: Optional[int] = Query(None, description="defaults to Sleeper's current NFL week"),
+                 user: dict = Depends(get_current_user)):
+    league = _league_or_404(user["id"], league_id)
+    if week is None:
+        state = _cached("nfl_state", _LEAGUE_CACHE_TTL, sleeper_client.get_nfl_state)
+        week = int((state or {}).get("week") or 1)
+
+    roster = _find_roster(league["sleeper_league_id"], roster_id)
+    roster_player_ids = set(_resolve_sleeper_ids(roster.get("players") or []))
+    current_starter_ids = _resolve_sleeper_ids(roster.get("starters") or [])
+
+    board = _scored_board(league, week=week)
+    roster_board = [p for p in board if p["player_id"] in roster_player_ids]
+    if not roster_board:
+        return {"league_id": league_id, "roster_id": roster_id, "week": week,
+                "starters": [], "bench": [], "projected_points": 0.0, "delta": None,
+                "note": "No projections available yet for this roster's players."}
+
+    optimal = lineup.optimal_lineup(roster_board, league["roster_positions"])
+    scored_by_id = {p["player_id"]: p for p in roster_board}
+    delta = lineup.lineup_delta(optimal, current_starter_ids, scored_by_id)
+
+    return {"league_id": league_id, "roster_id": roster_id, "week": week, **optimal, "delta": delta}
+
+
+# ── waiver wire (phase 3) ────────────────────────────────────────────────────────────────
+
+@router.get("/waivers")
+def waivers(league_id: str = Query(...), roster_id: str = Query(...),
+           top_n: int = Query(15, ge=1, le=50), user: dict = Depends(get_current_user)):
+    league = _league_or_404(user["id"], league_id)
+    rosters = _league_rosters(league["sleeper_league_id"])
+    rostered_sleeper_ids = [pid for r in rosters for pid in (r.get("players") or [])]
+    rostered_player_ids = set(_resolve_sleeper_ids(rostered_sleeper_ids))
+
+    board = _scored_board(league)
+    rostered_as_picks = [{"player_id": pid} for pid in rostered_player_ids]
+    available = draft_state.remove_drafted(board, rostered_as_picks)
+
+    my_roster = _find_roster(league["sleeper_league_id"], roster_id)
+    my_player_ids = set(_resolve_sleeper_ids(my_roster.get("players") or []))
+    board_by_player = {p["player_id"]: p for p in board}
+    my_current = [board_by_player[pid] for pid in my_player_ids if pid in board_by_player]
+
+    recs = draft_state.recommend(available, league["roster_positions"], my_current, top_n=top_n)
+    return {"league_id": league_id, "roster_id": roster_id,
+            "available_count": len(available), "recommendations": recs}
+
+
+# ── trade analyzer (phase 4) ─────────────────────────────────────────────────────────────
+
+class TradeAnalyzeIn(BaseModel):
+    league_id: str
+    side_a: list[str]   # canonical player_ids, as returned on any board row
+    side_b: list[str]
+
+
+@router.post("/trade/analyze")
+def trade_analyze(body: TradeAnalyzeIn, user: dict = Depends(get_current_user)):
+    league = _league_or_404(user["id"], body.league_id)
+    if not body.side_a or not body.side_b:
+        raise HTTPException(status_code=422, detail="both side_a and side_b need at least one player")
+    board_by_player = {p["player_id"]: p for p in _scored_board(league)}
+    return trade.evaluate_trade(board_by_player, body.side_a, body.side_b)
 
 
 # ── unmatched player review (admin) ──────────────────────────────────────────────────────

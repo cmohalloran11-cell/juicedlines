@@ -56,6 +56,13 @@ def test_request_failure_wraps_in_sleeper_error(monkeypatch):
         sleeper_client.get_user("anyone")
 
 
+def test_get_nfl_state_returns_season_and_week(monkeypatch):
+    payload = {"season": "2026", "week": 3, "season_type": "regular"}
+    monkeypatch.setattr(sleeper_client.requests, "get",
+                        lambda *a, **k: _FakeResponse(status_code=200, payload=payload))
+    assert sleeper_client.get_nfl_state() == payload
+
+
 def test_fetch_all_players_uses_longer_timeout(monkeypatch):
     captured = {}
 

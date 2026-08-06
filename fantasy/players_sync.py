@@ -7,7 +7,6 @@ daily loop, gated by fantasy_players_sync_log so a restart doesn't re-trigger it
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from store.database import Database
 from . import sleeper_client
@@ -61,12 +60,4 @@ def should_sync(db: Database, min_hours: float = 20.0) -> bool:
     """True if the last successful sync is missing or older than `min_hours` -- the once-a-
     day guard, survives process restarts (checked against fantasy_players_sync_log, not
     in-memory state)."""
-    last = SyncLogRepository(db).last_synced(SOURCE)
-    if not last:
-        return True
-    try:
-        last_dt = datetime.fromisoformat(last)
-    except ValueError:
-        return True
-    age_hours = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600.0
-    return age_hours >= min_hours
+    return SyncLogRepository(db).is_stale(SOURCE, min_hours)

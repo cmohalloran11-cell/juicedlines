@@ -144,6 +144,10 @@ class UnmatchedPlayerRepository:
 
 
 class SyncLogRepository:
+    """Generic "last successful external sync" log -- table name says players_sync_log for
+    historical reasons (the players dump was the first caller) but the schema (source TEXT PK,
+    synced_at, player_count) is generic and is also used for the projections provider sync."""
+
     def __init__(self, db: Database):
         self.db = db
 
@@ -151,6 +155,20 @@ class SyncLogRepository:
         rows = self.db.query(
             "SELECT synced_at FROM fantasy_players_sync_log WHERE source=?", (source,))
         return rows[0]["synced_at"] if rows else None
+
+    def is_stale(self, source: str, min_hours: float = 20.0) -> bool:
+        """True if `source` has never synced or its last sync is older than min_hours. Shared
+        by every "call this external source at most once a day" gate (Sleeper's players dump,
+        the projections provider)."""
+        last = self.last_synced(source)
+        if not last:
+            return True
+        try:
+            last_dt = datetime.fromisoformat(last)
+        except ValueError:
+            return True
+        age_hours = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600.0
+        return age_hours >= min_hours
 
     def record(self, source: str, player_count: int) -> None:
         existing = self.db.query("SELECT 1 FROM fantasy_players_sync_log WHERE source=?", (source,))
