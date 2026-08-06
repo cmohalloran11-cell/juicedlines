@@ -39,14 +39,18 @@ calibration, and drift against graded outcomes.
   build step, no framework.
 - **`store/`** — the Postgres-or-SQLite relational layer for users, watchlists, portfolio,
   alerts, and the model-run registry.
-- **`fantasy/`** — data layer for the fantasy football draft assistant (`/api/fantasy/*`,
-  `routes_fantasy.py`): a canonical player table with source-id mapping + fuzzy-match review
-  log, Sleeper league import, a pure league-scoring-rules engine, VOR/tiering, and live-draft
-  state. Projections come from a swappable `ProjectionsProvider` (`fantasy/projections/`) --
-  the only adapter implemented so far (`nflverse_adapter.py`) is a disclosed historical-
-  performance baseline, not a licensed predictive model (a commercial provider is still TBD).
-  Sleeper's `/v1/players/nfl` dump is synced at most once a day by a background job, never on
-  a request path. UI lives at `#/fantasy` in `static/dashboard.html` (live-server only — same
+- **`fantasy/`** — the fantasy football draft assistant (`/api/fantasy/*`, `routes_fantasy.py`),
+  all four planned phases: a canonical player table with source-id mapping + fuzzy-match
+  review log, Sleeper league import, a pure league-scoring-rules engine, VOR/tiering and
+  live-draft state (draft board + live draft mode), a pure optimal-lineup assignment
+  (`lineup.py`), waiver-wire recommendations (reuses `draft_state`/`vor`, no separate module),
+  and trade evaluation on VOR (`trade.py`). Projections come from a swappable
+  `ProjectionsProvider` (`fantasy/projections/`) -- the only adapter implemented so far
+  (`nflverse_adapter.py`) is a disclosed historical-performance baseline, not a licensed
+  predictive model (a commercial provider is still TBD); `fantasy/projections_sync.py`
+  populates `fantasy_projections` from it lazily, gated by a once-a-day staleness check.
+  Sleeper's `/v1/players/nfl` dump is synced the same way by a background job, never on a
+  request path. UI lives at `#/fantasy` in `static/dashboard.html` (live-server only — same
   `/api/ai/*`-style exception as AI Juice, not served from the static/prebuilt-JSON deploy).
 
 ## Quickstart (local)

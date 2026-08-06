@@ -1485,7 +1485,9 @@ function upgradeClick(){if(AUTH.user)toast('Pro is free during beta — you are 
 // Sleeper reads + the draft board/live-draft computation all happen server-side
 // (routes_fantasy.py) — this is UI only, no client-side Sleeper calls, no client-side scoring.
 const FS={tab:'import', username:'', season:String(new Date().getFullYear()),
-  foundLeagues:[], myLeagues:[], activeLeagueId:null, draftId:'', rosterId:'', live:null};
+  foundLeagues:[], myLeagues:[], activeLeagueId:null, draftId:'', rosterId:'', live:null,
+  rosters:[], week:'', lineup:null, waivers:null,
+  tradeBoard:null, tradeSideA:[], tradeSideB:[], tradeResult:null};
 const fsGo=t=>{FS.tab=t;vFantasy()};
 function fsSignInPrompt(){return `<div class="panel"><div class="empty"><div class="em">${icon('user',30)}</div><b>Sign in to use the draft board and live draft mode.</b><br><span class="muted" style="font-size:12px">League import is saved to your account.</span><br><button class="btn pri" style="margin-top:14px" onclick="openLogin()">Sign in</button></div></div>`}
 
@@ -1495,16 +1497,14 @@ async function vFantasy(){
      <div class="panel"><div class="empty"><div class="em">${icon('cloud',30)}</div>The Fantasy Draft Assistant needs the live server — not available on this static deploy.</div></div>`;
     return;
   }
-  const tabs=[['import','Import League'],['board','Draft Board'],['live','Live Draft']];
+  const tabs=[['import','Import League'],['board','Draft Board'],['live','Live Draft'],['lineup','Lineup'],['waivers','Waivers'],['trade','Trade']];
   const sub=tabs.map(([k,n])=>`<span class="dtab ${FS.tab===k?'on':''}" onclick="fsGo('${k}')">${n}</span>`).join('');
-  $('#view').innerHTML=`<div class="ph2"><div><h2>Fantasy Draft Assistant <span class="chip g">New</span></h2><p>Import a real Sleeper league, then draft with a VOR board built from that league's actual scoring rules and roster shape — not a hardcoded PPR assumption.</p></div></div>
+  $('#view').innerHTML=`<div class="ph2"><div><h2>Fantasy Draft Assistant <span class="chip g">New</span></h2><p>Import a real Sleeper league, then draft, set lineups, work waivers, and evaluate trades against that league's actual scoring rules and roster shape — not a hardcoded PPR assumption.</p></div></div>
    <div class="dtabs">${sub}</div><div id="fsbody"><div class="panel" style="padding:40px;text-align:center"><span class="muted skel">Loading…</span></div></div>`;
   const body=$('#fsbody');if(!body)return;
-  try{
-    if(FS.tab==='import')body.innerHTML=await fsImportView();
-    else if(FS.tab==='board')body.innerHTML=await fsBoardView();
-    else body.innerHTML=await fsLiveView();
-  }catch(e){body.innerHTML=`<div class="panel"><div class="empty">Could not load this tab.<br><span class="muted">${e}</span></div></div>`}
+  const VIEWS={import:fsImportView,board:fsBoardView,live:fsLiveView,lineup:fsLineupView,waivers:fsWaiversView,trade:fsTradeView};
+  try{body.innerHTML=await (VIEWS[FS.tab]||fsImportView)();}
+  catch(e){body.innerHTML=`<div class="panel"><div class="empty">Could not load this tab.<br><span class="muted">${e}</span></div></div>`}
 }
 
 async function fsImportView(){
@@ -1545,13 +1545,14 @@ async function fsImportLeague(sleeperLeagueId){
   try{await api('/api/fantasy/leagues/import',{method:'POST',body:{sleeper_league_id:sleeperLeagueId}});toast('League imported');vFantasy();}
   catch(e){toast('Could not import league')}
 }
-function fsUseLeague(leagueId){FS.activeLeagueId=leagueId;FS.draftId='';FS.rosterId='';FS.live=null;fsGo('board');}
+function fsResetLeagueScopedState(){FS.draftId='';FS.rosterId='';FS.live=null;FS.rosters=[];FS.lineup=null;FS.waivers=null;FS.tradeBoard=null;FS.tradeResult=null;}
+function fsUseLeague(leagueId){FS.activeLeagueId=leagueId;fsResetLeagueScopedState();fsGo('board');}
 function fsActiveLeague(){return FS.myLeagues.find(l=>l.id===FS.activeLeagueId)}
 function fsLeagueSelector(){
   if(FS.myLeagues.length<2)return '';
   return `<div class="controls">${icon('users',15)}<select class="ctl" onchange="fsSwitchLeague(this.value)">${FS.myLeagues.map(l=>`<option value="${l.id}" ${l.id===FS.activeLeagueId?'selected':''}>${esc(l.name||l.sleeper_league_id)}</option>`).join('')}</select></div>`;
 }
-function fsSwitchLeague(id){FS.activeLeagueId=id;FS.draftId='';FS.live=null;vFantasy();}
+function fsSwitchLeague(id){FS.activeLeagueId=id;fsResetLeagueScopedState();vFantasy();}
 
 async function fsBoardView(){
   if(!signedIn())return fsSignInPrompt();
@@ -1605,6 +1606,126 @@ function fsLiveBody(live){
   const recs=(live.recommendations||[]).slice(0,10).map((p,i)=>`<tr><td class="mono">${i+1}</td><td style="font-weight:700">${esc(p.name)}</td><td>${esc(p.position||'')}</td><td class="mono">${p.vor==null?'—':fmt(p.vor)}</td><td class="mono">${fmt(p.recommendation_score)}</td></tr>`).join('');
   return `<div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Recommended Picks</h3><span class="hint">${live.picks_made||0} picks made · ${(live.available||[]).length} available · weighted by your remaining roster needs</span></div>${runsHtml}
    ${recs?`<table class="drops"><thead><tr><th>#</th><th>Player</th><th>Pos</th><th>VOR</th><th>Rec Score</th></tr></thead><tbody>${recs}</tbody></table>`:`<div class="empty">No recommendations yet.</div>`}</div>`;
+}
+
+// ── roster picker, shared by Lineup + Waivers ──
+async function fsLoadRosters(){
+  const league=fsActiveLeague();if(!league)return[];
+  try{return(await api(`/api/fantasy/leagues/${league.sleeper_league_id}/rosters`)).rosters||[];}
+  catch(e){return[]}
+}
+function fsRosterPicker(onchangeFn){
+  const opts=FS.rosters.map(r=>`<option value="${r.roster_id}" ${String(r.roster_id)===String(FS.rosterId)?'selected':''}>${esc(r.team_name||r.owner_display_name||('Team '+r.roster_id))}</option>`).join('');
+  return `<select class="ctl" id="fs-rosterpick" onchange="${onchangeFn}(this.value)">${opts||'<option value="">No teams found</option>'}</select>`;
+}
+
+// ══════════════════════ LINEUP OPTIMIZER (phase 2) ══════════════════════
+function fsLineupPickRoster(v){FS.rosterId=v;FS.lineup=null;vFantasy();}
+async function fsLineupView(){
+  if(!signedIn())return fsSignInPrompt();
+  if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
+  if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
+  if(!FS.activeLeagueId)return `<div class="empty">Import and select a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
+  FS.rosters=await fsLoadRosters();
+  if(!FS.rosterId&&FS.rosters.length)FS.rosterId=String(FS.rosters[0].roster_id);
+
+  const controls=`<div class="panel" style="padding:16px"><div class="controls" style="margin:0">
+     ${fsRosterPicker('fsLineupPickRoster')}
+     <input class="ctl" id="fs-week" placeholder="Week (optional)" value="${esc(FS.week)}" style="width:140px">
+     <button class="btn pri" onclick="fsRunLineup()">Optimize Lineup</button>
+   </div></div>`;
+  return fsLeagueSelector()+controls+`<div id="fs-lineup">${FS.lineup?fsLineupBody(FS.lineup):`<div class="empty">Pick your team and (optionally) a week, then optimize.</div>`}</div>`;
+}
+async function fsRunLineup(){
+  FS.week=($('#fs-week').value||'').trim();
+  if(!FS.rosterId)return toast('No team selected');
+  try{
+    const q=`league_id=${encodeURIComponent(FS.activeLeagueId)}&roster_id=${encodeURIComponent(FS.rosterId)}${FS.week?`&week=${encodeURIComponent(FS.week)}`:''}`;
+    const result=await api(`/api/fantasy/lineup?${q}`);
+    FS.lineup=result;
+    const el=$('#fs-lineup');if(el)el.innerHTML=fsLineupBody(result);
+  }catch(e){toast('Could not compute the lineup')}
+}
+function fsLineupBody(lu){
+  if(lu.note)return `<div class="panel"><div class="empty">${esc(lu.note)}</div></div>`;
+  const rows=(lu.starters||[]).map(s=>`<tr><td style="font-weight:700">${esc(s.slot)}</td><td>${s.player?esc(s.player.name):'<span class="muted">— empty —</span>'}</td><td>${s.player?esc(s.player.position||''):''}</td><td class="mono">${s.player?fmt(s.player.fantasy_points):'—'}</td></tr>`).join('');
+  const bench=(lu.bench||[]).map(p=>`<tr><td style="font-weight:700">${esc(p.name)}</td><td>${esc(p.position||'')}</td><td class="mono">${fmt(p.fantasy_points)}</td></tr>`).join('');
+  const d=lu.delta;
+  const deltaHtml=d?`<div class="controls" style="margin:0 0 14px">
+     <span class="chip ${d.points_gained>0?'g':''}">Currently set: ${fmt(d.current_points)} pts</span>
+     <span class="chip ${d.points_gained>0?'g':''}">Optimal: ${fmt(d.optimal_points)} pts</span>
+     ${d.points_gained>0?`<span class="chip g">+${fmt(d.points_gained)} pts available</span>`:'<span class="chip">Already optimal</span>'}
+   </div>`:'';
+  return `<div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Optimal Lineup — Week ${esc(lu.week)}</h3><span class="hint">${fmt(lu.projected_points)} projected points</span></div>${deltaHtml}
+   <table class="drops"><thead><tr><th>Slot</th><th>Player</th><th>Pos</th><th>Proj Pts</th></tr></thead><tbody>${rows}</tbody></table></div>
+   ${bench?`<div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Bench</h3></div><table class="drops"><thead><tr><th>Player</th><th>Pos</th><th>Proj Pts</th></tr></thead><tbody>${bench}</tbody></table></div>`:''}`;
+}
+
+// ══════════════════════ WAIVER WIRE (phase 3) ══════════════════════
+function fsWaiverPickRoster(v){FS.rosterId=v;FS.waivers=null;vFantasy();}
+async function fsWaiversView(){
+  if(!signedIn())return fsSignInPrompt();
+  if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
+  if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
+  if(!FS.activeLeagueId)return `<div class="empty">Import and select a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
+  FS.rosters=await fsLoadRosters();
+  if(!FS.rosterId&&FS.rosters.length)FS.rosterId=String(FS.rosters[0].roster_id);
+
+  const controls=`<div class="panel" style="padding:16px"><div class="controls" style="margin:0">
+     ${fsRosterPicker('fsWaiverPickRoster')}
+     <button class="btn pri" onclick="fsRunWaivers()">Find Waiver Targets</button>
+   </div></div>`;
+  return fsLeagueSelector()+controls+`<div id="fs-waivers">${FS.waivers?fsWaiversBody(FS.waivers):`<div class="empty">Pick your team, then search for the best unrostered players in this league.</div>`}</div>`;
+}
+async function fsRunWaivers(){
+  if(!FS.rosterId)return toast('No team selected');
+  try{
+    const q=`league_id=${encodeURIComponent(FS.activeLeagueId)}&roster_id=${encodeURIComponent(FS.rosterId)}`;
+    const result=await api(`/api/fantasy/waivers?${q}`);
+    FS.waivers=result;
+    const el=$('#fs-waivers');if(el)el.innerHTML=fsWaiversBody(result);
+  }catch(e){toast('Could not load waiver targets')}
+}
+function fsWaiversBody(w){
+  const rows=(w.recommendations||[]).map((p,i)=>`<tr><td class="mono">${i+1}</td><td style="font-weight:700">${esc(p.name)}</td><td>${esc(p.position||'')}</td><td>${esc(p.team||'')}</td><td class="mono">${p.vor==null?'—':fmt(p.vor)}</td><td class="mono">${fmt(p.recommendation_score)}</td></tr>`).join('');
+  return `<div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Best Available</h3><span class="hint">${w.available_count||0} unrostered players in this league · weighted by your remaining roster needs</span></div>
+   ${rows?`<table class="drops"><thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Team</th><th>VOR</th><th>Rec Score</th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="empty">Nothing available right now.</div>`}</div>`;
+}
+
+// ══════════════════════ TRADE ANALYZER (phase 4) ══════════════════════
+async function fsTradeView(){
+  if(!signedIn())return fsSignInPrompt();
+  if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
+  if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
+  if(!FS.activeLeagueId)return `<div class="empty">Import and select a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
+  if(!FS.tradeBoard){
+    try{FS.tradeBoard=(await api('/api/fantasy/draft-board?league_id='+FS.activeLeagueId)).board||[];}catch(e){FS.tradeBoard=[];}
+  }
+  const opts=FS.tradeBoard.map(p=>`<option value="${p.player_id}">${esc(p.name)} (${esc(p.position||'')}${p.team?' · '+esc(p.team):''})</option>`).join('');
+  const side=(label,sel,ids)=>`<div><div class="muted" style="font-size:11px;font-weight:800;margin-bottom:6px">${label}</div><select class="ctl" id="${sel}" multiple size="8" style="width:100%">${opts}</select></div>`;
+  return fsLeagueSelector()+`
+   <div class="panel" style="padding:16px"><div class="phead" style="padding:0 0 10px"><h3>Trade Analyzer</h3><span class="hint">Compares each side's total Value Over Replacement — the fair basis across positions</span></div>
+     <div class="two" style="gap:16px">${side('Side A gives up','fs-trade-a')}${side('Side B gives up','fs-trade-b')}</div>
+     <button class="btn pri" style="margin-top:14px" onclick="fsRunTrade()">Analyze Trade</button>
+   </div>
+   <div id="fs-trade">${FS.tradeResult?fsTradeBody(FS.tradeResult):''}</div>`;
+}
+function fsSelectedValues(id){return Array.from($('#'+id).selectedOptions||[]).map(o=>o.value)}
+async function fsRunTrade(){
+  const sideA=fsSelectedValues('fs-trade-a'), sideB=fsSelectedValues('fs-trade-b');
+  if(!sideA.length||!sideB.length)return toast('Pick at least one player on each side');
+  try{
+    const result=await api('/api/fantasy/trade/analyze',{method:'POST',body:{league_id:FS.activeLeagueId,side_a:sideA,side_b:sideB}});
+    FS.tradeResult=result;
+    const el=$('#fs-trade');if(el)el.innerHTML=fsTradeBody(result);
+  }catch(e){toast('Could not analyze this trade')}
+}
+function fsTradeBody(t){
+  const side=(label,s)=>`<div class="panel" style="padding:16px;flex:1"><h4 style="margin:0 0 8px">${label}</h4>${(s.players||[]).map(p=>`<div>${esc(p.name)} <span class="muted">(${esc(p.position||'')})</span> <span class="mono">${p.vor==null?'—':fmt(p.vor)} VOR</span></div>`).join('')||'<span class="muted">—</span>'}
+     ${s.missing_player_ids&&s.missing_player_ids.length?`<div class="muted" style="font-size:11px;margin-top:8px">${s.missing_player_ids.length} player(s) have no projection and were excluded from the total.</div>`:''}
+     <div style="margin-top:10px;font-weight:800">Total: ${fmt(s.total_vor)} VOR</div></div>`;
+  return `<div class="two" style="gap:16px;margin-top:16px">${side('Side A',t.side_a)}${side('Side B',t.side_b)}</div>
+   <div class="panel" style="padding:16px;margin-top:16px;text-align:center;font-weight:800;font-size:15px">${esc(t.verdict)}</div>`;
 }
 
 // ══════════════════════ PLAYER PAGE ══════════════════════

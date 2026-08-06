@@ -219,6 +219,25 @@ def _resolve_sleeper_ids(sleeper_ids: list[str]) -> list[str]:
     return [pid for pid in (mapper.resolve("sleeper", sid) for sid in (sleeper_ids or [])) if pid]
 
 
+@router.get("/leagues/{sleeper_league_id}/rosters")
+def league_rosters_route(sleeper_league_id: str):
+    """roster_id + owner display name for every team in the league -- lets the UI offer "which
+    team is yours?" instead of making the user hunt down a raw numeric Sleeper roster_id."""
+    rosters = _league_rosters(sleeper_league_id)
+    users = _cached(f"users:{sleeper_league_id}", _LEAGUE_CACHE_TTL,
+                    lambda: sleeper_client.get_league_users(sleeper_league_id))
+    users_by_id = {u.get("user_id"): u for u in users}
+    out = []
+    for r in rosters:
+        owner = users_by_id.get(r.get("owner_id")) or {}
+        out.append({
+            "roster_id": r.get("roster_id"),
+            "owner_display_name": owner.get("display_name") or owner.get("username") or "Unknown",
+            "team_name": (owner.get("metadata") or {}).get("team_name"),
+        })
+    return {"rosters": out}
+
+
 # ── lineup optimizer (phase 2) ───────────────────────────────────────────────────────────
 
 @router.get("/lineup")

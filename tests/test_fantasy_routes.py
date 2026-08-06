@@ -182,6 +182,22 @@ def test_live_draft_removes_drafted_players_and_flags_runs(app_as, monkeypatch, 
     assert body["positional_runs"].get("RB") == 3    # 3 RB picks in the recent window
 
 
+def test_league_rosters_route_maps_owner_display_names(app_as, monkeypatch, db):
+    rosters = [{"roster_id": 1, "owner_id": "u1"}, {"roster_id": 2, "owner_id": "u2"}]
+    users = [{"user_id": "u1", "display_name": "Alice", "metadata": {"team_name": "Alice's Team"}},
+            {"user_id": "u2", "username": "bobbyb"}]
+    monkeypatch.setattr(sleeper_client, "get_league_rosters", lambda league_id: rosters)
+    monkeypatch.setattr(sleeper_client, "get_league_users", lambda league_id: users)
+
+    client = app_as(USER)
+    resp = client.get("/api/fantasy/leagues/L1/rosters")
+    assert resp.status_code == 200
+    body = {r["roster_id"]: r for r in resp.json()["rosters"]}
+    assert body[1]["owner_display_name"] == "Alice"
+    assert body[1]["team_name"] == "Alice's Team"
+    assert body[2]["owner_display_name"] == "bobbyb"   # falls back to username, no display_name
+
+
 def test_waivers_excludes_every_rostered_player_and_ranks_by_need(app_as, monkeypatch, db):
     rb1, rb2, wr1 = _seed_league_and_players(db)
     league = LeagueRepository(db).list_for_user(USER["id"])[0]
