@@ -2138,16 +2138,36 @@ async function loadAiUsage(){
   try{const u=await api('/api/ai/usage');el.textContent=(u&&u.signed_in)?`${u.used}/${u.limit}`:'Sign in';}
   catch(e){el.textContent='On'}
 }
+// Same public Supabase project index.html/app.html hardcode directly — the anon key is
+// public by design (ships to the browser regardless). Used ONLY as a fallback below: on the
+// static (GitHub Actions) deploy, auth.json ships {supabase_url:"",supabase_anon_key:""}
+// whenever the SUPABASE_URL/SUPABASE_ANON_KEY repo secrets aren't set (refresh.yml treats
+// them as optional and still builds), which silently disabled sign-in on THIS page only —
+// index.html/app.html hardcode the same values so they kept working, which is exactly why a
+// session showed as signed-in on the landing page but signed-out on the board.
+const _SB_URL_FALLBACK='https://wdacuefnynthoncoxpyf.supabase.co';
+const _SB_KEY_FALLBACK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkYWN1ZWZueW50aG9uY294cHlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNTIzMzUsImV4cCI6MjA5OTYyODMzNX0.KRhXafORdJSb9r-vv5O-E4VH9bwnBKN-yivZObmlj5Q';
+// "Remember me" storage shim — same 'juiced-remember' key and localStorage/sessionStorage
+// split as app.html's, so a session (and the remember-me choice) is shared across every
+// page on this origin instead of each page's Supabase client only checking its own default.
+const _authStorage={
+  getItem:k=>{try{const v=localStorage.getItem(k);return v!=null?v:sessionStorage.getItem(k)}catch(e){return null}},
+  setItem:(k,v)=>{try{(localStorage.getItem('juiced-remember')!=='0'?localStorage:sessionStorage).setItem(k,v)}catch(e){}},
+  removeItem:k=>{try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}}
+};
 async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
   // On static, auth.json can't know if the Vercel AI function has a key — probe it.
   if(STATIC){try{const s=await api('/api/ai/status');if(s&&typeof s.available==='boolean')AUTH.ai=s.available}catch(e){}}
-  // Real Supabase auth when the server provides the public client config.
-  if(AUTH.supabase_url && AUTH.supabase_anon_key && window.supabase){
+  // Real Supabase auth — prefer the server-provided config when present, else the hardcoded
+  // fallback above, so this page's sign-in state can never diverge from index.html/app.html's
+  // just because a deploy's repo secrets weren't set.
+  const sbUrl=AUTH.supabase_url||_SB_URL_FALLBACK, sbKey=AUTH.supabase_anon_key||_SB_KEY_FALLBACK;
+  if(sbUrl && sbKey && window.supabase){
     try{
       // PKCE flow returns ?code= (not a #hash token) so it never collides with the SPA's
       // hash router; supabase-js exchanges the code and cleans the URL automatically.
-      SB=window.supabase.createClient(AUTH.supabase_url, AUTH.supabase_anon_key,
-        {auth:{flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
+      SB=window.supabase.createClient(sbUrl, sbKey,
+        {auth:{flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true,storage:_authStorage}});
       const {data}=await SB.auth.getSession(); setSession(data.session);
       let first=true;
       SB.auth.onAuthStateChange(async (ev,s)=>{setSession(s);await refreshWatched();renderAuthUI();await loadAiUsage();
