@@ -1,0 +1,42 @@
+name: fantasy sync
+
+# Populates the Supabase Postgres backing the Vercel serverless Fantasy Draft Assistant
+# (static/api/fantasy/*.js) -- the heavy bulk syncs (Sleeper's ~5MB player dump, nflverse's
+# ~33MB player_stats CSV) can't run inside a Vercel Hobby function's 10s timeout, so they run
+# here instead, on GitHub's unthrottled runners (same reasoning as refresh.yml), reusing the
+# existing, already-tested fantasy/players_sync.py and fantasy/projections_sync.py unmodified
+# -- see fantasy_sync_job.py, the only new code this workflow runs.
+#
+# ── ONE-TIME SETUP ──
+# GitHub → repo → Settings → Secrets and variables → Actions → New repository secret:
+#   FANTASY_DATABASE_URL — the Supabase project's Postgres connection string (Project
+#   Settings → Database → Connection string → URI; use the pooled/pgbouncer string on port
+#   6543 if offered, since this job opens a fresh connection per run rather than holding one
+#   open). No manual schema step needed beyond that -- fantasy.init_schema()/store.init_schema()
+#   run every time (idempotent), so a fresh Supabase project self-heals on the first run.
+
+on:
+  schedule:
+    - cron: "17 9 * * *"    # once daily; the sync jobs themselves are staleness-gated (20h),
+                             # so a manual re-run the same day is a safe no-op, not a re-fetch
+  workflow_dispatch: {}
+
+concurrency:
+  group: fantasy-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.FANTASY_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Sync fantasy players + projections to Supabase Postgres
+        run: python fantasy_sync_job.py

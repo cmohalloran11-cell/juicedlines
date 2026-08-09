@@ -58,6 +58,30 @@ The `static/api/ai/*.js` serverless functions are separate from the table below 
   Until then, AI Juice on the static site fails safe the same way (usage tracking
   unavailable) rather than allowing unmetered calls.
 
+### Fantasy Draft Assistant on the static deploy
+
+`static/api/fantasy/*.js` ports `fantasy/` + `routes_fantasy.py` (the live-server reference
+implementation) to Vercel serverless functions, following the exact `static/api/ai/*.js`
+pattern: no raw Postgres driver, all data access through Supabase's PostgREST REST API with
+the `service_role` key. No new Vercel env vars beyond AI Juice's above — same three
+(`SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY`) cover both.
+
+The heavy bulk syncs (Sleeper's ~5MB player dump, nflverse's ~33MB projections CSV) do
+**not** run in these functions — a Vercel Hobby function's 10s timeout isn't close to enough.
+They run instead as scheduled Python on GitHub's unthrottled runners
+(`.github/workflows/fantasy-sync.yml`, reusing `fantasy/players_sync.py` and
+`fantasy/projections_sync.py` unmodified), writing straight to the project's Supabase
+Postgres. The Vercel functions only ever do fast reads of already-synced data plus small
+request-time Sleeper calls (a user, a league, a roster — never the bulk dumps).
+
+**One-time setup**: GitHub → repo → Settings → Secrets and variables → Actions → new
+repository secret `FANTASY_DATABASE_URL` (the Supabase project's Postgres connection
+string — Project Settings → Database → Connection string → URI; prefer the pooled/pgbouncer
+string on port 6543, since this job opens a fresh connection per run). No manual schema step
+needed beyond that — `fantasy.init_schema()`/`store.init_schema()` run on every sync
+(idempotent), so a fresh Supabase project self-heals on the workflow's first run
+(`Actions → fantasy sync → Run workflow`, or wait for the daily schedule).
+
 `BOARD_URL` in `index.html` points at this repo's raw `data/board.json` (update it if you
 fork/rename). Locally the page just loads `./board.json`, so the same file works in dev
 (live server) and in production (static).

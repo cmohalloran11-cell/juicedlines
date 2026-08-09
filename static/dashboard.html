@@ -418,6 +418,11 @@ let SB=null, WATCHED=new Set(), STATIC=false;
 // as JSON on the `data` branch, which the frontend reads instead of /api/*. User data (watch/
 // portfolio/alerts) is local-only there since there's no server to sync to.
 const signedIn=()=>!!AUTH.token && !STATIC;
+// Fantasy is the one static-deploy feature with a REAL backend even when STATIC is true
+// (static/api/fantasy/*.js -- Supabase Postgres via PostgREST, see DEPLOY.md), unlike
+// watchlist/portfolio/alerts (no backend there at all, hence signedIn()'s blanket !STATIC).
+// Gating Fantasy behind signedIn() would show "sign in" to an actually-authenticated user.
+const fsSignedIn=()=>!!AUTH.token;
 // Prod static build reads the prebuilt JSON off the `data` branch via GitHub raw. When the
 // static site is served locally for testing, the JSON sits next to this file, so read relative.
 const _LOCAL=location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:';
@@ -1492,11 +1497,10 @@ const fsGo=t=>{FS.tab=t;vFantasy()};
 function fsSignInPrompt(){return `<div class="panel"><div class="empty"><div class="em">${icon('user',30)}</div><b>Sign in to use the draft board and live draft mode.</b><br><span class="muted" style="font-size:12px">League import is saved to your account.</span><br><button class="btn pri" style="margin-top:14px" onclick="openLogin()">Sign in</button></div></div>`}
 
 async function vFantasy(){
-  if(STATIC){
-    $('#view').innerHTML=`<div class="ph2"><div><h2>Fantasy Draft Assistant <span class="chip g">New</span></h2><p>Sleeper league import, VOR draft boards, and live draft assistance.</p></div></div>
-     <div class="panel"><div class="empty"><div class="em">${icon('cloud',30)}</div>The Fantasy Draft Assistant needs the live server — not available on this static deploy.</div></div>`;
-    return;
-  }
+  // Works on both deploy paths: the live server (routes_fantasy.py) and the static Vercel
+  // deploy (static/api/fantasy/*.js, backed by Supabase Postgres via PostgREST -- see
+  // DEPLOY.md). /api/fantasy/* already bypasses staticApi() in api() above, so the same
+  // fetch calls reach whichever backend is actually running.
   const tabs=[['import','Import League'],['board','Draft Board'],['live','Live Draft'],['lineup','Lineup'],['waivers','Waivers'],['trade','Trade']];
   const sub=tabs.map(([k,n])=>`<span class="dtab ${FS.tab===k?'on':''}" onclick="fsGo('${k}')">${n}</span>`).join('');
   $('#view').innerHTML=`<div class="ph2"><div><h2>Fantasy Draft Assistant <span class="chip g">New</span></h2><p>Import a real Sleeper league, then draft, set lineups, work waivers, and evaluate trades against that league's actual scoring rules and roster shape — not a hardcoded PPR assumption.</p></div></div>
@@ -1508,7 +1512,7 @@ async function vFantasy(){
 }
 
 async function fsImportView(){
-  if(!signedIn())return fsSignInPrompt();
+  if(!fsSignedIn())return fsSignInPrompt();
   try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}
   const myLeaguesHtml=FS.myLeagues.length
     ?`<table class="drops"><thead><tr><th>League</th><th>Season</th><th>Size</th><th></th></tr></thead><tbody>${FS.myLeagues.map(l=>`<tr><td style="font-weight:700">${esc(l.name||l.sleeper_league_id)}</td><td>${esc(l.season||'')}</td><td>${l.league_size??'—'}</td><td><button class="btn" onclick="fsUseLeague('${l.id}')">Use for Draft</button></td></tr>`).join('')}</tbody></table>`
@@ -1555,7 +1559,7 @@ function fsLeagueSelector(){
 function fsSwitchLeague(id){FS.activeLeagueId=id;fsResetLeagueScopedState();vFantasy();}
 
 async function fsBoardView(){
-  if(!signedIn())return fsSignInPrompt();
+  if(!fsSignedIn())return fsSignInPrompt();
   if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
   if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
   if(!FS.activeLeagueId)return `<div class="empty"><div class="em">${icon('target',30)}</div>Import a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
@@ -1569,7 +1573,7 @@ async function fsBoardView(){
 }
 
 async function fsLiveView(){
-  if(!signedIn())return fsSignInPrompt();
+  if(!fsSignedIn())return fsSignInPrompt();
   if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
   if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
   if(!FS.activeLeagueId)return `<div class="empty">Import and select a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
@@ -1622,7 +1626,7 @@ function fsRosterPicker(onchangeFn){
 // ══════════════════════ LINEUP OPTIMIZER (phase 2) ══════════════════════
 function fsLineupPickRoster(v){FS.rosterId=v;FS.lineup=null;vFantasy();}
 async function fsLineupView(){
-  if(!signedIn())return fsSignInPrompt();
+  if(!fsSignedIn())return fsSignInPrompt();
   if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
   if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
   if(!FS.activeLeagueId)return `<div class="empty">Import and select a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
@@ -1664,7 +1668,7 @@ function fsLineupBody(lu){
 // ══════════════════════ WAIVER WIRE (phase 3) ══════════════════════
 function fsWaiverPickRoster(v){FS.rosterId=v;FS.waivers=null;vFantasy();}
 async function fsWaiversView(){
-  if(!signedIn())return fsSignInPrompt();
+  if(!fsSignedIn())return fsSignInPrompt();
   if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
   if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
   if(!FS.activeLeagueId)return `<div class="empty">Import and select a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;
@@ -1694,7 +1698,7 @@ function fsWaiversBody(w){
 
 // ══════════════════════ TRADE ANALYZER (phase 4) ══════════════════════
 async function fsTradeView(){
-  if(!signedIn())return fsSignInPrompt();
+  if(!fsSignedIn())return fsSignInPrompt();
   if(!FS.myLeagues.length){try{FS.myLeagues=(await api('/api/fantasy/leagues')).leagues||[];}catch(e){FS.myLeagues=[];}}
   if(!FS.activeLeagueId&&FS.myLeagues.length)FS.activeLeagueId=FS.myLeagues[0].id;
   if(!FS.activeLeagueId)return `<div class="empty">Import and select a league first.<br><button class="btn pri" style="margin-top:14px" onclick="fsGo('import')">Import a League</button></div>`;

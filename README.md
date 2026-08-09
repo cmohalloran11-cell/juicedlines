@@ -50,8 +50,12 @@ calibration, and drift against graded outcomes.
   predictive model (a commercial provider is still TBD); `fantasy/projections_sync.py`
   populates `fantasy_projections` from it lazily, gated by a once-a-day staleness check.
   Sleeper's `/v1/players/nfl` dump is synced the same way by a background job, never on a
-  request path. UI lives at `#/fantasy` in `static/dashboard.html` (live-server only — same
-  `/api/ai/*`-style exception as AI Juice, not served from the static/prebuilt-JSON deploy).
+  request path. UI lives at `#/fantasy` in `static/dashboard.html` and works on **both**
+  deploy paths: the live server (`routes_fantasy.py`, this package directly) and the static
+  Vercel deploy (`static/api/fantasy/*.js`, a parallel port following the `static/api/ai/*.js`
+  pattern — PostgREST against Supabase Postgres instead of a direct DB connection, with the
+  bulk Sleeper/nflverse syncs run by `.github/workflows/fantasy-sync.yml` instead of a
+  background loop, since those don't fit a Vercel function's timeout — see `DEPLOY.md`).
 
 ## Quickstart (local)
 
