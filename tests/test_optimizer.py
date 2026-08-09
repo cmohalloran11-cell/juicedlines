@@ -124,6 +124,42 @@ def test_candidate_legsets_excludes_confirmed_losing_stat_sides():
         assert losing_id not in {l["id"] for l in combo}
 
 
+# ── best_entries: surfacing several DISTINCT entries, not the same roster twice ─
+
+def _multi_stat_pool():
+    # Three high-score players each offering two different stat props (distinct leg ids, same
+    # player) plus filler — mirrors the real board shape that produced literal duplicate
+    # rosters (same 5 names, only the underlying stat prop swapped) once best_entries scanned
+    # a shortlist sized only for a single entry.
+    hot = []
+    for name in ("Hot A", "Hot B", "Hot C"):
+        hot.append(_line(f"{name}-1", name, name, model_prob=0.75, stat="Hits"))
+        hot.append(_line(f"{name}-2", name, name, model_prob=0.74, stat="Total Bases"))
+    filler = [_line(f"filler{i}", f"Filler {i}", f"Filler {i}", model_prob=0.55) for i in range(20)]
+    return hot + filler
+
+
+def test_best_entries_top_n_returns_distinct_rosters():
+    entries = optimizer.best_entries(_multi_stat_pool(), picks=2, kind="power", top_n=3)
+    assert len(entries) == 3  # exactly C(3 hot players, 2) possible distinct rosters
+    rosters = [frozenset(l["player"] for l in e["legs"]) for e in entries]
+    assert len(rosters) == len(set(rosters))
+
+
+def test_best_entries_degrades_gracefully_when_rosters_are_scarce():
+    # Only two distinct players even though each offers two stat variants — the pool cannot
+    # support 3 distinct 2-pick rosters, so best_entries must return fewer than top_n rather
+    # than pad the list with a duplicate roster.
+    pool = [
+        _line("a1", "Player A", "TA", model_prob=0.70, stat="Hits"),
+        _line("a2", "Player A", "TA", model_prob=0.69, stat="Total Bases"),
+        _line("b1", "Player B", "TB", model_prob=0.68, stat="Hits"),
+        _line("b2", "Player B", "TB", model_prob=0.67, stat="Total Bases"),
+    ]
+    entries = optimizer.best_entries(pool, picks=2, kind="power", top_n=3)
+    assert len(entries) == 1
+
+
 # ── Monte Carlo sanity at the probability extremes ──────────────────────────
 
 def test_simulate_entry_near_certain_legs():
