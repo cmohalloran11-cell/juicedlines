@@ -450,10 +450,18 @@ def best_entries(pool: list[dict], picks: int, kind: str, top_n: int = 1, shortl
     `final_sims` (>=100,000 by default — the spec's simulation-count floor, applied to what
     actually gets surfaced rather than to every candidate, which would be computationally
     wasteful for no accuracy gain on the ones that get discarded). Empty when `book` has no
-    payout table for (picks, kind) — see BOOK_PAYOUTS."""
+    payout table for (picks, kind) — see BOOK_PAYOUTS.
+
+    When `top_n` > 1 the search widens (below) and the final pick is deduped by PLAYER ROSTER,
+    not leg id — candidate_legsets ranks by mean juiceScore, which is dominated by whichever
+    handful of legs carry the highest score, so a narrow shortlist surfaces the same players
+    over and over with only the underlying stat prop swapped (verified live: multiple "distinct"
+    5-pick candidates that were the exact same 5 names). A shortlist sized only for one entry
+    doesn't have enough roster variety to pick several genuinely different ones from."""
     if (picks, kind) not in BOOK_PAYOUTS.get(book.lower(), {}):
         return []
-    candidates = candidate_legsets(pool, picks, sport=sport, shortlist=shortlist, book=book)
+    search_n = max(shortlist, top_n * 6)
+    candidates = candidate_legsets(pool, picks, sport=sport, shortlist=search_n, book=book)
     scanned = []
     for legs in candidates:
         seed = abs(hash(tuple(sorted(l.get("id") or "" for l in legs)))) % (2**31)
@@ -461,7 +469,17 @@ def best_entries(pool: list[dict], picks: int, kind: str, top_n: int = 1, shortl
         if sim is not None:
             scanned.append((sim["expectedROI"], legs))
     scanned.sort(key=lambda t: t[0], reverse=True)
-    entries = [e for legs in (l for _, l in scanned[:top_n])
+    picked: list[list[dict]] = []
+    seen_rosters: set[frozenset] = set()
+    for _, legs in scanned:
+        roster = frozenset(l.get("player") for l in legs)
+        if roster in seen_rosters:
+            continue
+        seen_rosters.add(roster)
+        picked.append(legs)
+        if len(picked) >= top_n:
+            break
+    entries = [e for legs in picked
               if (e := build_entry(legs, picks, kind, n_sims=final_sims, book=book)) is not None]
     entries.sort(key=lambda e: e["qualityScore"], reverse=True)
     return entries
