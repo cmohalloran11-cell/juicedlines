@@ -74,6 +74,20 @@ def _get(url: str, ttl: float = 1800) -> dict | None:
     return d
 
 
+def _get_any(path: str, suffix: str, ttl: float) -> dict | None:
+    """Try the v2 'site' API (_SITE) first, then the v3 'common' API (_WEB) as a fallback.
+    Added 2026-08 after ESPN started returning 403 on every basketball/wnba _SITE endpoint
+    (teams, injuries, scoreboard) while other paths on the same host (e.g. football/nfl)
+    still work -- see basketball.board's WNBA-zero-projections diagnosis. Genuinely
+    speculative: _WEB's v3 shape isn't confirmed to match v2's for these endpoints, so a
+    shape mismatch just degrades to the same 'empty dict, diagnostic printed' behavior
+    _get already has for any parse failure -- never worse than not trying the fallback."""
+    d = _get(_SITE.format(path=path) + suffix, ttl)
+    if d is None:
+        d = _get(_WEB.format(path=path) + suffix, ttl)
+    return d
+
+
 def _num(x) -> float:
     try:
         return float(x)
@@ -100,7 +114,7 @@ class EspnBasketball(GameLogSource):
 
     # ── rosters ───────────────────────────────────────────────────────────────
     def teams(self, league: str) -> dict:
-        d = _get(_SITE.format(path=self._path(league)) + "/teams", 12 * 3600)
+        d = _get_any(self._path(league), "/teams", 12 * 3600)
         out: dict[str, str] = {}
         try:
             for t in d["sports"][0]["leagues"][0]["teams"]:
@@ -123,7 +137,7 @@ class EspnBasketball(GameLogSource):
         hit = _cache.get(key)
         if hit and time.time() - hit[0] < 12 * 3600:
             return hit[1]
-        d = _get(_SITE.format(path=self._path(league)) + "/teams", 12 * 3600)
+        d = _get_any(self._path(league), "/teams", 12 * 3600)
         out: dict = {}
         try:
             for t in d["sports"][0]["leagues"][0]["teams"]:
@@ -143,7 +157,7 @@ class EspnBasketball(GameLogSource):
         return out
 
     def _roster(self, league: str, team_id: str, team_name: str) -> list[PlayerRef]:
-        d = _get(_SITE.format(path=self._path(league)) + f"/teams/{team_id}/roster", 6 * 3600)
+        d = _get_any(self._path(league), f"/teams/{team_id}/roster", 6 * 3600)
         out = []
         for a in (d or {}).get("athletes", []):
             for p in (a.get("items", [a]) if "items" in a else [a]):
@@ -179,7 +193,7 @@ class EspnBasketball(GameLogSource):
         from datetime import date, timedelta
         today = date.today()
         span = f"{today - timedelta(days=25):%Y%m%d}-{today + timedelta(days=2):%Y%m%d}"
-        d = _get(_SITE.format(path=self._path(league)) + f"/scoreboard?dates={span}", 1800)
+        d = _get_any(self._path(league), f"/scoreboard?dates={span}", 1800)
         valid_ids = self._valid_team_ids(league)
         out = []
         for ev in (d or {}).get("events", []):
@@ -252,7 +266,7 @@ class EspnBasketball(GameLogSource):
         path = self._path(league)
         idx: dict[str, list] = {}
         for gid in self._completed_games(league):
-            summ = _get(_SITE.format(path=path) + f"/summary?event={gid}", 6 * 3600)
+            summ = _get_any(path, f"/summary?event={gid}", 6 * 3600)
             if not summ:
                 continue
             for pid, pg in self._parse_box(league, summ):
@@ -328,13 +342,13 @@ class EspnBasketball(GameLogSource):
         if hit and time.time() - hit[0] < 12 * 3600:
             return hit[1]
         path = self._path(league)
-        sched = _get(_SITE.format(path=path) + f"/teams/{team_id}/schedule", 6 * 3600)
+        sched = _get_any(path, f"/teams/{team_id}/schedule", 6 * 3600)
         done = [ev for ev in (sched or {}).get("events", [])
                 if ev.get("competitions", [{}])[0].get("status", {}).get("type", {}).get("state") == "post"]
         poss_sum = pf_sum = pa_sum = n = 0.0
         for ev in done[-6:]:
             gid = ev.get("id")
-            summ = _get(_SITE.format(path=path) + f"/summary?event={gid}", 24 * 3600)
+            summ = _get_any(path, f"/summary?event={gid}", 24 * 3600)
             comp = (((summ or {}).get("header", {}) or {}).get("competitions") or [{}])[0]
             scores = {str((c.get("team") or {}).get("id")): _num(c.get("score"))
                       for c in (comp.get("competitors") or [])}
@@ -373,7 +387,7 @@ class EspnBasketball(GameLogSource):
         the entries carry no athlete id). 'Out' → a confirmed DNP (suppress like an MLB scratch);
         everything else present (Day-To-Day, Questionable, Doubtful, GTD) → 'questionable', which
         we flag but still project, since the player may well play."""
-        d = _get(_SITE.format(path=self._path(league)) + "/injuries", 900)
+        d = _get_any(self._path(league), "/injuries", 900)
         out: dict = {}
         for team in (d or {}).get("injuries", []):
             for it in team.get("injuries", []) or []:
@@ -395,7 +409,7 @@ class EspnBasketball(GameLogSource):
         from datetime import date, timedelta
         today = date.today()
         span = f"{today:%Y%m%d}-{today + timedelta(days=1):%Y%m%d}"
-        d = _get(_SITE.format(path=self._path(league)) + f"/scoreboard?dates={span}", 900)
+        d = _get_any(self._path(league), f"/scoreboard?dates={span}", 900)
         out: dict = {}
         for ev in (d or {}).get("events", []):
             cs = (ev.get("competitions") or [{}])[0].get("competitors") or []
