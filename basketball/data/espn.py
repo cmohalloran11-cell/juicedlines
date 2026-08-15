@@ -42,10 +42,19 @@ def _get(url: str, ttl: float = 1800) -> dict | None:
     hit = _cache.get(url)
     if hit and now - hit[0] < ttl:
         return hit[1]
+    d = None
     try:
-        d = _S.get(url, timeout=20).json()
-    except Exception:
-        d = None
+        resp = _S.get(url, timeout=20)
+        if resp.status_code != 200:
+            print(f"[basketball.espn] {url} -> HTTP {resp.status_code}", flush=True)
+        else:
+            d = resp.json()
+    except Exception as exc:
+        # 2026-08 production diagnosis: this used to swallow the exception with zero trace,
+        # so WNBA going to 0 real projections looked identical to "board hasn't refreshed
+        # yet" instead of a diagnosable failure. Temporary/scoped instrumentation, mirrors
+        # the exact fix already shipped for nfl/data/espn.py's own silent-failure bug.
+        print(f"[basketball.espn] {url} -> {type(exc).__name__}: {exc}", flush=True)
     _cache[url] = (now, d)
     return d
 

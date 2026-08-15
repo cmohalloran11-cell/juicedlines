@@ -49,7 +49,9 @@ def attach_basketball(lines: list[dict]) -> int:
     for lg in {l["sport"] for l in blines}:
         try:
             inj[lg] = src.injuries(lg) if hasattr(src, "injuries") else {}
-        except Exception:
+        except Exception as exc:
+            print(f"[basketball.board] injuries({lg!r}) failed: {type(exc).__name__}: {exc}",
+                  flush=True)
             inj[lg] = {}
 
     proj_cache: dict = {}
@@ -59,7 +61,12 @@ def attach_basketball(lines: list[dict]) -> int:
         if ck not in proj_cache:
             try:
                 proj_cache[ck] = P.project_player(league, player)
-            except Exception:
+            except Exception as exc:
+                # 2026-08 production diagnosis: silent per-player swallow, so a systemic
+                # failure (every player, not just one) looked identical to "no data yet"
+                # instead of a diagnosable error. Temporary/scoped instrumentation.
+                print(f"[basketball.board] project_player({league!r}, {player!r}) failed: "
+                      f"{type(exc).__name__}: {exc}", flush=True)
                 proj_cache[ck] = None
         return proj_cache[ck]
 
