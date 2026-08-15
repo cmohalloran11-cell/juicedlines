@@ -29,6 +29,7 @@ import numpy as np
 from . import projections as P
 from .config import cfg
 from .confidence import nfl_confidence
+from .data import espn as ESPN
 from .data.base import ScheduleGame
 
 _SPORTS = ("NFL",)
@@ -41,8 +42,37 @@ NFL_FIELDS = (
     "preseason_risk", "rotation_tier", "game_total", "team_total", "spread", "weather",
     "role", "depth_chart_position", "red_zone_opportunities", "pass_rush_matchup",
     "nfl_confidence", "nfl_confidence_factors", "trust_weight", "model_raw",
-    "model_raw_prob", "p25", "p75", "model_std_dev",
+    "model_raw_prob", "p25", "p75", "model_std_dev", "opponent", "is_home",
 )
+
+
+def _opponent(team: Optional[str], game: Optional[ScheduleGame]) -> tuple[Optional[str], Optional[bool]]:
+    """(opponent abbr, is_home) from the matched schedule game, or (None, None) when there
+    isn't one — true for every preseason line by construction (see resolve_season_type's
+    docstring: no PRE game is ever in the schedule to match), not a gap specific to this
+    function. Never guessed from anything but the real schedule row."""
+    if not game or not team:
+        return None, None
+    home, away = P.norm_team(game.home_team), P.norm_team(game.away_team)
+    if team == home:
+        return game.away_team, True
+    if team == away:
+        return game.home_team, False
+    return None, None
+
+
+def _espn_assets() -> tuple[dict, dict]:
+    """(team_assets, headshots) from ESPN, each independently try/excepted so a network
+    failure or ESPN outage degrades to 'no logo/no override', never breaks projection."""
+    try:
+        assets = ESPN.team_assets()
+    except Exception:
+        assets = {}
+    try:
+        heads = ESPN.all_headshots()
+    except Exception:
+        heads = {}
+    return assets, heads
 
 
 def _schedule_index(schedule: list[ScheduleGame]) -> dict[tuple, ScheduleGame]:
@@ -108,6 +138,7 @@ def attach_nfl(lines: list[dict]) -> int:
     full_trust = float(cfg("board", "full_trust_at", default=0.6))
     pre_cap = float(cfg("board", "preseason_max_trust", default=0.35))
     min_trust = float(cfg("board", "min_trust", default=0.2))
+    espn_assets, espn_heads = _espn_assets()
 
     # The GAME is part of the grouping key, not just the player and market: a board carrying
     # both a preseason and a regular-season line for the same player+market must not resolve
@@ -164,6 +195,14 @@ def attach_nfl(lines: list[dict]) -> int:
                                      "trust_weight": round(trust, 3),
                                      "lineup_status": first.get("lineup_status")})
 
+        opp_abbr, is_home = _opponent(team, game)
+        team_asset = espn_assets.get(P._norm(team)) if team else None
+        # ESPN's real photo is authoritative when a name match exists — the book's own
+        # image_url is sometimes a team crest instead of a face (observed live 2026-08 on a
+        # recently-signed player) and is kept ONLY as the fallback for a player ESPN's active
+        # roster doesn't (yet) carry, never blanked for an unmatched name.
+        espn_headshot = espn_heads.get(P._norm(first["player"]))
+
         for l in glines:
             line_val = float(l["line"])
             center = blended
@@ -210,5 +249,12 @@ def attach_nfl(lines: list[dict]) -> int:
             l["weather"] = env.weather
             l["nfl_confidence"] = conf["score"]
             l["nfl_confidence_factors"] = conf["factors"]
+
+            l["opponent"] = opp_abbr
+            l["is_home"] = is_home
+            if team_asset and team_asset.get("logo"):
+                l["team_logo"] = team_asset["logo"]
+            if espn_headshot:
+                l["headshot"] = espn_headshot
             done += 1
     return done

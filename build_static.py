@@ -102,7 +102,7 @@ _KEEP = (
     "id", "source", "sport", "player", "team", "position", "stat_type", "line",
     "odds_type", "matchup", "start_time", "status", "game_id",
     "over_price", "under_price", "over_implied", "under_implied", "pickem_price",
-    "headshot", "team_logo", "flag", "country",
+    "headshot", "team_logo", "flag", "country", "opponent", "is_home",
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n", "model_median",
     "model_floor", "model_ceiling",     # the p10-p90 range shown under the projection
     "model_raw",                        # pre-anchor model mean — juice_score's model-vs-market

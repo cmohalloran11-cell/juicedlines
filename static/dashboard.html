@@ -961,10 +961,14 @@ function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.jui
     tile('Model Health',dh.quality_score>=80?'Excellent':dh.quality_score>=60?'Good':'Fair','pos','Data '+(dh.quality_score??'—')+'/100');
 }
 function dsAvg(){if(!PROJ.length)return null;return Math.round(PROJ.reduce((s,p)=>s+(p.confidence||0),0)/PROJ.length)}
+function pickNfl(season){PF.projSport='NFL';PF.nflSeason=season;PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()}
 function renderToolbar(){
   const vt=(k,n)=>`<span class="qf ${(k==='high'&&PF.high)||(k==='watch'&&PF.onlyWatch)?'on':''}" onclick="tbClick('${k}')">${n}</span>`;
   const sports=[['all','All Sports'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis'],['NFL','NFL']];
-  const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k?'on':''}" onclick="PF.projSport='${k}';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}</div>`;
+  // NFL Preseason gets its own chip (not just a sidebar toggle) so it's discoverable without
+  // first clicking into NFL — one click sets both the sport AND the season-type filter.
+  const nflPreOn=PF.projSport==='NFL'&&PF.nflSeason==='preseason';
+  const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k&&!(k==='NFL'&&nflPreOn)?'on':''}" onclick="PF.projSport='${k}';PF.nflSeason='all';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}<span class="seg ${nflPreOn?'on':''}" onclick="pickNfl('preseason')">${leagueLogo('NFL',14)}NFL Preseason</span></div>`;
   $('#ptoolbar').innerHTML=`${sp}<input class="ctl" id="pq" placeholder="Search player…" style="min-width:150px" oninput="PF.q=this.value;PF.page=1;applyProj()" value="${PF.q}">
     ${vt('high',icon('fire',13)+' High Juice (80+)')}${vt('watch',icon('star',13)+' Watchlist')}
     <select class="ctl" onchange="PF.sort=this.value;PF.dir=-1;applyProj()"><option value="juice">Sort: Juice</option><option value="edge">Sort: EV %</option><option value="confidence">Sort: Confidence</option><option value="projection">Sort: Projection</option></select>`;

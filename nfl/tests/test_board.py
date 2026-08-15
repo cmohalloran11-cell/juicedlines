@@ -13,6 +13,7 @@ import valuation
 from nfl import analytics as A
 from nfl import board as B
 from nfl import projections as P
+from nfl.data import espn as ESPN
 from nfl.data import set_source
 from nfl.data.base import DepthChartEntry, RosterWeek
 from nfl.tests import fakes as F
@@ -35,9 +36,15 @@ def _install(weeks=None, snaps=None, schedule=None, depth=None, rosters=None):
 
 @pytest.fixture(autouse=True)
 def _isolated_source():
+    # Empty-but-not-None ESPN override: every test gets zero real HTTP calls by default (see
+    # nfl.data.espn.set_test_override) without having to opt in individually. A test that
+    # wants to exercise the ESPN enrichment itself calls set_test_override again with real
+    # fixture data.
+    ESPN.set_test_override({}, {})
     yield
     P.clear_cache()
     set_source(None)
+    ESPN.set_test_override(None, None)
 
 
 def _rich_board(season_type="regular"):
@@ -76,6 +83,54 @@ def test_attach_nfl_writes_the_shared_valuation_fields_and_the_nfl_contract():
     # the shared, sport-agnostic engine must work off these fields unmodified
     assert 0 <= valuation.confidence_score(l) <= 100
     assert 0 <= valuation.juice_score(l) <= 100
+
+
+def test_attach_nfl_resolves_opponent_and_is_home_from_the_real_matched_schedule_game():
+    _rich_board()   # CIN (team on the line) hosts CLE, per _rich_board's game()
+    lines = [F.line(stat="Receiving Yards", value=72.5, team="CIN")]
+    B.attach_nfl(lines)
+    assert lines[0]["opponent"] == "CLE"
+    assert lines[0]["is_home"] is True
+
+
+def test_attach_nfl_opponent_is_unknown_for_preseason_by_construction():
+    """Preseason games are never in the matched schedule (see resolve_season_type's
+    docstring) -- opponent must be honestly None, not guessed."""
+    _rich_board(season_type="preseason")
+    lines = [F.line(stat="Receiving Yards", value=72.5, team="CIN")]
+    B.attach_nfl(lines)
+    assert lines[0]["season_type"] == "preseason"
+    assert lines[0]["opponent"] is None
+    assert lines[0]["is_home"] is None
+
+
+def test_attach_nfl_uses_espn_team_logo_and_overrides_the_books_headshot():
+    """ESPN's real photo wins over whatever the book's own image_url was -- found live
+    2026-08: PrizePicks/Underdog's image_url for NFL is sometimes a team crest instead of a
+    real face."""
+    _rich_board()
+    ESPN.set_test_override(
+        {"cin": {"id": "4", "abbr": "CIN", "logo": "https://espn.example/cin.png",
+                 "name": "Cincinnati Bengals"}},
+        {"star receiver": "https://espn.example/headshots/star-receiver.png"},
+    )
+    lines = [F.line(stat="Receiving Yards", value=72.5, team="CIN",
+                    headshot="https://static.prizepicks.com/images/teams/nfl/team-crest.webp")]
+    B.attach_nfl(lines)
+    assert lines[0]["team_logo"] == "https://espn.example/cin.png"
+    assert lines[0]["headshot"] == "https://espn.example/headshots/star-receiver.png"
+
+
+def test_attach_nfl_keeps_the_books_headshot_when_espn_has_no_match():
+    """A player ESPN's active roster doesn't (yet) carry must keep the book's own image
+    rather than being blanked -- an unmatched name is not evidence the image is wrong."""
+    _rich_board()
+    ESPN.set_test_override({}, {})   # no ESPN match for anyone
+    original = "https://static.prizepicks.com/images/players/star-receiver.webp"
+    lines = [F.line(stat="Receiving Yards", value=72.5, team="CIN", headshot=original)]
+    B.attach_nfl(lines)
+    assert lines[0]["headshot"] == original
+    assert "team_logo" not in lines[0] or lines[0].get("team_logo") is None
 
 
 def test_attach_nfl_ignores_other_sports_and_unmodelled_markets():

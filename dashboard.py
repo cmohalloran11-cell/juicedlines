@@ -97,8 +97,12 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
         "id": line.get("id"),
         "player": line.get("player"),
         "team": line.get("team"),
-        "opponent": opp.get("opp") if opp else None,     # real, from today's MLB schedule
-        "isHome": opp.get("is_home") if opp else None,
+        # MLB: computed above from today's team-wide schedule. Other sports (currently NFL)
+        # that resolve their own per-line opponent from a real per-game schedule match set
+        # "opponent"/"is_home" directly on the line (see nfl.board._opponent) — read straight
+        # through rather than recomputed, never guessed for a sport with no schedule source.
+        "opponent": (opp.get("opp") if opp else None) or line.get("opponent"),
+        "isHome": (opp.get("is_home") if opp else None) if opp else line.get("is_home"),
         "sport": line.get("sport"),
         "stat": line.get("stat_type"),
         "line": line.get("line"),
