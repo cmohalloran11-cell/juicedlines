@@ -568,7 +568,7 @@ function closeSide(){$('.side').classList.remove('open');$('#sidescrim').classLi
 // from the real mean (model_proj) server-side and are untouched by this.
 const dispProj=x=>x.median!=null?(x.projection+x.median)/2:x.projection;
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
-  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'}</div><div class="tm">${esc(x.team)||''} ${x.position?'· '+esc(x.position):''}</div></div></div></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${nflBadge(x)}</div><div class="tm">${esc(x.team)||''} ${x.position?'· '+esc(x.position):''}${nflSub(x)}</div></div></div></td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${esc(x.stat)||''}</div></td>
   <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${esc(x.team)||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${esc(x.opponent)}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
   <td class="mono" style="font-weight:800" title="Average of the model's mean and median projection">${fmt(dispProj(x))}</td>
@@ -873,6 +873,25 @@ const bookLogo=(s,size=20)=>{const b=bookMeta(s);return b?`<img src="${b[2]}" wi
 // is shown for these (see valuation.is_unpriced); the badge is why.
 const oddsTypeBadge=x=>x.oddsType==='demon'?'<span class="chip r" style="padding:1px 6px;font-size:9px" title="Boosted line — payout not exposed, no EV shown">DEMON</span>'
   :x.oddsType==='goblin'?'<span class="chip g" style="padding:1px 6px;font-size:9px" title="Boosted line — payout not exposed, no EV shown">GOBLIN</span>':'';
+// NFL-only badges — season type + preseason role/risk need to be visually distinct from
+// regular season, not buried in the drawer (a preseason "starter" line means something very
+// different from a regular-season one). Regular season renders nothing extra here.
+const ROTATION_TIER_LABEL={confirmed_starter:'STARTER',second_team:'ROTATION',fringe:'FRINGE',unknown:'ROLE UNKNOWN'};
+function nflBadge(x){
+  if(x.sport!=='NFL'||x.seasonType!=='preseason')return '';
+  const parts=[`<span class="chip y" style="padding:1px 6px;font-size:9px" title="Preseason line${x.seasonTypeConfirmed===false?' — season type inferred (no matching regular-season schedule row), not read directly off the schedule':''}">PRESEASON</span>`];
+  const rt=ROTATION_TIER_LABEL[x.rotationTier];
+  if(rt)parts.push(`<span class="chip ${x.rotationTier==='confirmed_starter'?'g':x.rotationTier==='fringe'?'r':''}" style="padding:1px 6px;font-size:9px" title="Rotation tier — preseason depth-chart read">${rt}</span>`);
+  if(x.preseasonRisk!=null)parts.push(`<span class="chip r" style="padding:1px 6px;font-size:9px" title="Playing-time risk — chance this player's real role/snaps differ from what's assumed">RISK ${Math.round(x.preseasonRisk*100)}%</span>`);
+  return parts.join(' ');
+}
+function nflSub(x){
+  if(x.sport!=='NFL')return '';
+  const bits=[];
+  if(x.seasonType!=='preseason'&&x.role&&x.role!=='unknown')bits.push(cap(x.role));
+  if(x.expectedSnaps!=null)bits.push(Math.round(x.expectedSnaps)+' snaps proj');
+  return bits.length?' · '+bits.join(' · '):'';
+}
 
 async function vProjections(title,sub){
   $('#view').innerHTML=`<div class="proj-layout">
@@ -979,7 +998,7 @@ function applyProj(){
 }
 const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
   <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td>
-  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'}</div><div class="tm">${esc(x.position)||''} ${x.startTime?'· '+timeOf(x.startTime):''}</div></div></div></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${nflBadge(x)}</div><div class="tm">${esc(x.position)||''} ${x.startTime?'· '+timeOf(x.startTime):''}${nflSub(x)}</div></div></div></td>
   <td><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">${teamBadge(x,18)} ${esc(x.team)||''}</span></td>
   <td class="muted">${x.opponent?`${x.isHome?'vs':'@'} ${esc(x.opponent)}`:'—'}</td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${esc(x.stat)||''}</div></td>
@@ -1845,7 +1864,7 @@ async function vGamePage(team){
 // archetypes perform best/worst, which stats are drifting, and what changed between
 // versions. Every number here is read from the graded CLV ledger (backtest.py /
 // model_health.py) — nothing simulated or invented for display.
-let MH_SPORT='MLB', MH_SUMMARY=null, MH_DETAIL=null;
+let MH_SPORT='MLB', MH_SUMMARY=null, MH_DETAIL=null, MH_NFL_SEASON='all';
 
 function driftChip(status){
   if(status==='drifting')return `<span class="chip r">drifting</span>`;
@@ -1897,9 +1916,10 @@ function trendChart(runs,key,fmtFn){
 
 async function vModelHealth(){
   $('#view').innerHTML=`<div class="empty"><div class="em">${icon('heart',30)}</div>Loading model health…</div>`;
+  const nflPk=MH_SPORT==='NFL'&&MH_NFL_SEASON!=='all'?'&proj_kind=nfl_'+MH_NFL_SEASON:'';
   const [summary,detail]=await Promise.all([
     MH_SUMMARY||api('/api/model/dashboard').catch(()=>({sports:{}})),
-    api('/api/model/dashboard?sport='+MH_SPORT).catch(()=>({})),
+    api('/api/model/dashboard?sport='+MH_SPORT+nflPk).catch(()=>({})),
   ]);
   MH_SUMMARY=summary; MH_DETAIL=detail;
   const sports=summary.sports||{};
@@ -1908,7 +1928,7 @@ async function vModelHealth(){
         byver=(s.accuracy_by_model_version||{}).by_version||{}, chg=s.changelog||[],
         runs=s.snapshot_history||[];
 
-  const sportTabs=['MLB','WNBA','Tennis'].map(sp=>{
+  const sportTabs=['MLB','WNBA','Tennis','NFL'].map(sp=>{
     const sm=sports[sp]||{};
     return `<div class="mv" style="cursor:pointer;${sp===MH_SPORT?'background:#131a10;border-radius:10px':''}" onclick="mhGoSport('${sp}')">
       <span class="lg" style="width:26px">${leagueLogo(sp,20)}</span>
@@ -1916,6 +1936,9 @@ async function vModelHealth(){
       ${driftChip(sm.drift_status)}
     </div>`;
   }).join('');
+  // Regular vs preseason are separate calibration buckets — never blended by default;
+  // "All" is an explicit, user-chosen combined view, not a silent merge.
+  const nflSeasonToggle=MH_SPORT==='NFL'?`<div class="fg" style="border-top:1px solid var(--line);padding:12px 16px 4px;margin:0"><div class="gt">NFL Season Type <span class="muted" style="font-weight:600;text-transform:none;letter-spacing:0">— regular and preseason are graded separately and never blended unless "All" is chosen</span></div><div class="segbar">${[['all','All'],['regular','Regular'],['preseason','Preseason']].map(([k,n])=>`<span class="seg ${MH_NFL_SEASON===k?'on':''}" onclick="mhSetNflSeason('${k}')">${n}</span>`).join('')}</div></div>`:'';
 
   const statRows=Object.entries(s.accuracy&&s.accuracy.per_stat||{})
     .sort((a,b)=>(b[1].n||0)-(a[1].n||0))
@@ -1932,7 +1955,7 @@ async function vModelHealth(){
 
   $('#view').innerHTML=`
    <div class="ph2"><div><h2>Model Health</h2><p>Self-monitoring: is each model improving, and where does it earn — or lose — trust? Every number below is read from graded outcomes, nothing simulated for display.</p></div></div>
-   <div class="panel" style="margin-bottom:16px">${sportTabs}</div>
+   <div class="panel" style="margin-bottom:16px">${sportTabs}${nflSeasonToggle}</div>
 
    <div class="kv" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
      <div class="b"><div class="l">MAE</div><div class="v">${acc.mae??'—'}</div><div class="muted" style="font-size:10.5px">mean absolute error</div></div>
@@ -1965,7 +1988,8 @@ async function vModelHealth(){
    <div class="panel"><div class="phead"><h3>Version Changelog</h3><span class="hint">what changed, in plain language</span></div>${changelogRows}</div>
    <p class="muted" style="font-size:11px;margin-top:4px">Daily snapshots are recorded automatically once per sport per day (backtest.record_run). Metrics below the 50-graded-row floor (or below-30/60-row floors for per-stat/archetype/drift splits) are shown as insufficient data rather than a noisy guess.</p>`;
 }
-function mhGoSport(sp){MH_SPORT=sp;vModelHealth()}
+function mhGoSport(sp){MH_SPORT=sp;if(sp!=='NFL')MH_NFL_SEASON='all';vModelHealth()}
+function mhSetNflSeason(v){MH_NFL_SEASON=v;vModelHealth()}
 
 const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,'model-health':vModelHealth,leaderboards:vLeaderboards,correlations:vCorrelations,optimizer:vOptimizer,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,fantasy:vFantasy,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade,admin:vAdmin};
 
@@ -2029,17 +2053,67 @@ function corrHTML(x){const st=(x.stat||'');
   if(!(x.sport==='MLB'&&st.includes('+')&&/hit|run|rbi/i.test(st)))return '';
   return `<div class="dsec"><h5>Combo Dependency <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">· model priors</span></h5><div class="corr"><div class="c"><div class="p">59%</div><div class="s">Hits · Runs</div></div><div class="c"><div class="p">49%</div><div class="s">Hits · RBI</div></div><div class="c"><div class="p">55%</div><div class="s">Runs · RBI</div></div></div><p class="muted" style="font-size:10.5px;margin:8px 0 0">Default H/R/RBI correlations the engine starts from — shrunk toward this player's own game-log dependence when the combo is simulated, so its spread is honest.</p></div>`;
 }
+// NFL confidence is a SEPARATE, supplementary number from the generic `confidence` field
+// every sport has (mirrors WNBA's internal bball_confidence — except this one deliberately
+// does reach the UI, since playing-time confidence is a headline NFL concept). Never merged
+// into confBreakdown above.
+const NFL_FACTOR_PALETTE=['#c6f24e','#5bd0c0','#7c9bff','#f2c94e','#e07be0','#9a9fa8','#6bd47a'];
+function nflConfBreakdown(x){
+  const f=x.nflConfidenceFactors||[];
+  if(x.nflConfidence==null&&!f.length)return '';
+  if(!f.length)return `<div class="dsec"><h5>NFL Playing-Time Confidence <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">· separate from Confidence above</span></h5><div class="v" style="font-size:22px;font-weight:800">${x.nflConfidence}%</div></div>`;
+  const items=f.map((z,i)=>[z.factor,z.value,NFL_FACTOR_PALETTE[i%NFL_FACTOR_PALETTE.length]]);
+  const sum=items.reduce((s,i)=>s+i[1],0),head=Math.max(0,100-sum);
+  if(head>0.5)items.push(['Headroom',head,'#26311f']);
+  return `<div class="dsec"><h5>NFL Playing-Time Confidence <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">· separate from Confidence above</span></h5><div style="display:flex;align-items:center;gap:16px">${donutSVG(items,(x.nflConfidence??Math.round(sum))+'%','NFL')}<div class="legend" style="flex:1">${f.map((z,i)=>`<div class="row" title="${esc(z.detail||'')}"><span class="dot" style="background:${NFL_FACTOR_PALETTE[i%NFL_FACTOR_PALETTE.length]}"></span>${esc(z.factor)}<span class="pct">${z.value} / ${z.max}</span></div>`).join('')}</div></div></div>`;
+}
+// Task's explicit ask: preseason STARTER/ROTATION/PLAYING-TIME-RISK must be prominent, not
+// buried — this whole section sits right under the headline EV/Edge kv, before Juice Score.
+function nflSection(x){
+  if(x.sport!=='NFL')return '';
+  const snapRangeStr=Array.isArray(x.snapRange)&&x.snapRange.length===2?`${fmt(x.snapRange[0])}–${fmt(x.snapRange[1])}`:null;
+  const roleLabel=x.role&&x.role!=='unknown'?cap(x.role):'not enough data yet';
+  const rotLabel=ROTATION_TIER_LABEL[x.rotationTier]||(x.rotationTier?cap(x.rotationTier.replace(/_/g,' ')):null);
+  const playTimeConf=x.playingTimeConfidence?cap(x.playingTimeConfidence):'—';
+  const roleConf=x.roleConfidence?cap(x.roleConfidence):'—';
+  const usage=`<div class="kv">
+    <div class="b"><div class="l">Expected Snaps</div><div class="v">${x.expectedSnaps!=null?fmt(x.expectedSnaps):'not available'}</div>${snapRangeStr?`<div class="muted" style="font-size:10.5px">range ${snapRangeStr}</div>`:''}</div>
+    <div class="b" title="${x.expectedRoutesBasis?'Disclosed upper-bound estimate ('+esc(x.expectedRoutesBasis)+') — no free data source publishes routes actually run':''}"><div class="l">Expected Routes</div><div class="v">${x.expectedRoutes!=null?fmt(x.expectedRoutes):'not available'}</div>${x.expectedRoutesBasis?`<div class="muted" style="font-size:10.5px">upper-bound est. · ${esc(x.expectedRoutesBasis)}</div>`:''}</div>
+    <div class="b"><div class="l">Expected Targets</div><div class="v">${x.expectedTargets!=null?fmt(x.expectedTargets):'not available'}</div></div>
+    <div class="b"><div class="l">Expected Carries</div><div class="v">${x.expectedCarries!=null?fmt(x.expectedCarries):'not available'}</div></div>
+    <div class="b"><div class="l">Role</div><div class="v" style="font-size:15px">${esc(roleLabel)}</div><div class="muted" style="font-size:10.5px">role confidence: ${roleConf}</div></div>
+    <div class="b"><div class="l">Depth Chart Pos.</div><div class="v">${x.depthChartPosition!=null?'#'+x.depthChartPosition:'not available'}</div></div>
+    <div class="b"><div class="l">Playing-Time Prob.</div><div class="v">${x.playingTimeProbability!=null?prob(x.playingTimeProbability):'not available'}</div><div class="muted" style="font-size:10.5px">confidence: ${playTimeConf}</div></div>
+    <div class="b"><div class="l">Red Zone Opps</div><div class="v">not available</div><div class="muted" style="font-size:10.5px">no free play-by-play source yet</div></div>
+  </div>`;
+  const preseasonBlock=x.seasonType==='preseason'?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;padding:10px;border-radius:8px;background:#1c1608;border:1px solid #3a2a0c">
+      ${rotLabel?`<span class="chip ${x.rotationTier==='confirmed_starter'?'g':x.rotationTier==='fringe'?'r':'y'}" style="font-size:11px">${esc(rotLabel)}</span>`:''}
+      ${x.preseasonRisk!=null?`<span class="chip r" style="font-size:11px">Playing-Time Risk ${Math.round(x.preseasonRisk*100)}%</span>`:''}
+      <span class="muted" style="font-size:10.5px">${x.seasonTypeConfirmed===false?'Season type inferred — no matching regular-season schedule row was found, treat with extra caution':'Season type confirmed directly off the schedule'}</span>
+    </div>`:'';
+  const gameCtx=`<div class="kv" style="margin-top:10px">
+    <div class="b"><div class="l">Game Total</div><div class="v">${x.gameTotal!=null?fmt(x.gameTotal):'—'}</div></div>
+    <div class="b"><div class="l">Team Total</div><div class="v">${x.teamTotal!=null?fmt(x.teamTotal):'—'}</div></div>
+    <div class="b"><div class="l">Spread</div><div class="v">${x.spread!=null?signed(x.spread):'—'}</div></div>
+    <div class="b"><div class="l">Weather</div><div class="v" style="font-size:13px">${x.weather?esc(x.weather):'—'}</div></div>
+  </div>`;
+  return `<div class="dsec"><h5>NFL Usage &amp; Role <span class="chip ${x.seasonType==='preseason'?'y':''}" style="margin-left:6px;font-size:9px;padding:1px 6px;vertical-align:middle">${x.seasonType==='preseason'?'PRESEASON':'REGULAR SEASON'}</span></h5>
+    ${usage}${preseasonBlock}${gameCtx}
+  </div>${nflConfBreakdown(x)}`;
+}
 async function openProp(x,tab){
   SELID=x.id; if(cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}
   const D=$('#drawer');$('#scrim').classList.add('open');D.classList.add('open');
   D.innerHTML=`<div class="dh"><img src="${ph(x.headshot)}"><div><div style="font-weight:800;font-size:15px">${esc(x.player)} ${oddsTypeBadge(x)}</div><div class="muted" style="font-size:12px">${ico(x.sport)} ${esc(x.team)||''} · ${cap(x.side)} ${fmt(x.line)} ${esc(x.stat)}</div></div><span class="jspill" style="color:${jColor(x.juiceScore)};border-color:${jColor(x.juiceScore)}66;margin-left:auto">${x.juiceScore}</span><span class="x" style="margin-left:12px" onclick="closeDrawer()">${icon('x',18)}</span></div>
    <div class="dsec" style="border:0;padding-bottom:0"><button class="btn" style="width:100%;justify-content:center" onclick='goPlayer(${JSON.stringify(x.player).replace(/'/g,"&#39;")})'>${icon('user',13)} View Full Player Page</button></div>
    <div class="dsec">${edgeEvKV(x)}</div>
+   ${nflSection(x)}
    ${juiceBreakdown(x)}
    <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="simkv"></div></div>
    ${confBreakdown(x)}
    <div class="dsec"><h5>Why the Model Likes This</h5><ul class="whylist">${whyBullets(x).map(b=>`<li><span class="ok">✓</span><span>${b}</span></li>`).join('')}</ul></div>
    <div class="dsec"><h5>Recent Games & Hit Rate</h5><div id="recentbox"><p class="muted skel">Loading recent games…</p></div></div>
+   ${x.sport==='NFL'?`<div class="dsec"><h5>Model Reasoning</h5><div id="reasonbox"><p class="muted skel">Loading…</p></div></div>`:''}
    ${corrHTML(x)}
    <div class="dsec"><h5>AI Juice</h5><div class="aibox" id="aibox">${AUTH.ai?'Generating a grounded explanation…':'AI Juice is not configured on the server.'}</div></div>
    <div class="dsec" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${isWatched(x.id)?'':'pri'}" id="wbtn" onclick='toggleWatch(${JSON.stringify(x).replace(/"/g,"&quot;")});renderDrawerBtns(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${isWatched(x.id)?'Watching':'Add to Watchlist'}</button><button class="btn" onclick='addPlay(${JSON.stringify(x).replace(/"/g,"&quot;")})'>+ Portfolio</button><button class="btn" onclick='saveProp(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('star',13)} Save</button><button class="btn" onclick='loadResearch(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('research',13)} Research</button><button class="btn" onclick='compareBooks(${JSON.stringify(x).replace(/"/g,"&quot;")})'>${icon('layers',13)} Compare Books</button></div>
@@ -2084,15 +2158,19 @@ async function loadAIExplain(x,sel='#aibox'){const box=$(sel);if(!box)return;
   }catch(e){box.textContent='AI request failed.'}}
 // Real recent-games + hit-rate from /api/analytics (replaces the old raw-JSON dump).
 async function loadRecent(x,sel='#recentbox'){const box=$(sel);if(!box)return;
+  const rb=$('#reasonbox');
   try{const r=await api('/api/analytics?id='+encodeURIComponent(x.id));const a=r.analytics||{};
-    if(!a.available){box.innerHTML='<p class="muted" style="font-size:11.5px">No game logs for this prop yet — a full engine run needs recent games.</p>';return}
+    if(!a.available){box.innerHTML='<p class="muted" style="font-size:11.5px">No game logs for this prop yet — a full engine run needs recent games.</p>';if(rb)rb.innerHTML='<p class="muted" style="font-size:11.5px">Not enough model inputs yet for a written explanation.</p>';return}
     const hr=a.hit_rate,rec=a.recent||[],line=x.line;
     const head=hr?`<div class="kv" style="margin-bottom:10px"><div class="b"><div class="l">Hit Rate vs ${fmt(hr.line)}</div><div class="v" style="font-size:16px">${hr.over_pct}% <span class="muted" style="font-size:11px">${hr.over}/${hr.n} over</span></div></div><div class="b"><div class="l">Last 5</div><div class="v" style="font-size:16px">${hr.last5_over}/${hr.last5_n} <span class="muted" style="font-size:11px">over</span></div></div></div>`:'';
     const rows=rec.slice(0,8).map(g=>{const v=g.prop_val,hit=(v!=null&&line!=null)?v>line:null;
       return `<tr><td class="muted">${g.date?g.date.slice(5):''}</td><td>${g.home?'vs':'@'} ${g.opp||''}</td><td class="mono" style="font-weight:700">${v??'—'}</td><td>${hit==null?'':hit?'<span class="chip g">over</span>':'<span class="chip r">under</span>'}</td></tr>`}).join('');
     const vsP=a.vs_pitcher&&a.vs_pitcher.pitcher?`<p class="muted" style="font-size:11px;margin:8px 0 0">Matchup: vs <b style="color:var(--text)">${a.vs_pitcher.pitcher.name}</b></p>`:'';
     box.innerHTML=head+(rows?`<table class="drops" style="margin:0"><thead><tr><th>Date</th><th>Opp</th><th>${(hr&&hr.stat)||x.stat||'Val'}</th><th></th></tr></thead><tbody>${rows}</tbody></table>${vsP}`:'<p class="muted" style="font-size:11.5px">No recent games on file.</p>');
-  }catch(e){box.innerHTML='<p class="muted" style="font-size:11.5px">Could not load recent games.</p>'}}
+    // drivers is real, model-generated "why" text (nfl.analytics.analyze) — rendered as-is,
+    // never rewritten or re-derived client-side.
+    if(rb)rb.innerHTML=(a.drivers&&a.drivers.length)?`<ul class="whylist">${a.drivers.map(d=>`<li><span class="ok">✓</span><span>${esc(d)}</span></li>`).join('')}</ul>`:'<p class="muted" style="font-size:11.5px">Not enough model inputs yet for a written explanation.</p>';
+  }catch(e){box.innerHTML='<p class="muted" style="font-size:11.5px">Could not load recent games.</p>';if(rb)rb.innerHTML='<p class="muted" style="font-size:11.5px">Could not load model reasoning.</p>'}}
 function loadResearch(x){const b=$('#recentbox');if(b)b.scrollIntoView({behavior:'smooth',block:'center'})}
 // Real cross-book comparison — same player+stat, whichever other books currently have it.
 // Most props are single-book (verified: only ~8% of players appear on 2+ books this season),
