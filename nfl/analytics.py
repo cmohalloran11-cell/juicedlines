@@ -134,8 +134,17 @@ def analyze(line: dict) -> dict:
                           f"the NFL data feed, so there is nothing to project from."}
 
     nname = P._norm(player)
-    weeks = sorted([w for w in data["weeks"] if P._norm(w.player) == nname],
-                   key=lambda w: (w.season, w.week), reverse=True)
+    all_weeks = [w for w in data["weeks"] if P._norm(w.player) == nname]
+    # A preseason prop's "Recent Games" must show recent PRESEASON games (any season, not
+    # just this one) -- never the player's regular-season log, which is a different context
+    # and would misleadingly read as "how they've done in preseason." nflverse's PlayerWeek
+    # season_type is "REG"|"POST" only (it publishes no preseason box scores at all -- see
+    # PlayerWeek's own docstring), so this filter is honest-but-currently-always-empty for
+    # preseason until a real preseason box-score source exists, rather than silently
+    # substituting regular-season stats.
+    weeks = sorted(
+        [w for w in all_weeks if (w.season_type == "PRE") == (season_type == "preseason")],
+        key=lambda w: (w.season, w.week), reverse=True)
     idx = data["snap_index"]
 
     label = line.get("stat_type") or ""
@@ -186,6 +195,11 @@ def analyze(line: dict) -> dict:
         "line": line_val,
         "hit_rate": hit_rate,
         "recent": recent,
+        "recent_note": (
+            "No preseason game log data is published anywhere free (nflverse's own weekly "
+            "stats only cover regular/postseason), so recent preseason games can't be shown "
+            "yet even though this is a preseason prop." if season_type == "preseason" and not recent
+            else None),
         "view_cols": _VIEW_COLS.get(position, _VIEW_COLS["WR"]),
         "model_proj": line.get("model_proj"),
         "model_edge": line.get("model_edge"),
