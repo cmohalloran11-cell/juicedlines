@@ -728,10 +728,12 @@ def api_status():
 
 
 @app.get("/api/scorecard")
-def api_scorecard(sport: str = Query("", description="MLB | Tennis | WNBA | empty = all")):
+def api_scorecard(sport: str = Query("", description="MLB | Tennis | WNBA | NFL | empty = all"),
+                  proj_kind: str = Query(
+                      "", description="empty=no filter | e.g. nfl_regular | nfl_preseason")):
     """Running model-vs-market scorecard: hit-rate vs the close, plays, and CLV.
     Builds up over time as the CLV ledger logs lines and grades outcomes."""
-    return db.scorecard(sport or None)
+    return db.scorecard(sport or None, proj_kind=proj_kind or None)
 
 
 @app.post("/api/snapshot")

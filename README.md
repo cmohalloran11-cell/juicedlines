@@ -90,9 +90,8 @@ python -m pytest -q
 by FastAPI's `TestClient`) are test-only and deliberately kept out of the production
 dependency list. Use `requirements-dev.txt` for local test runs; CI already does.
 
-350+ tests across `tests/`, `basketball/tests/`, `tennis/tests/`, and `nfl/tests/` —
-pure-function unit
-tests for every scoring/simulation component plus integration tests against a real
+370+ tests across `tests/`, `basketball/tests/`, `tennis/tests/`, and `nfl/tests/` —
+pure-function unit tests for every scoring/simulation component plus integration tests against a real
 (temp-file) database and the live FastAPI app. CI (`.github/workflows/test.yml`) runs this
 on every push and PR; `deploy-prod.yml` won't deploy to production unless it passes first.
 

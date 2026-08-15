@@ -78,7 +78,7 @@ def _interpret_prob_cal(cal: dict) -> Optional[str]:
 
 
 def _sport_health(sport: str, proj_kind: str | None = None) -> dict:
-    card = db.scorecard(sport)
+    card = db.scorecard(sport, proj_kind=proj_kind)
     gammas = db.stat_gammas(sport, proj_kind=proj_kind)
     prob_cal = db.prob_calibration(sport, proj_kind=proj_kind)
     width = db.interval_width(sport, proj_kind=proj_kind)
@@ -159,7 +159,7 @@ def calibration_detail(sport: str = "MLB", proj_kind: str | None = None) -> dict
             "per_stat_bias": db.stat_biases(sport, proj_kind=proj_kind),
             "probability_platt": db.prob_calibration(sport, proj_kind=proj_kind),
             "interval_widening_factor": db.interval_width(sport, proj_kind=proj_kind),
-            "scorecard": db.scorecard(sport),
+            "scorecard": db.scorecard(sport, proj_kind=proj_kind),
             "diagnostics": backtest.diagnostics(sport, proj_kind=proj_kind),
             "drift": backtest.drift(sport, proj_kind=proj_kind),
             "accuracy_by_model_version": backtest.version_history(sport, proj_kind=proj_kind),

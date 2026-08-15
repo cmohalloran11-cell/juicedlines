@@ -165,13 +165,15 @@ All optional — the app runs with none set. Configure on the host (Render/Railw
 | `SENTRY_DSN` | *(unset)* | Enables real-time error monitoring (unhandled exceptions) via Sentry. Unset ⇒ the app never talks to Sentry at all — safe to leave unset locally and on any deployment that doesn't want it. |
 | `SENTRY_ENVIRONMENT` | `production` | Tag shown on Sentry issues (e.g. `staging`, `production`) — only matters if `SENTRY_DSN` is set. |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.0` | Performance-tracing sample rate (`0.0`–`1.0`). Off by default; only matters if `SENTRY_DSN` is set. |
+| `NFL_CACHE_DIR` | `data/nfl_cache/` | Where the NFL engine caches the fetched nflverse-data release CSVs (tens of MB). Relocate off a read-only or ephemeral filesystem if needed. |
 
 New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/ai/explain?id=`, and the authenticated `/api/me`, `/api/watchlists*`, `/api/portfolio*`.
 
 ## Notes
 
 - **No secrets/keys required to run.** PrizePicks reads the cookie-free partner API;
-  MLB/ESPN need no keys. Auth and AI features activate only when their env vars are set.
+  MLB/ESPN need no keys; the NFL engine reads the free, no-auth nflverse-data GitHub
+  releases. Auth and AI features activate only when their env vars are set.
 - The `betting_dashboard` clients (Underdog, Kalshi, MLB) are **vendored** here
   (`underdog.py`, `kalshi.py`, `mlb_model.py`) so the repo is self-contained. Local dev
   still prefers the sibling `../betting_dashboard` if present. Re-copy if you update them.

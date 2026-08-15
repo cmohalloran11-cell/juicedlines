@@ -285,3 +285,38 @@ def test_stat_biases_respects_proj_kind_filter():
         assert abs(b_pre["rec yards"] - (-15.0)) < 0.01
     finally:
         _db.DB_PATH = orig
+
+
+def test_scorecard_respects_proj_kind_filter():
+    """db.scorecard's hit_rate/CLV feed model_health's graded_props/hit_rate_vs_close card —
+    same blending risk as stat_gammas/prob_calibration/interval_width/stat_biases above, since
+    nfl_regular and nfl_preseason share sport="NFL"."""
+    import db as _db
+    import tempfile, os
+    rows = []
+    for i in range(80):
+        # regular: model's pick_over always agrees with the close-vs-line outcome -> hit_rate 1.0
+        rows.append({"sport": "NFL", "player": f"P{i}", "stat_type": "Rec Yards",
+                     "game_date": f"2026-08-{(i % 28) + 1:02d}", "close_line": 40.5,
+                     "close_proj": 45.0, "model_raw_prob": 0.9, "actual": 50.0,
+                     "open_line": 40.5, "open_proj": 45.0, "proj_kind": "nfl_regular"})
+        # preseason: model's pick_over always disagrees -> hit_rate 0.0
+        rows.append({"sport": "NFL", "player": f"Q{i}", "stat_type": "Rec Yards",
+                     "game_date": f"2026-08-{(i % 28) + 1:02d}", "close_line": 40.5,
+                     "close_proj": 45.0, "model_raw_prob": 0.9, "actual": 30.0,
+                     "open_line": 40.5, "open_proj": 45.0, "proj_kind": "nfl_preseason"})
+    orig = _db.DB_PATH
+    tmp = tempfile.mkdtemp()
+    try:
+        _db.DB_PATH = os.path.join(tmp, "t.db")
+        _db.init_db()
+        _insert(_db, rows)
+        c_all = _db.scorecard("NFL")
+        c_reg = _db.scorecard("NFL", proj_kind="nfl_regular")
+        c_pre = _db.scorecard("NFL", proj_kind="nfl_preseason")
+        assert c_reg["graded"] == 80 and c_pre["graded"] == 80
+        assert c_reg["hit_rate"] == 1.0
+        assert c_pre["hit_rate"] == 0.0
+        assert c_all["graded"] == 160 and 0.4 < c_all["hit_rate"] < 0.6
+    finally:
+        _db.DB_PATH = orig

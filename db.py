@@ -566,17 +566,24 @@ def set_actual(line_id: str, game_date: str, actual: float | None, graded_at: st
         c.commit()
 
 
-def scorecard(sport: str | None = None, edge: float = 0.5) -> dict:
+def scorecard(sport: str | None = None, edge: float = 0.5,
+              proj_kind: str | None = None) -> dict:
     """
     Aggregate the graded ledger into the numbers that matter:
       • hit-rate of the model's side vs the CLOSING line (pushes excluded),
       • the subset where the model had a real lean (|proj−line| ≥ edge) — the "plays",
       • CLV: how often / how much the line moved toward the model after we first saw it.
+
+    `proj_kind` (default None = no filter) additionally scopes to one proj_kind value — see
+    stat_gammas's docstring. Needed for NFL: without it, graded_props/hit_rate/CLV here blend
+    nfl_regular and nfl_preseason under the shared sport="NFL".
     """
     q = "SELECT * FROM prop_clv WHERE actual IS NOT NULL"
     args: list[Any] = []
     if sport:
         q += " AND sport = ?"; args.append(sport)
+    if proj_kind is not None:
+        q += " AND proj_kind = ?"; args.append(proj_kind)
     with _lock, _conn() as c:
         rows = [dict(r) for r in c.execute(q, args).fetchall()]
 
