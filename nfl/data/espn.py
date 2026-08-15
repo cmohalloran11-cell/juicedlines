@@ -9,19 +9,30 @@ face (observed live 2026-08 on a recently-signed player) — ESPN's roster endpo
 real per-athlete headshot URL, so it's used as the authoritative source for both, with the
 book's own image kept only as a fallback when no ESPN match is found (never blanked for a
 player we simply couldn't match).
+
+Caching: goes through nfl.data.cache.fetch_text (disk-backed), NOT a bare in-process dict.
+Found live 2026-08: an in-process-only cache here (the first version of this module) meant
+every fresh `python build_static.py` process -- which is EVERY refresh cycle, since
+refresh.yml spawns a new process each time (see that workflow's `run_cycle`) -- re-fetched
+all 33 ESPN URLs (1 team list + 32 rosters) from scratch, with no cross-cycle memory at all.
+At a ~100s fast-cycle cadence that's roughly 1,000+ ESPN requests/hour from one runner IP,
+which coincided with WNBA's own ESPN-backed projections going silently to zero (0/2423 live
+lines carried a model_proj, with no exception anywhere -- consistent with ESPN rate-limiting
+the shared host and every affected call failing closed). Disk caching (12h for team crests,
+6h for rosters -- these change rarely) cuts that to ~33 requests per cache window instead of
+per cycle, matching the exact problem nfl/data/cache.py's own module docstring describes for
+the nflverse pulls.
 """
 
 from __future__ import annotations
 
+import json
 import time
 import unicodedata
 
-import requests
+from . import cache
 
 _SITE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
-
-_S = requests.Session()
-_S.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
 
 _cache: dict = {}
 
@@ -44,23 +55,22 @@ def _norm_name(s: str) -> str:
 
 
 def _get(url: str, ttl: float = 1800) -> dict | None:
+    """Disk-backed (nfl.data.cache.fetch_text) + a same-process JSON-parse cache on top --
+    see the module docstring for why the disk layer is required, not optional, here."""
     now = time.time()
     hit = _cache.get(url)
     if hit and now - hit[0] < ttl:
         return hit[1]
+    text = cache.fetch_text(url, ttl, timeout=20.0)
     d = None
-    try:
-        resp = _S.get(url, timeout=20)
-        if resp.status_code != 200:
-            print(f"[nfl.espn] {url} -> HTTP {resp.status_code}", flush=True)
-        else:
-            d = resp.json()
-    except Exception as exc:
-        # Found live 2026-08: this used to swallow the exception with no trace at all, so
-        # team_logo/headshot silently stayed unpopulated on the live board with zero signal
-        # anywhere about why -- logged now so a real outage/block is actually diagnosable
-        # instead of looking identical to "nothing tried".
-        print(f"[nfl.espn] {url} -> {type(exc).__name__}: {exc}", flush=True)
+    if text is None:
+        print(f"[nfl.espn] {url} -> fetch_text returned None (network failure or no cached "
+              f"copy — see nfl.data.cache.fetch_text)", flush=True)
+    else:
+        try:
+            d = json.loads(text)
+        except Exception as exc:
+            print(f"[nfl.espn] {url} -> JSON parse failed: {type(exc).__name__}: {exc}", flush=True)
     _cache[url] = (now, d)
     return d
 
