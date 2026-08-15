@@ -48,10 +48,19 @@ def _get(url: str, ttl: float = 1800) -> dict | None:
     hit = _cache.get(url)
     if hit and now - hit[0] < ttl:
         return hit[1]
+    d = None
     try:
-        d = _S.get(url, timeout=20).json()
-    except Exception:
-        d = None
+        resp = _S.get(url, timeout=20)
+        if resp.status_code != 200:
+            print(f"[nfl.espn] {url} -> HTTP {resp.status_code}")
+        else:
+            d = resp.json()
+    except Exception as exc:
+        # Found live 2026-08: this used to swallow the exception with no trace at all, so
+        # team_logo/headshot silently stayed unpopulated on the live board with zero signal
+        # anywhere about why -- logged now so a real outage/block is actually diagnosable
+        # instead of looking identical to "nothing tried".
+        print(f"[nfl.espn] {url} -> {type(exc).__name__}: {exc}")
     _cache[url] = (now, d)
     return d
 
@@ -79,8 +88,8 @@ def team_assets() -> dict:
                 out[_norm_name(tm["abbreviation"])] = rec
             if tm.get("shortDisplayName"):
                 out[_norm_name(tm["shortDisplayName"])] = rec
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[nfl.espn] team_assets parse failed on {type(d)}: {type(exc).__name__}: {exc}")
     _cache[key] = (time.time(), out)
     return out
 
@@ -109,8 +118,8 @@ def roster_headshots(team_id: str) -> dict:
                 href = (a.get("headshot") or {}).get("href")
                 if nm and href:
                     out[_norm_name(nm)] = href
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[nfl.espn] roster_headshots({team_id}) parse failed: {type(exc).__name__}: {exc}")
     _cache[key] = (time.time(), out)
     return out
 
