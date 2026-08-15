@@ -100,6 +100,13 @@ def team_assets() -> dict:
                 out[_norm_name(tm["shortDisplayName"])] = rec
     except Exception as exc:
         print(f"[nfl.espn] team_assets parse failed on {type(d)}: {type(exc).__name__}: {exc}", flush=True)
+    # nflverse (and this repo's own P.norm_team) normalizes the Rams' real abbreviation
+    # "LAR" down to the legacy code "LA" -- see nfl.projections._TEAM_ALIASES's own comment
+    # ("LA is the Rams in nflverse"). ESPN has no team keyed "LA" (it uses the real "LAR"
+    # everywhere, unlike nflverse), so a lookup by the aliased code silently missed the Rams'
+    # crest -- found live 2026-08 (every NFL team's logo populated except the Rams).
+    if "lar" in out and "la" not in out:
+        out["la"] = out["lar"]
     _cache[key] = (time.time(), out)
     return out
 

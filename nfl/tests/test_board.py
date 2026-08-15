@@ -121,6 +121,30 @@ def test_attach_nfl_uses_espn_team_logo_and_overrides_the_books_headshot():
     assert lines[0]["headshot"] == "https://espn.example/headshots/star-receiver.png"
 
 
+def test_espn_team_assets_maps_nflverses_la_alias_to_the_rams(monkeypatch):
+    """nflverse (and this repo's own P.norm_team) normalizes the Rams' real abbreviation
+    "LAR" down to the legacy code "LA" -- but ESPN itself has no team keyed "LA", only
+    "LAR", so a lookup by the aliased code silently missed the Rams' crest. Found live
+    2026-08: every NFL team's logo populated except the Rams. This bypasses
+    set_test_override (which would skip the code under test) and instead fakes the ESPN
+    HTTP layer directly."""
+    import json as _json
+    payload = _json.dumps({"sports": [{"leagues": [{"teams": [
+        {"team": {"id": "14", "abbreviation": "LAR", "displayName": "Los Angeles Rams",
+                  "shortDisplayName": "Rams", "logos": [{"href": "https://espn.example/lar.png"}]}},
+        {"team": {"id": "4", "abbreviation": "CIN", "displayName": "Cincinnati Bengals",
+                  "shortDisplayName": "Bengals", "logos": [{"href": "https://espn.example/cin.png"}]}},
+    ]}]}]})
+    ESPN.set_test_override(None, None)   # let the real team_assets() body run
+    ESPN._cache.clear()
+    monkeypatch.setattr(ESPN.cache, "fetch_text", lambda *a, **k: payload)
+    assets = ESPN.team_assets()
+    ESPN._cache.clear()
+    assert assets["lar"]["logo"] == "https://espn.example/lar.png"
+    assert assets["la"]["logo"] == "https://espn.example/lar.png"
+    assert assets["la"] == assets["lar"]
+
+
 def test_attach_nfl_keeps_the_books_headshot_when_espn_has_no_match():
     """A player ESPN's active roster doesn't (yet) carry must keep the book's own image
     rather than being blanked -- an unmatched name is not evidence the image is wrong."""
