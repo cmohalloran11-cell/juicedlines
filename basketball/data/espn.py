@@ -24,7 +24,22 @@ _SITE = "https://site.api.espn.com/apis/site/v2/sports/{path}"
 _WEB = "https://site.web.api.espn.com/apis/common/v3/sports/{path}"
 
 _S = requests.Session()
-_S.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+# 2026-08: ESPN started returning HTTP 403 on every basketball/wnba endpoint (teams,
+# injuries, scoreboard) while the identical request shape against football/nfl still
+# succeeds -- found live via diagnostic logging, not a code regression here (this file
+# hasn't changed since 2026-08-03). A more complete, real-browser-shaped header set is a
+# low-confidence, low-risk attempt at whatever bot-detection ESPN tightened specifically
+# on this path; the previous bare "Mozilla/5.0" + Accept was already identical to what
+# nfl/data/espn.py sends (which is NOT being blocked), so this may not be the actual
+# differentiator -- needs live verification, not assumed to have fixed it.
+_S.headers.update({
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.espn.com/wnba/",
+    "Origin": "https://www.espn.com",
+})
 
 _POS = {"G": "G", "F": "F", "C": "C", "PG": "G", "SG": "G", "SF": "F", "PF": "F"}
 
