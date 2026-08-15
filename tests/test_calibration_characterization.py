@@ -19,9 +19,9 @@ def _insert(db, rows):
     model_version defaults to the CURRENT provenance version for the row's sport, matching
     what db.py's calibration functions now filter to by default (2026-08 model-version-scoped
     calibration) — so these fixtures stay valid across future version bumps too."""
-    cols = ("line_id", "game_date", "sport", "stat_type", "close_line", "close_proj",
+    cols = ("line_id", "player", "game_date", "sport", "stat_type", "close_line", "close_proj",
             "model_raw", "close_prob", "model_raw_prob", "model_floor", "model_ceiling",
-            "actual", "odds_type", "open_line", "open_proj", "model_version")
+            "actual", "odds_type", "open_line", "open_proj", "model_version", "proj_kind")
     with db._lock, db._conn() as c:
         for i, r in enumerate(rows):
             r = {"line_id": f"L{i}", "game_date": "2026-07-01", "sport": "MLB",
@@ -178,5 +178,110 @@ def test_interval_width_stretches_when_band_undercovers():
         w = _db.interval_width(min_n=300)
         assert w > 1.0, "an undercovering band must be widened"
         assert w <= 3.0, "width is capped at 3.0"
+    finally:
+        _db.DB_PATH = orig
+
+
+# ── proj_kind scoping (2026-08 NFL wiring): nfl_regular/nfl_preseason share sport="NFL" and
+# model_version, so every calibration function must not blend them unless asked to. ──────────
+
+def test_stat_gammas_never_pools_rows_across_proj_kind_by_default():
+    import db as _db
+    import tempfile, os
+    rng = np.random.default_rng(21)
+    n = 2000
+    reg_rows, pre_rows = [], []
+    for _ in range(n):
+        m_minus_l = rng.uniform(-1.5, 1.5)
+        reg_rows.append({"sport": "NFL", "stat_type": "Rec Yards", "close_line": 40.5,
+                         "close_proj": 40.5 + m_minus_l, "model_raw": 40.5 + m_minus_l,
+                         "actual": 40.5 + 0.9 * m_minus_l, "proj_kind": "nfl_regular"})
+        m_minus_l2 = rng.uniform(-1.5, 1.5)
+        pre_rows.append({"sport": "NFL", "stat_type": "Rec Yards", "close_line": 40.5,
+                         "close_proj": 40.5 + m_minus_l2, "model_raw": 40.5 + m_minus_l2,
+                         "actual": 40.5 + 0.1 * m_minus_l2, "proj_kind": "nfl_preseason"})
+    orig = _db.DB_PATH
+    tmp = tempfile.mkdtemp()
+    try:
+        _db.DB_PATH = os.path.join(tmp, "t.db")
+        _db.init_db()
+        _insert(_db, reg_rows + pre_rows)
+        g_all = _db.stat_gammas("NFL", min_n=120)
+        g_reg = _db.stat_gammas("NFL", min_n=120, proj_kind="nfl_regular")
+        g_pre = _db.stat_gammas("NFL", min_n=120, proj_kind="nfl_preseason")
+        # unfiltered call sees both eras blended; the true slopes (0.9 vs 0.1) are far enough
+        # apart that a blend must land clearly between them, not match either pure population.
+        assert g_reg["rec yards"] > 0.75
+        assert g_pre["rec yards"] < 0.35
+        assert g_reg["rec yards"] != g_all["rec yards"]
+        assert g_pre["rec yards"] != g_all["rec yards"]
+    finally:
+        _db.DB_PATH = orig
+
+
+def test_prob_calibration_and_interval_width_respect_proj_kind_filter():
+    import db as _db
+    import tempfile, os
+    rng = np.random.default_rng(23)
+    n = 1500
+    rows = []
+    for _ in range(n):
+        # regular: honestly calibrated + honestly covering band
+        p = float(rng.uniform(0.05, 0.95))
+        y = 1.0 if rng.uniform() < p else 0.0
+        line = 40.5
+        actual = line + (10.0 if y > 0 else -10.0)
+        rows.append({"sport": "NFL", "stat_type": "Rec Yards", "close_line": line,
+                     "actual": actual, "close_prob": p, "model_raw_prob": p,
+                     "model_floor": line - 15, "model_ceiling": line + 15,
+                     "proj_kind": "nfl_regular"})
+        # preseason: badly overconfident + badly undercovering band
+        p2 = float(rng.uniform(0.05, 0.95))
+        true_p2 = 0.5 + (p2 - 0.5) * 0.45
+        y2 = 1.0 if rng.uniform() < true_p2 else 0.0
+        actual2 = line + (10.0 if y2 > 0 else -10.0)
+        rows.append({"sport": "NFL", "stat_type": "Rec Yards", "close_line": line,
+                     "actual": actual2, "close_prob": p2, "model_raw_prob": p2,
+                     "model_floor": line - 2, "model_ceiling": line + 2,
+                     "proj_kind": "nfl_preseason"})
+    orig = _db.DB_PATH
+    tmp = tempfile.mkdtemp()
+    try:
+        _db.DB_PATH = os.path.join(tmp, "t.db")
+        _db.init_db()
+        _insert(_db, rows)
+        cal_reg = _db.prob_calibration("NFL", min_n=400, proj_kind="nfl_regular")
+        cal_pre = _db.prob_calibration("NFL", min_n=400, proj_kind="nfl_preseason")
+        assert cal_reg and 0.8 < cal_reg["a"] < 1.2, "regular season is honestly calibrated"
+        assert cal_pre and cal_pre["a"] < 0.6, "preseason is measurably overconfident"
+
+        w_reg = _db.interval_width("NFL", min_n=300, proj_kind="nfl_regular")
+        w_pre = _db.interval_width("NFL", min_n=300, proj_kind="nfl_preseason")
+        assert w_reg < w_pre, "the undercovering preseason band must stretch more"
+    finally:
+        _db.DB_PATH = orig
+
+
+def test_stat_biases_respects_proj_kind_filter():
+    import db as _db
+    import tempfile, os
+    rows = []
+    for i in range(80):
+        rows.append({"sport": "NFL", "player": f"P{i}", "stat_type": "Rec Yards",
+                     "game_date": f"2026-08-{(i % 28) + 1:02d}", "close_proj": 50.0,
+                     "actual": 45.0, "proj_kind": "nfl_regular"})            # bias +5
+        rows.append({"sport": "NFL", "player": f"Q{i}", "stat_type": "Rec Yards",
+                     "game_date": f"2026-08-{(i % 28) + 1:02d}", "close_proj": 50.0,
+                     "actual": 65.0, "proj_kind": "nfl_preseason"})         # bias -15
+    orig = _db.DB_PATH
+    tmp = tempfile.mkdtemp()
+    try:
+        _db.DB_PATH = os.path.join(tmp, "t.db")
+        _db.init_db()
+        _insert(_db, rows)
+        b_reg = _db.stat_biases("NFL", min_n=60, proj_kind="nfl_regular")
+        b_pre = _db.stat_biases("NFL", min_n=60, proj_kind="nfl_preseason")
+        assert abs(b_reg["rec yards"] - 5.0) < 0.01
+        assert abs(b_pre["rec yards"] - (-15.0)) < 0.01
     finally:
         _db.DB_PATH = orig

@@ -51,11 +51,16 @@ def _opp_by_abbr() -> dict:
 
 _ACCURACY_CACHE: dict = {"t": 0.0, "v": {}}
 _ACCURACY_SPORTS = ("MLB", "WNBA", "Tennis")
+# NFL shares one sport+model_version across two real engines (nfl_regular/nfl_preseason —
+# see db.stat_gammas's proj_kind docstring), so it can't reuse the plain per-sport lookup
+# above without blending a preseason rotation-tier hit rate into a regular-season one.
+_ACCURACY_NFL_PROJ_KINDS = ("nfl_regular", "nfl_preseason")
 
 
 def _accuracy_map() -> dict:
     """{sport: {stat_type_lower: hit_rate}} from the real graded-ledger backtest — the
-    per-stat "Historical Accuracy" shown on a play card. Memoized 10 min (backtest.
+    per-stat "Historical Accuracy" shown on a play card. NFL is additionally keyed
+    {(sport, proj_kind): {...}} for its two engines. Memoized 10 min (backtest.
     current_accuracy scans the ledger, not free to call per-request)."""
     import time as _time
     if _time.time() - _ACCURACY_CACHE["t"] < 600 and _ACCURACY_CACHE["v"]:
@@ -68,6 +73,14 @@ def _accuracy_map() -> dict:
                       if m.get("hit_rate") is not None}
         except Exception:
             out[s] = {}
+    for pk in _ACCURACY_NFL_PROJ_KINDS:
+        try:
+            acc = backtest.current_accuracy("NFL", proj_kind=pk)
+            out[("NFL", pk)] = {st.lower(): m.get("hit_rate")
+                                for st, m in (acc.get("per_stat") or {}).items()
+                                if m.get("hit_rate") is not None}
+        except Exception:
+            out[("NFL", pk)] = {}
     _ACCURACY_CACHE.update(t=_time.time(), v=out)
     return out
 
@@ -77,7 +90,9 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
     rec = valuation.recommend_side(line.get("model_prob"), line)
     acc = None
     if acc_map is not None:
-        acc = (acc_map.get(line.get("sport")) or {}).get((line.get("stat_type") or "").lower())
+        acc_key = ((line.get("sport"), line.get("proj_kind"))
+                  if line.get("sport") == "NFL" else line.get("sport"))
+        acc = (acc_map.get(acc_key) or {}).get((line.get("stat_type") or "").lower())
     return {
         "id": line.get("id"),
         "player": line.get("player"),

@@ -1197,19 +1197,24 @@ def attach_stat_trust(lines: list[dict]) -> None:
     excluded from ranked surfaces for a different reason. MLB-only, same rationale as the
     shrinkage above.
     """
-    by_sport: dict[str, dict] = {}
+    by_sport: dict[tuple, dict] = {}
     losing_mlb: Optional[dict] = None
     for l in lines:
         sport = l.get("sport")
         stat = l.get("stat_type")
         if not sport or not stat:
             continue
-        if sport not in by_sport:
+        # NFL carries two engines (nfl_regular/nfl_preseason) under one sport+model_version —
+        # cache and query per proj_kind so a preseason rotation-tier stat's measured trust
+        # never blends with the regular-season one (see db.stat_gammas's proj_kind docstring).
+        pk = l.get("proj_kind") if sport == "NFL" else None
+        cache_key = (sport, pk)
+        if cache_key not in by_sport:
             try:
-                by_sport[sport] = db.stat_gammas(sport)
+                by_sport[cache_key] = db.stat_gammas(sport, proj_kind=pk)
             except Exception:
-                by_sport[sport] = {}
-        gammas = by_sport[sport]
+                by_sport[cache_key] = {}
+        gammas = by_sport[cache_key]
         gamma = gammas.get(stat.lower(), 0.5)
         l["stat_trust_gamma"] = gamma
 

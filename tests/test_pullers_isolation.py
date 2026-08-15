@@ -75,6 +75,82 @@ def test_fetch_prizepicks_isolates_one_malformed_projection(monkeypatch):
     assert err is not None and "skipped 1" in err
 
 
+# ── NFL sport detection (2026-08 wiring: PrizePicks/Underdog NFL now maps to sport="NFL") ──
+
+def test_pp_league_nfl_maps_to_nfl():
+    assert pullers._sport_from_pp_league("NFL") == "NFL"
+    assert pullers._sport_from_pp_league("nfl") == "NFL"
+
+
+def test_pp_league_nfl_period_subleagues_excluded():
+    for league in ("NFL1H", "NFL1Q", "NFLSZN", "NFL 1H"):
+        assert pullers._sport_from_pp_league(league) == "other"
+
+
+def test_pp_league_cfl_stays_other_not_nfl():
+    # CFL carries no "nfl" substring and has no engine -- must not accidentally match.
+    assert pullers._sport_from_pp_league("CFL") == "other"
+
+
+def test_pp_league_nfl_does_not_regress_other_sports():
+    assert pullers._sport_from_pp_league("MLB") == "MLB"
+    assert pullers._sport_from_pp_league("WNBA") == "WNBA"
+    assert pullers._sport_from_pp_league("MLBSZN2") == "other"
+    assert pullers._sport_from_pp_league("WNBA1Q") == "other"
+    assert pullers._sport_from_pp_league("ATP") == "Tennis"
+
+
+def test_ud_sport_map_nfl():
+    assert pullers._UD_SPORT_MAP.get("NFL") == "NFL"
+    assert pullers._UD_SPORT_MAP.get("CFL") == "other"
+
+
+def test_fetch_prizepicks_resolves_real_nfl_projection_to_sport_nfl(monkeypatch):
+    pullers._pp_result_cache.clear()
+
+    nfl_proj = {
+        "id": "n1", "type": "projection",
+        "attributes": {"stat_type": "Receiving Yards", "line_score": 44.5,
+                       "odds_type": "standard", "description": None,
+                       "start_time": "2026-08-16T17:00:00Z", "status": "pre_game"},
+        "relationships": {
+            "new_player": {"data": {"type": "new_player", "id": "np1"}},
+            "league": {"data": {"type": "league", "id": "lgnfl"}},
+        },
+    }
+    included = [
+        {"type": "new_player", "id": "np1",
+         "attributes": {"display_name": "Justin Jefferson", "team": "MIN",
+                        "position": "WR", "league": "NFL", "image_url": None}},
+        {"type": "league", "id": "lgnfl", "attributes": {"name": "NFL"}},
+    ]
+    payload = {"data": [nfl_proj], "included": included}
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(pullers, "_pp_get", lambda *a, **k: FakeResp())
+
+    lines, err = pullers.fetch_prizepicks()
+    assert err is None
+    assert len(lines) == 1
+    assert lines[0]["sport"] == "NFL"
+    assert lines[0]["player"] == "Justin Jefferson"
+
+
+def test_fetch_underdog_resolves_real_nfl_prop_to_sport_nfl():
+    over = _prop(sport="NFL", stat="receiving_yards", player_name="Justin Jefferson O/U",
+                 choice="over", over_under_id="ounfl1", line_id="lnfl1")
+    under = _prop(sport="NFL", stat="receiving_yards", player_name="Justin Jefferson O/U",
+                  choice="under", over_under_id="ounfl1", line_id="lnfl1")
+    rows, skipped = pullers._ud_dedup([over, under])
+    assert skipped == 0
+    assert len(rows) == 1
+    assert rows[0]["sport"] == "NFL"
+
+
 if __name__ == "__main__":
     for k, fn in list(globals().items()):
         if k.startswith("test_") and callable(fn):
