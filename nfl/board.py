@@ -13,9 +13,10 @@ noise. Preseason is capped well below full trust by construction — the preseas
 tiers are assumptions (see model/rotation.py), so the market gets the LEVEL and the model
 contributes the SHAPE that prices the over/under around it.
 
-SEASON TYPE is resolved per GAME from the schedule, never from the calendar — see
-`resolve_season_type`, and read its docstring before assuming the nflverse schedules release
-carries a "PRE" game_type, because it does not.
+SEASON TYPE is resolved per line, preferring the book's own classification (PrizePicks'
+distinct "NFLP" league code) over schedule-absence inference, and never from the calendar —
+see `resolve_season_type`, and read its docstring before assuming the nflverse schedules
+release carries a "PRE" game_type, because it does not.
 """
 
 from __future__ import annotations
@@ -98,25 +99,40 @@ def _schedule_index(schedule: list[ScheduleGame]) -> dict[tuple, ScheduleGame]:
 def resolve_season_type(line: dict, sched_idx: dict) -> tuple[str, Optional[ScheduleGame], bool]:
     """(season_type, matched game, confirmed) for one line.
 
-    The nflverse `schedules` release publishes REGULAR SEASON AND PLAYOFF games only — 7,548
-    rows across every season it covers, game_type in {REG, WC, DIV, CON, SB}, zero preseason
-    games (verified live 2026-08-15). So there is no "PRE" value to read, and the preseason
-    determination is made the only way real data supports: a game between two NFL teams that
-    does NOT appear in the authoritative regular-and-postseason schedule is by construction
-    not a regular-season game. That is an inference from the schedule, not from the calendar.
+    Preference order:
+    1. `line["book_season_type"]` — a real, book-published classification (PrizePicks tags
+       preseason props under a DISTINCT league code, "NFLP", separate from "NFL" — see
+       pullers._pp_nfl_season_type; confirmed live 2026-08). When present this is trusted
+       outright (`confirmed=True`), including overriding a schedule match/non-match, because
+       it's the book's own real data, not something derived here.
+    2. Schedule-absence inference, for lines with no book hint (Underdog, or any PrizePicks
+       league string _pp_nfl_season_type doesn't recognize). The nflverse `schedules` release
+       publishes REGULAR SEASON AND PLAYOFF games only — 7,548 rows across every season it
+       covers, game_type in {REG, WC, DIV, CON, SB}, zero preseason games (verified live
+       2026-08-15). So there is no "PRE" value to read, and the determination is made the
+       only way real data supports: a game between two NFL teams that does NOT appear in the
+       authoritative regular-and-postseason schedule is by construction not a regular-season
+       game. That is an inference from the schedule, not from the calendar.
 
-    `confirmed` is False for that absence-based inference and True when a schedule row was
-    matched outright, so a caller can tell a read-off-the-schedule answer from a deduced one.
-    When the line carries no usable date or team at all, the season type can't be resolved and
-    the caller gets ("preseason", None, False) — the wider, lower-confidence of the two models,
-    which is the right way to be wrong about an unknown game.
+    `confirmed` is False only for that absence-based inference; True whenever the season type
+    came from either a book classification or an outright schedule match, so a caller can
+    tell a real answer from a deduced one. When the line carries no usable date or team at
+    all and no book hint, the caller gets ("preseason", None, False) — the wider, lower-
+    confidence of the two models, which is the right way to be wrong about an unknown game.
     """
     team = P.norm_team(line.get("team"))
     start = line.get("start_time") or ""
     day = start[:10] if len(start) >= 10 else None
+    game = sched_idx.get((day, team)) if (team and day) else None
+
+    book = line.get("book_season_type")
+    if book == "preseason":
+        return "preseason", None, True
+    if book == "regular":
+        return "regular", game, True
+
     if not team or not day:
         return "preseason", None, False
-    game = sched_idx.get((day, team))
     if game is not None:
         return "regular", game, True
     return "preseason", None, False

@@ -101,7 +101,9 @@ def _sport_from_pp_league(league: str | None) -> str:
     # NFL — exclude period/half/quarter/season-long sub-leagues (NFL1H, NFL1Q, NFLSZN…) the
     # same way WNBA does above: those carry a partial-game or rest-of-season stat_type the
     # full-game model would misproject against. CFL is a distinct league key (no "nfl"
-    # substring) and stays mapped to "other" — no CFL engine exists.
+    # substring) and stays mapped to "other" — no CFL engine exists. NFLP (PrizePicks'
+    # distinct preseason league code) IS wanted — same "nfl" substring, handled below by
+    # _pp_nfl_season_type, not excluded here.
     if "nfl" in l:
         return "other" if any(t in l for t in _period) else "NFL"
     # Guard against leagues that share a token (e.g. "EUROGOLF", regular-season NBA).
@@ -113,6 +115,25 @@ def _sport_from_pp_league(league: str | None) -> str:
         # "Home Runs" line is 15.5+ over the remaining games — nonsense as a game prop).
         return "other" if any(t in l for t in _period) else "MLB"
     return "other"
+
+
+def _pp_nfl_season_type(league: str | None) -> str | None:
+    """PrizePicks tags NFL preseason props under a DISTINCT league code, "NFLP" (confirmed
+    live 2026-08), separate from "NFL" for the regular season — a real, book-published
+    classification, not a guess. nfl.board.resolve_season_type prefers this over its own
+    schedule-absence inference when present (see that function's docstring for why the
+    inference exists at all: no free data source publishes a preseason schedule to match
+    against directly). Only meaningful for sport=="NFL" lines; None means "no book signal,
+    fall back to inference" — covers Underdog, which has no confirmed equivalent distinct
+    code yet, and any PrizePicks league string this doesn't recognize."""
+    if not league:
+        return None
+    l = league.strip().lower()
+    if "nflp" in l or "nfl preseason" in l:
+        return "preseason"
+    if "nfl" in l:
+        return "regular"
+    return None
 
 
 def _american_to_implied(price: str | None) -> float | None:
@@ -379,6 +400,10 @@ def _pp_line(proj: dict, idx: dict) -> dict[str, Any]:
         "pickem_price": _PP_PICKEM_AMERICAN if (attr.get("odds_type") or "standard") == "standard" else None,
         "headshot": pa.get("image_url"),      # PrizePicks ships a player headshot
         "country": None,
+        # NFLP vs NFL is PrizePicks' own real league classification — nfl.board trusts this
+        # over its own schedule-absence inference when present. None for every other sport
+        # (and for Underdog, which has no confirmed distinct preseason code).
+        "book_season_type": _pp_nfl_season_type(league_name) if sport == "NFL" else None,
         "meta": {
             "player_id": pl.get("id"),
             "league": league_name,

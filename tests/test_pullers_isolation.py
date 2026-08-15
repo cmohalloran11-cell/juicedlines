@@ -105,6 +105,133 @@ def test_ud_sport_map_nfl():
     assert pullers._UD_SPORT_MAP.get("CFL") == "other"
 
 
+# ── NFLP (PrizePicks' distinct preseason league code) — confirmed live 2026-08 ──────────
+
+def test_pp_league_nflp_maps_to_sport_nfl():
+    # NFLP still carries the "nfl" substring -- sport detection is unaffected; only the
+    # season-type signal (_pp_nfl_season_type) differs.
+    assert pullers._sport_from_pp_league("NFLP") == "NFL"
+    assert pullers._sport_from_pp_league("nflp") == "NFL"
+
+
+def test_pp_nfl_season_type():
+    assert pullers._pp_nfl_season_type("NFLP") == "preseason"
+    assert pullers._pp_nfl_season_type("nflp") == "preseason"
+    assert pullers._pp_nfl_season_type("NFL Preseason") == "preseason"
+    assert pullers._pp_nfl_season_type("NFL") == "regular"
+    assert pullers._pp_nfl_season_type("nfl") == "regular"
+    assert pullers._pp_nfl_season_type("MLB") is None
+    assert pullers._pp_nfl_season_type(None) is None
+
+
+def test_fetch_prizepicks_tags_nflp_lines_with_book_season_type_preseason(monkeypatch):
+    pullers._pp_result_cache.clear()
+
+    proj = {
+        "id": "n2", "type": "projection",
+        "attributes": {"stat_type": "Receiving Yards", "line_score": 22.5,
+                       "odds_type": "standard", "description": None,
+                       "start_time": "2026-08-16T17:00:00Z", "status": "pre_game"},
+        "relationships": {
+            "new_player": {"data": {"type": "new_player", "id": "np2"}},
+            "league": {"data": {"type": "league", "id": "lgnflp"}},
+        },
+    }
+    included = [
+        {"type": "new_player", "id": "np2",
+         "attributes": {"display_name": "Rookie Receiver", "team": "CIN",
+                        "position": "WR", "league": "NFLP", "image_url": None}},
+        {"type": "league", "id": "lgnflp", "attributes": {"name": "NFLP"}},
+    ]
+    payload = {"data": [proj], "included": included}
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(pullers, "_pp_get", lambda *a, **k: FakeResp())
+    lines, err = pullers.fetch_prizepicks()
+    assert err is None
+    assert len(lines) == 1
+    assert lines[0]["sport"] == "NFL"
+    assert lines[0]["book_season_type"] == "preseason"
+
+
+def test_fetch_prizepicks_plain_nfl_lines_get_book_season_type_regular(monkeypatch):
+    pullers._pp_result_cache.clear()
+
+    proj = {
+        "id": "n3", "type": "projection",
+        "attributes": {"stat_type": "Rush Yards", "line_score": 55.5,
+                       "odds_type": "standard", "description": None,
+                       "start_time": "2026-09-13T17:00:00Z", "status": "pre_game"},
+        "relationships": {
+            "new_player": {"data": {"type": "new_player", "id": "np3"}},
+            "league": {"data": {"type": "league", "id": "lgnfl2"}},
+        },
+    }
+    included = [
+        {"type": "new_player", "id": "np3",
+         "attributes": {"display_name": "Starting Back", "team": "CIN",
+                        "position": "RB", "league": "NFL", "image_url": None}},
+        {"type": "league", "id": "lgnfl2", "attributes": {"name": "NFL"}},
+    ]
+    payload = {"data": [proj], "included": included}
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(pullers, "_pp_get", lambda *a, **k: FakeResp())
+    lines, err = pullers.fetch_prizepicks()
+    assert err is None
+    assert lines[0]["book_season_type"] == "regular"
+
+
+def test_book_season_type_absent_on_underdog_lines():
+    # book_season_type is a PrizePicks-only signal (Underdog has no confirmed distinct
+    # preseason league code yet) -- must never be fabricated for an Underdog line.
+    over = _prop(sport="MLB", stat="hits", player_name="Someone O/U",
+                 choice="over", over_under_id="oumlb9", line_id="lmlb9")
+    lines, _ = pullers._ud_dedup([over])
+    assert "book_season_type" not in lines[0]
+
+
+def test_book_season_type_none_for_pp_non_nfl_sport(monkeypatch):
+    pullers._pp_result_cache.clear()
+
+    proj = {
+        "id": "n4", "type": "projection",
+        "attributes": {"stat_type": "Hits", "line_score": 1.5,
+                       "odds_type": "standard", "description": None,
+                       "start_time": "2026-08-16T17:00:00Z", "status": "pre_game"},
+        "relationships": {
+            "new_player": {"data": {"type": "new_player", "id": "np4"}},
+            "league": {"data": {"type": "league", "id": "lgmlb"}},
+        },
+    }
+    included = [
+        {"type": "new_player", "id": "np4",
+         "attributes": {"display_name": "Some Hitter", "team": "NYY",
+                        "position": "OF", "league": "MLB", "image_url": None}},
+        {"type": "league", "id": "lgmlb", "attributes": {"name": "MLB"}},
+    ]
+    payload = {"data": [proj], "included": included}
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(pullers, "_pp_get", lambda *a, **k: FakeResp())
+    lines, err = pullers.fetch_prizepicks()
+    assert err is None
+    assert lines[0]["sport"] == "MLB"
+    assert lines[0]["book_season_type"] is None
+
+
 def test_fetch_prizepicks_resolves_real_nfl_projection_to_sport_nfl(monkeypatch):
     pullers._pp_result_cache.clear()
 

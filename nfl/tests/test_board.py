@@ -182,6 +182,46 @@ def test_preseason_lines_are_tagged_separately_and_trusted_less():
     assert pull(pre[0]) < pull(reg[0])
 
 
+# ── book_season_type (PrizePicks' NFLP league code) — confirmed live 2026-08 ────────────
+
+def test_resolve_season_type_trusts_book_preseason_hint_over_a_real_schedule_match():
+    """PrizePicks' own NFLP classification (pullers._pp_nfl_season_type) must win even when
+    our OWN schedule lookup would otherwise resolve the game as regular season -- the book's
+    real classification is more trustworthy than our absence-based inference, not less."""
+    game = F.game(home="CIN", away="CLE", gameday="2026-09-13")
+    idx = B._schedule_index([game])
+    line = F.line(stat="Receiving Yards", value=72.5, team="CIN",
+                  start="2026-09-13T17:00:00Z", book_season_type="preseason")
+    season_type, matched_game, confirmed = B.resolve_season_type(line, idx)
+    assert season_type == "preseason"
+    assert matched_game is None
+    assert confirmed is True
+
+
+def test_resolve_season_type_trusts_book_regular_hint_even_with_no_schedule_match():
+    """The book saying "NFL" (regular) must be trusted even if our schedule lookup fails to
+    match (e.g. a team-alias/date edge case) -- better a real book classification with no
+    environment enrichment than a wrongly-inferred preseason label."""
+    idx = B._schedule_index([])   # no games at all -- lookup will find nothing
+    line = F.line(stat="Receiving Yards", value=72.5, team="CIN",
+                  start="2026-09-13T17:00:00Z", book_season_type="regular")
+    season_type, matched_game, confirmed = B.resolve_season_type(line, idx)
+    assert season_type == "regular"
+    assert matched_game is None
+    assert confirmed is True
+
+
+def test_resolve_season_type_falls_back_to_inference_with_no_book_hint():
+    """Unchanged behavior for lines with no book_season_type (Underdog, or any PrizePicks
+    league string the detector doesn't recognize) -- still infers from schedule presence."""
+    game = F.game(home="CIN", away="CLE", gameday="2026-09-13")
+    idx = B._schedule_index([game])
+    matched = F.line(stat="Receiving Yards", value=72.5, team="CIN", start="2026-09-13T17:00:00Z")
+    assert B.resolve_season_type(matched, idx) == ("regular", game, True)
+    unmatched = F.line(stat="Receiving Yards", value=72.5, team="CIN", start="2026-08-16T17:00:00Z")
+    assert B.resolve_season_type(unmatched, idx) == ("preseason", None, False)
+
+
 def test_a_thin_sample_defers_to_the_market_line_instead_of_shipping_a_noisy_edge():
     weeks, snaps = F.full_season("Rookie WR", "WR", "CIN", n=1, offense_pct=0.30,
                                  targets=14.0, receptions=11.0, rec_yards=180.0)
