@@ -152,7 +152,11 @@ def kelly_fraction(model_prob: float, line: dict[str, Any], cap: float = 0.25) -
 # entire time on the board — a genuine bug, not a deliberate demotion. "model" (MLB's
 # empirical-average fallback) and "market" (tennis fully deferred to the market line, no real
 # model call) correctly stay at the lower 0.5 — they aren't full simulations.
-_FULL_ENGINE_KINDS = frozenset({"engine", "basketball", "tennis"})
+# 2026-08: NFL ships two kinds rather than one — "nfl_regular" and "nfl_preseason" — because
+# the two are genuinely different models (a preseason projection's playing time comes from
+# rotation tiers, not from the player's own snap history), and a calibration query must be
+# able to separate them. Both ARE full Monte Carlo runs, so both belong here.
+_FULL_ENGINE_KINDS = frozenset({"engine", "basketball", "tennis", "nfl_regular", "nfl_preseason"})
 
 
 def confidence_score(line: dict[str, Any]) -> int:

@@ -1717,6 +1717,14 @@ def attach_projections(lines: list[dict]) -> dict[str, str]:
         sub_errors["basketball"] = str(exc)
         print(f"[basketball] attach failed: {exc}")
 
+    # nfl: opportunity x efficiency Monte Carlo on live NFL prop lines (regular + preseason)
+    try:
+        from nfl.board import attach_nfl
+        attach_nfl(lines)
+    except Exception as exc:
+        sub_errors["nfl"] = str(exc)
+        print(f"[nfl] attach failed: {exc}")
+
     # Reproducibility: stamp model/feature/sim versions + data snapshot onto every
     # projected line (and mirror the ledger-persisted subset as flat fields). Runs last
     # so it covers all sports' projections in one pass. See provenance.stamp_lines.
@@ -1742,6 +1750,9 @@ def analyze(line: dict) -> dict:
         if sport == "Tennis":
             from tennis.analytics import analyze as _tennis
             return _tennis(line)
+        if sport == "NFL":
+            from nfl.analytics import analyze as _nfl
+            return _nfl(line)
     except Exception as exc:
         return {"available": False, "reason": f"analytics error: {exc}"}
     return {"available": False, "reason": f"No analytics wired for {sport} yet."}

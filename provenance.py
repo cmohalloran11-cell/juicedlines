@@ -62,6 +62,16 @@ MODEL_VERSIONS: dict[str, str] = {
     # calibration history for a narrow-effect change. This bump covers the two materially
     # broader changes above. Approved for production baseline 2026-08.
     "WNBA": "wnba-1.1.0",
+    # 1.0.0 (2026-08): NEW engine, not a bump of an existing one — nothing to orphan, no
+    # calibration history to blend, so this entry costs nothing to add. Per-snap opportunity x
+    # per-attempt efficiency, both empirical-Bayes shrunk toward positional priors measured
+    # from the league (config priors and shrinkage k are holdout-fitted on 2022-2025, not
+    # chosen), scaled by a sampled playing-time distribution and simulated with two-stage
+    # uncertainty. Regular season and preseason are separate models sharing the data layer and
+    # the simulator; they are tagged proj_kind "nfl_regular" vs "nfl_preseason" specifically so
+    # a calibration query can never blend a projection built on measured snap history with one
+    # built on assumed preseason rotation tiers.
+    "NFL": "nfl-1.0.0",
 }
 _DEFAULT_MODEL_VERSION = "1.0.0"
 
@@ -107,6 +117,25 @@ MODEL_CHANGELOG: dict[str, list[dict]] = {
                     "regression to the mean) shipped before this version bump and was "
                     "deliberately left unbumped on its own -- narrow effect, didn't "
                     "justify discarding ~6,790 rows of still-valid calibration history."},
+    ],
+    "NFL": [
+        {"version": "nfl-1.0.0", "date": "2026-08",
+         "summary": "Initial NFL engine (regular season + preseason). Opportunity and "
+                    "efficiency are fitted separately -- per-snap carries/targets/pass "
+                    "attempts, and per-attempt yards/catch rate/completion rate -- each "
+                    "empirical-Bayes shrunk toward a positional prior measured across the "
+                    "league, with the shrinkage strength holdout-fitted on 2022-2025 nflverse "
+                    "data rather than chosen. Playing time is a sampled Beta distribution "
+                    "whose concentration scales with how much real snap history exists. "
+                    "Preseason is a SEPARATE model: rotation tiers from the depth chart drive "
+                    "playing time, because no data source publishes preseason snap counts -- "
+                    "those tier shapes are labelled assumptions, preseason confidence is "
+                    "structurally low, and the board market-anchors accordingly. Simulation "
+                    "is two-stage (per-trial parameter draw before the outcome draw) with "
+                    "Poisson counts, beta-binomial conversions and Gamma yards -- each family "
+                    "chosen against a measured fit, not defaulted to Normal. Tagged "
+                    "proj_kind nfl_regular / nfl_preseason so the two never blend in a "
+                    "calibration query."},
     ],
 }
 

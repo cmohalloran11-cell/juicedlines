@@ -18,7 +18,7 @@ import db
 import provenance
 import backtest
 
-_SPORTS = ("MLB", "WNBA", "Tennis")
+_SPORTS = ("MLB", "WNBA", "Tennis", "NFL")
 
 # 2026-08 (production-readiness audit): every function in this module does several full
 # scans of the graded CLV ledger (db.py's stat_gammas/prob_calibration/interval_width/
@@ -77,12 +77,12 @@ def _interpret_prob_cal(cal: dict) -> Optional[str]:
     return f"well-calibrated (Platt slope {a}≈1)"
 
 
-def _sport_health(sport: str) -> dict:
+def _sport_health(sport: str, proj_kind: str | None = None) -> dict:
     card = db.scorecard(sport)
-    gammas = db.stat_gammas(sport)
-    prob_cal = db.prob_calibration(sport)
-    width = db.interval_width(sport)
-    biases = db.stat_biases(sport)
+    gammas = db.stat_gammas(sport, proj_kind=proj_kind)
+    prob_cal = db.prob_calibration(sport, proj_kind=proj_kind)
+    width = db.interval_width(sport, proj_kind=proj_kind)
+    biases = db.stat_biases(sport, proj_kind=proj_kind)
 
     # Highest- and lowest-trust stats (γ = how much the model beats the line, per stat).
     ranked = sorted(gammas.items(), key=lambda kv: kv[1], reverse=True)
@@ -122,15 +122,17 @@ def _sport_health(sport: str) -> dict:
     }
 
 
-def health(sport: Optional[str] = None) -> dict:
-    """Public model-health report. One sport, or all when sport is None. Cached (_TTL) —
-    see the module-level comment on why."""
+def health(sport: Optional[str] = None, proj_kind: str | None = None) -> dict:
+    """Public model-health report. One sport, or all when sport is None. `proj_kind`
+    (default None = no filter) scopes to one proj_kind — e.g. "nfl_preseason" vs
+    "nfl_regular" — see db.stat_gammas's docstring; only meaningful combined with a
+    specific `sport`. Cached (_TTL) — see the module-level comment on why."""
     def _compute() -> dict:
         sports = [sport] if sport else list(_SPORTS)
         reports = {}
         for s in sports:
             try:
-                reports[s] = _sport_health(s)
+                reports[s] = _sport_health(s, proj_kind=proj_kind)
             except Exception as exc:  # a sport with no ledger rows shouldn't break the report
                 reports[s] = {"sport": s, "error": str(exc)}
         return {
@@ -141,26 +143,28 @@ def health(sport: Optional[str] = None) -> dict:
                 "Projections are transparent statistical estimates, not guarantees. Metrics "
                 "are measured from graded historical outcomes vs the closing line."),
         }
-    return _cached(f"health:{sport or 'all'}", _compute)
+    return _cached(f"health:{sport or 'all'}:{proj_kind or 'all'}", _compute)
 
 
-def calibration_detail(sport: str = "MLB") -> dict:
+def calibration_detail(sport: str = "MLB", proj_kind: str | None = None) -> dict:
     """Full calibration stack for one sport — the AdminOS calibration dashboard (Ch 342-343).
     Same underlying data as the public report but with every per-stat number, unsummarized.
-    Cached (_TTL)."""
+    `proj_kind` (default None = no filter) scopes to one proj_kind — see health()'s
+    docstring. Cached (_TTL)."""
     def _compute() -> dict:
         return {
             "sport": sport,
-            "per_stat_trust_gamma": db.stat_gammas(sport),
-            "per_stat_bias": db.stat_biases(sport),
-            "probability_platt": db.prob_calibration(sport),
-            "interval_widening_factor": db.interval_width(sport),
+            "proj_kind": proj_kind,
+            "per_stat_trust_gamma": db.stat_gammas(sport, proj_kind=proj_kind),
+            "per_stat_bias": db.stat_biases(sport, proj_kind=proj_kind),
+            "probability_platt": db.prob_calibration(sport, proj_kind=proj_kind),
+            "interval_widening_factor": db.interval_width(sport, proj_kind=proj_kind),
             "scorecard": db.scorecard(sport),
-            "diagnostics": backtest.diagnostics(sport),
-            "drift": backtest.drift(sport),
-            "accuracy_by_model_version": backtest.version_history(sport),
+            "diagnostics": backtest.diagnostics(sport, proj_kind=proj_kind),
+            "drift": backtest.drift(sport, proj_kind=proj_kind),
+            "accuracy_by_model_version": backtest.version_history(sport, proj_kind=proj_kind),
         }
-    return _cached(f"calibration_detail:{sport}", _compute)
+    return _cached(f"calibration_detail:{sport}:{proj_kind or 'all'}", _compute)
 
 
 # ── Model Health dashboard (self-monitoring surface) ───────────────────────────
@@ -198,7 +202,7 @@ def dashboard_summary() -> dict:
     return _cached("dashboard_summary", _compute)
 
 
-def dashboard_detail(sport: str = "MLB") -> dict:
+def dashboard_detail(sport: str = "MLB", proj_kind: str | None = None) -> dict:
     """The full self-monitoring bundle for one sport: current accuracy (overall +
     per-stat), reliability diagram, interval coverage, drift (sport-wide + per-stat),
     accuracy by player-sample-depth (archetype), accuracy by model version, the version
@@ -206,25 +210,28 @@ def dashboard_detail(sport: str = "MLB") -> dict:
     (backtest.record_run, once/day per sport — see main.py's maintenance loop) for
     trend charts. Every field answers one of: is it improving? is it getting worse?
     which markets perform best/worst? which archetypes perform worst? which stats are
-    drifting? what changed, and did it help? Cached (_TTL) — this alone was measured at
-    ~2.5s uncached."""
+    drifting? what changed, and did it help? `proj_kind` (default None = no filter)
+    scopes to one proj_kind — see health()'s docstring; e.g. "NFL" with proj_kind=
+    "nfl_regular" vs "nfl_preseason" gives the two season types' own dashboards rather
+    than a blend. Cached (_TTL) — this alone was measured at ~2.5s uncached."""
     def _compute() -> dict:
         try:
-            accuracy = backtest.current_accuracy(sport)
+            accuracy = backtest.current_accuracy(sport, proj_kind=proj_kind)
         except Exception as exc:
             return {"sport": sport, "error": str(exc)}
         return {
             "sport": sport,
+            "proj_kind": proj_kind,
             "model_version": provenance.model_version(sport),
             "generated_at": provenance.now_iso(),
             "accuracy": accuracy,
-            "reliability_diagram": backtest.reliability_diagram(sport),
-            "drift": backtest.drift(sport),
-            "drift_by_stat": backtest.drift_by_stat(sport),
-            "by_sample_depth": backtest.by_sample_depth(sport),
-            "accuracy_by_model_version": backtest.version_history(sport),
+            "reliability_diagram": backtest.reliability_diagram(sport, proj_kind=proj_kind),
+            "drift": backtest.drift(sport, proj_kind=proj_kind),
+            "drift_by_stat": backtest.drift_by_stat(sport, proj_kind=proj_kind),
+            "by_sample_depth": backtest.by_sample_depth(sport, proj_kind=proj_kind),
+            "accuracy_by_model_version": backtest.version_history(sport, proj_kind=proj_kind),
             "changelog": provenance.changelog(sport).get(sport, []),
             "snapshot_history": backtest.registry(sport, limit=90),
-            "diagnostics": backtest.diagnostics(sport),
+            "diagnostics": backtest.diagnostics(sport, proj_kind=proj_kind),
         }
-    return _cached(f"dashboard_detail:{sport}", _compute)
+    return _cached(f"dashboard_detail:{sport}:{proj_kind or 'all'}", _compute)

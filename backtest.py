@@ -30,7 +30,8 @@ _TARGET_COVERAGE = 0.80
 # ── ledger access ─────────────────────────────────────────────────────────────
 
 def _ledger_rows(sport: str, stat: Optional[str] = None,
-                 model_version: str | None = None, all_versions: bool = False) -> list[dict]:
+                 model_version: str | None = None, all_versions: bool = False,
+                 proj_kind: str | None = None) -> list[dict]:
     """Graded, standard-odds prop rows, deduped to one per (player, stat, game_date).
 
     Scoped to `model_version` by default (current version for this sport, per
@@ -40,7 +41,12 @@ def _ledger_rows(sport: str, stat: Optional[str] = None,
     computed here attributable to the CURRENT model, not a blend of pre- and post-change
     eras that would mask a regression or fake an improvement. Pass `all_versions=True`
     explicitly (e.g. for a long-horizon registry view) to intentionally pool across
-    versions; a bare, unscoped read of the full ledger is never the default."""
+    versions; a bare, unscoped read of the full ledger is never the default.
+
+    `proj_kind` (default None = no filter) additionally scopes to one proj_kind, e.g.
+    "nfl_regular" vs "nfl_preseason" — two engines that share `sport`="NFL" and the same
+    `model_version` but must not have their measured accuracy pooled by default (see
+    db.py's stat_gammas docstring for the same reasoning)."""
     q = ("SELECT player, stat_type, game_date, close_line AS L, close_proj AS P, "
          "actual AS Y, COALESCE(model_raw_prob, close_prob) AS RP, "
          "model_floor AS FL, model_ceiling AS CE, proj_kind AS PK, source AS SRC, "
@@ -56,6 +62,9 @@ def _ledger_rows(sport: str, stat: Optional[str] = None,
         mv = model_version if model_version is not None else provenance.model_version(sport)
         q += " AND model_version=?"
         args.append(mv)
+    if proj_kind is not None:
+        q += " AND proj_kind=?"
+        args.append(proj_kind)
     with db._lock, db._conn() as c:
         rows = [dict(r) for r in c.execute(q, args).fetchall()]
     seen: dict = {}
@@ -139,12 +148,16 @@ def metrics(pairs: list[dict]) -> dict:
 
 
 def current_accuracy(sport: str = "MLB", min_n: int = 50,
-                     model_version: str | None = None) -> dict:
+                     model_version: str | None = None,
+                     proj_kind: str | None = None) -> dict:
     """Live model's measured accuracy from the ledger — the baseline. Overall + per-stat.
     Scoped to `model_version` (default: current) so a deliberate engine change can't have
-    its accuracy quietly averaged with the era before the change — see _ledger_rows."""
+    its accuracy quietly averaged with the era before the change — see _ledger_rows.
+    `proj_kind` (default None = no filter) additionally scopes to one proj_kind, e.g.
+    `current_accuracy("NFL", proj_kind="nfl_preseason")` vs `"nfl_regular"` — see
+    _ledger_rows's docstring."""
     mv = model_version if model_version is not None else provenance.model_version(sport)
-    rows = _ledger_rows(sport, model_version=mv)
+    rows = _ledger_rows(sport, model_version=mv, proj_kind=proj_kind)
     overall = metrics(rows)
     by_stat: dict = {}
     for r in rows:
@@ -154,7 +167,7 @@ def current_accuracy(sport: str = "MLB", min_n: int = 50,
     ranked = sorted(((s, m) for s, m in per_stat.items()),
                     key=lambda kv: kv[1].get("mae", 0), reverse=True)
     return {
-        "sport": sport, "model_version": mv,
+        "sport": sport, "model_version": mv, "proj_kind": proj_kind,
         "source": "graded ledger (recorded projections vs actuals)",
         "overall": overall,
         "per_stat": per_stat,
@@ -165,13 +178,14 @@ def current_accuracy(sport: str = "MLB", min_n: int = 50,
 
 
 def reliability_diagram(sport: str = "MLB", stat: Optional[str] = None,
-                        n_buckets: int = 10) -> dict:
+                        n_buckets: int = 10, proj_kind: str | None = None) -> dict:
     """The full reliability-diagram data for one sport (optionally one stat): predicted
     P(over) vs realized frequency per bucket, plus Brier/ECE over the same population.
     This is the direct answer to "are the probabilities actually calibrated" — a
     well-calibrated model's buckets sit on the y=x diagonal; systematic over/under-
-    confidence shows up as buckets bowing above or below it."""
-    rows = _ledger_rows(sport, stat=stat)
+    confidence shows up as buckets bowing above or below it. `proj_kind` (default None)
+    scopes to one proj_kind — see _ledger_rows's docstring."""
+    rows = _ledger_rows(sport, stat=stat, proj_kind=proj_kind)
     probs = _prob_outcome_pairs(rows)
     if len(probs) < 50:
         return {"sport": sport, "stat": stat, "status": "insufficient_data", "n": len(probs)}
@@ -185,14 +199,16 @@ def reliability_diagram(sport: str = "MLB", stat: Optional[str] = None,
     }
 
 
-def by_sample_depth(sport: str = "MLB", min_n: int = 30) -> dict:
+def by_sample_depth(sport: str = "MLB", min_n: int = 30,
+                    proj_kind: str | None = None) -> dict:
     """Accuracy broken out by how much real history backed each projection at grading
     time (model_n — games/PA/BF of evidence, already logged on every row, see db.py's
     schema comment). This is the honest, MEASURED answer to "which player archetypes
     perform worst" — thin-sample rookies/call-ups/injury-returns vs deep-sample
     established regulars — without inventing a role/position taxonomy the ledger
-    doesn't actually carry."""
-    rows = [r for r in _ledger_rows(sport) if r.get("N") is not None]
+    doesn't actually carry. `proj_kind` (default None) scopes to one proj_kind — see
+    _ledger_rows's docstring."""
+    rows = [r for r in _ledger_rows(sport, proj_kind=proj_kind) if r.get("N") is not None]
     if not rows:
         return {"sport": sport, "status": "insufficient_data", "n": 0,
                 "note": "no rows carry model_n yet -- only graded AFTER the 2026-08 "
@@ -232,11 +248,13 @@ def _bucket_by_interval_width(rows: list[dict], n_buckets: int = 3) -> list[tupl
             for i in range(n_buckets)]
 
 
-def calibration_by_confidence(sport: str = "MLB", n_buckets: int = 3) -> dict:
+def calibration_by_confidence(sport: str = "MLB", n_buckets: int = 3,
+                              proj_kind: str | None = None) -> dict:
     """Does the model's OWN stated uncertainty (its p10-p90 band width) predict actual
     accuracy? A trustworthy signal means narrow-band props hit MORE than wide-band ones —
-    that's the difference between 'confidence' meaning something and being decoration."""
-    buckets = _bucket_by_interval_width(_ledger_rows(sport), n_buckets)
+    that's the difference between 'confidence' meaning something and being decoration.
+    `proj_kind` (default None) scopes to one proj_kind — see _ledger_rows's docstring."""
+    buckets = _bucket_by_interval_width(_ledger_rows(sport, proj_kind=proj_kind), n_buckets)
     if not buckets:
         return {"sport": sport, "status": "insufficient_data"}
     out = [{"bucket": label, **metrics(subset)} for label, subset in buckets]
@@ -256,23 +274,28 @@ def calibration_by_method(sport: str = "MLB", min_n: int = 20) -> dict:
             "by_method": {k: metrics(rs) for k, rs in groups.items() if len(rs) >= min_n}}
 
 
-def calibration_by_book(sport: str = "MLB", min_n: int = 20) -> dict:
+def calibration_by_book(sport: str = "MLB", min_n: int = 20,
+                        proj_kind: str | None = None) -> dict:
     """Per-sportsbook accuracy — catches a book whose lines are systematically stale or
-    mispriced relative to the others, which a sport-wide average would hide."""
+    mispriced relative to the others, which a sport-wide average would hide. `proj_kind`
+    (default None) scopes to one proj_kind — see _ledger_rows's docstring."""
     groups: dict[str, list[dict]] = {}
-    for r in _ledger_rows(sport):
+    for r in _ledger_rows(sport, proj_kind=proj_kind):
         groups.setdefault(r.get("SRC") or "unknown", []).append(r)
     return {"sport": sport,
             "by_book": {k: metrics(rs) for k, rs in groups.items() if len(rs) >= min_n}}
 
 
-def version_history(sport: str = "MLB", min_n: int = 30) -> dict:
+def version_history(sport: str = "MLB", min_n: int = 30,
+                    proj_kind: str | None = None) -> dict:
     """Accuracy broken out PER model_version that has graded history — lets you see, e.g.,
     whether the current version's measured MAE/hit-rate/coverage is actually better than
     the version it replaced, rather than assuming a deliberate math change helped. Pulls
     every version at once (all_versions=True) specifically to compare across them; every
-    OTHER function in this module stays scoped to the current version by default."""
-    rows = _ledger_rows(sport, all_versions=True)
+    OTHER function in this module stays scoped to the current version by default.
+    `proj_kind` (default None) additionally scopes to one proj_kind — see _ledger_rows's
+    docstring; needed for NFL since one model_version covers both season types."""
+    rows = _ledger_rows(sport, all_versions=True, proj_kind=proj_kind)
     by_version: dict = {}
     for r in rows:
         by_version.setdefault(r.get("MV") or "unknown", []).append(r)
@@ -281,14 +304,18 @@ def version_history(sport: str = "MLB", min_n: int = 30) -> dict:
             "by_version": out}
 
 
-def diagnostics(sport: str = "MLB") -> dict:
+def diagnostics(sport: str = "MLB", proj_kind: str | None = None) -> dict:
     """The full self-diagnostic bundle for one sport — confidence-signal honesty,
-    method comparison, per-book accuracy. Everything measured, nothing attributed."""
+    method comparison, per-book accuracy. Everything measured, nothing attributed.
+    `proj_kind` (default None) scopes confidence/book comparison to one proj_kind — see
+    _ledger_rows's docstring. method_comparison is left unfiltered: for NFL, proj_kind
+    itself IS the method split (nfl_regular vs nfl_preseason), so it already reports the
+    breakdown a proj_kind filter would otherwise collapse to a single group."""
     return {
         "sport": sport,
-        "confidence_calibration": calibration_by_confidence(sport),
+        "confidence_calibration": calibration_by_confidence(sport, proj_kind=proj_kind),
         "method_comparison": calibration_by_method(sport),
-        "book_comparison": calibration_by_book(sport),
+        "book_comparison": calibration_by_book(sport, proj_kind=proj_kind),
     }
 
 
@@ -404,7 +431,8 @@ def registry(sport: Optional[str] = None, limit: int = 50) -> list[dict]:
         return []
 
 
-def drift(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 60) -> dict:
+def drift(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 60,
+         proj_kind: str | None = None) -> dict:
     """
     Model-drift detection (spec Ch 182): split the graded ledger by game date into a RECENT
     window (the newest `recent_frac` of dated props) vs the PRIOR window, and compare accuracy.
@@ -417,9 +445,14 @@ def drift(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 60) -> dict
     exact events that are supposed to reset the baseline, not a real regression. If there
     isn't yet enough graded history under the current version to split, this correctly
     reports insufficient_data rather than silently falling back to a cross-version compare.
+
+    `proj_kind` (default None) additionally scopes to one proj_kind — see _ledger_rows's
+    docstring; without it, an NFL preseason-vs-regular transition (weeks with only
+    preseason rows, then only regular-season ones) would look identical to genuine drift.
     """
     mv = provenance.model_version(sport)
-    rows = [r for r in _ledger_rows(sport, model_version=mv) if r.get("game_date")]
+    rows = [r for r in _ledger_rows(sport, model_version=mv, proj_kind=proj_kind)
+            if r.get("game_date")]
     d = _drift_from_rows(rows, recent_frac, min_n)
     d["sport"] = sport
     d["model_version"] = mv
@@ -451,13 +484,16 @@ def _drift_from_rows(rows: list[dict], recent_frac: float, min_n: int) -> dict:
     }
 
 
-def drift_by_stat(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 30) -> dict:
+def drift_by_stat(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 30,
+                  proj_kind: str | None = None) -> dict:
     """Per-stat drift (same recent-vs-prior comparison as `drift`, but broken out per
     stat_type) — answers "WHICH statistics are drifting", not just whether the sport
     overall is. A sport-wide 'stable' can hide one stat quietly degrading while others
-    improve and average it out."""
+    improve and average it out. `proj_kind` (default None) scopes to one proj_kind —
+    see _ledger_rows's docstring."""
     mv = provenance.model_version(sport)
-    rows = [r for r in _ledger_rows(sport, model_version=mv) if r.get("game_date")]
+    rows = [r for r in _ledger_rows(sport, model_version=mv, proj_kind=proj_kind)
+            if r.get("game_date")]
     by_stat: dict = {}
     for r in rows:
         by_stat.setdefault(r["stat_type"], []).append(r)

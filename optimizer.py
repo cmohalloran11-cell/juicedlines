@@ -22,9 +22,12 @@ Design boundary (matches valuation.py — see CLAUDE.md "Architecture philosophy
 number here traces to a real, already-computed field on a line dict or a DB-backed query
 passed in by the caller. Two exceptions are explicitly heuristic, not measured, and are
 labeled as such below: the correlation TAGGING (categorical, from real team/player/time
-fields) and its associated assumed rho constants (this codebase has never measured
-cross-player prop correlation — projector_bridge's 0.49-0.59 numbers are intra-player
-H/R/RBI only). The default generator (see PREFER_INDEPENDENT) avoids correlated pairs
+fields) and its associated assumed rho constants for MLB/WNBA/tennis (no cross-player prop
+correlation has been measured for those — projector_bridge's 0.49-0.59 numbers are
+intra-player H/R/RBI only). NFL is the exception: same-team QB/receiver and QB/back
+relationships ARE measured from real box scores and live in _NFL_MEASURED_RHO, separately
+from the assumed table so the two can never be confused. The default generator (see
+PREFER_INDEPENDENT) avoids correlated pairs
 entirely rather than lean on an assumed number, so a surfaced entry's simulation runs at
 rho=0 (independent) by construction; the copula machinery still exists so a future,
 measured correlation table can be dropped in without changing the simulation code.
@@ -99,6 +102,71 @@ PREFER_INDEPENDENT = True
 # H/R/RBI 0.49-0.59) precisely because this is a guess, not a fit.
 _ASSUMED_RHO = {"teammate_stack": 0.20, "same_game_opponents": 0.08, "independent": 0.0}
 
+# MEASURED, unlike _ASSUMED_RHO above — same-team same-game Pearson correlations computed from
+# real nflverse box scores (stats_player release, 2022-2025 regular season; the QB side
+# requires exactly one QB with >=10 attempts in the game so a two-QB game can't pollute the
+# pairing). Sample sizes are player-game pairs. These are the only cross-player correlations
+# this codebase has ever measured; every other sport still falls back to _ASSUMED_RHO.
+#   qb_pass_yards <-> wr_rec_yards  +0.3156  (n 8,124)
+#   qb_completions <-> wr_receptions +0.2738 (n 8,124)
+#   qb_pass_att <-> wr_targets      +0.2706  (n 8,124)
+#   qb_completions <-> te_receptions +0.2593 (n 4,177)
+#   qb_pass_att <-> te_targets      +0.2350  (n 4,177)
+#   qb_pass_yards <-> te_rec_yards  +0.2303  (n 4,177)
+#   qb_pass_yards <-> rb_rec_yards  +0.1940  (n 4,956)
+#   qb_pass_att <-> rb_carries      -0.1078  (n 4,956)  — negative: dropbacks displace carries
+# Team rush attempts <-> RB carries measured +0.3068, but a "team rush attempts" prop does not
+# exist on any book this repo pulls, so there is no leg pair to apply it to and it is not
+# listed here.
+_NFL_MEASURED_RHO = {
+    "nfl_qb_pass_yards__receiver_rec_yards": 0.3156,
+    "nfl_qb_completions__receiver_receptions": 0.2738,
+    "nfl_qb_pass_att__receiver_targets": 0.2706,
+    "nfl_qb_pass__rb_rush": -0.1078,
+}
+
+# Book stat labels -> the role each leg plays in a measured NFL relationship. Matched by
+# substring on the lowercased label, longest first, so "rushing + receiving yards" resolves
+# to the combo rather than to either half.
+_NFL_STAT_ROLES = (
+    ("pass yards", "qb_pass_yards"), ("passing yards", "qb_pass_yards"),
+    ("pass attempts", "qb_pass_att"), ("passing attempts", "qb_pass_att"),
+    ("completions", "qb_completions"),
+    ("receiving yards", "receiver_rec_yards"), ("rec yards", "receiver_rec_yards"),
+    ("receptions", "receiver_receptions"),
+    ("targets", "receiver_targets"),
+    ("rush attempts", "rb_rush"), ("rushing attempts", "rb_rush"),
+    ("carries", "rb_rush"), ("rushing yards", "rb_rush"), ("rush yards", "rb_rush"),
+)
+
+_NFL_PAIR_TAGS = {
+    frozenset({"qb_pass_yards", "receiver_rec_yards"}): "nfl_qb_pass_yards__receiver_rec_yards",
+    frozenset({"qb_completions", "receiver_receptions"}): "nfl_qb_completions__receiver_receptions",
+    frozenset({"qb_pass_att", "receiver_targets"}): "nfl_qb_pass_att__receiver_targets",
+    frozenset({"qb_pass_yards", "rb_rush"}): "nfl_qb_pass__rb_rush",
+    frozenset({"qb_pass_att", "rb_rush"}): "nfl_qb_pass__rb_rush",
+}
+
+
+def _nfl_stat_role(stat: Optional[str]) -> Optional[str]:
+    s = (stat or "").lower()
+    for token, role in _NFL_STAT_ROLES:
+        if token in s:
+            return role
+    return None
+
+
+def _nfl_pair_tag(a: dict, b: dict) -> Optional[str]:
+    """The measured relationship two same-team NFL legs sit on, or None. Same-team, same-game
+    only — a QB in Buffalo has no measured relationship with a receiver in Miami, and
+    inventing one is exactly what this module refuses to do."""
+    if (a.get("sport") or "").upper() != "NFL" or (b.get("sport") or "").upper() != "NFL":
+        return None
+    ra, rb = _nfl_stat_role(a.get("stat")), _nfl_stat_role(b.get("stat"))
+    if ra is None or rb is None or ra == rb:
+        return None
+    return _NFL_PAIR_TAGS.get(frozenset({ra, rb}))
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -165,15 +233,18 @@ def build_pool(lines: list[dict]) -> list[dict]:
 # ── Step 2: correlation heuristic + candidate generation ───────────────────────
 
 def correlation_tag(a: dict, b: dict) -> str:
-    """Categorical risk tag from REAL fields already on the row (player/team/opponent) — not
-    a fabricated correlation coefficient (see module docstring for why this codebase has no
-    measured cross-player number to draw on)."""
+    """Categorical risk tag from REAL fields already on the row (player/team/opponent/stat).
+    For every sport except NFL this is a category with no measured coefficient behind it (see
+    the module docstring); NFL same-team pairs additionally resolve to a specific MEASURED
+    relationship (_NFL_MEASURED_RHO) when both legs' stats sit on one. Either way the tag is
+    non-"independent", so the default generator keeps excluding the pair — the measured number
+    only matters when a caller opts into correlated simulation."""
     if a.get("player") and a.get("player") == b.get("player"):
         return "duplicate_player"
     at, ao = a.get("team"), a.get("opponent")
     bt, bo = b.get("team"), b.get("opponent")
     if at and bt and at == bt:
-        return "teammate_stack"
+        return _nfl_pair_tag(a, b) or "teammate_stack"
     if (at and bo and at == bo) or (bt and ao and bt == ao):
         return "same_game_opponents"
     return "independent"
@@ -240,7 +311,8 @@ def _corr_matrix(legs: list[dict], allow_correlated: bool) -> np.ndarray:
     if not allow_correlated:
         return m
     for i, j in itertools.combinations(range(n), 2):
-        rho = _ASSUMED_RHO.get(correlation_tag(legs[i], legs[j]), 0.0)
+        tag = correlation_tag(legs[i], legs[j])
+        rho = _NFL_MEASURED_RHO.get(tag, _ASSUMED_RHO.get(tag, 0.0))
         m[i, j] = m[j, i] = rho
     return m
 

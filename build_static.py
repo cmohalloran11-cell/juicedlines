@@ -110,6 +110,13 @@ _KEEP = (
                                          # 3-way model_agreement below)
     "bball_confidence", "tennis_confidence",
     "surface", "model_agreement", "elo_eff_matches",   # tennis engine transparency fields
+    # NFL engine transparency fields (nfl.board.NFL_FIELDS) — mirrors dashboard.py's _drop.
+    "season_type", "season_type_confirmed", "expected_snaps", "snap_range",
+    "expected_routes", "expected_routes_basis", "expected_targets", "expected_carries",
+    "playing_time_confidence", "playing_time_probability", "role_confidence",
+    "preseason_risk", "rotation_tier", "role", "depth_chart_position",
+    "red_zone_opportunities", "pass_rush_matchup", "game_total", "team_total", "spread",
+    "weather", "nfl_confidence", "nfl_confidence_factors",
     "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
     "market_book_count",                # juice_score's market-quality component (attach_market_quality)
@@ -132,6 +139,12 @@ _PREMIUM_FIELDS = frozenset({
     "surface", "model_agreement", "elo_eff_matches", "market_book_count", "stat_trust_gamma",
     "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",
     "lineup_slot", "lineup_status", "workload_status", "layoff_days", "workload_outs",
+    "season_type", "season_type_confirmed", "expected_snaps", "snap_range",
+    "expected_routes", "expected_routes_basis", "expected_targets", "expected_carries",
+    "playing_time_confidence", "playing_time_probability", "role_confidence",
+    "preseason_risk", "rotation_tier", "role", "depth_chart_position",
+    "red_zone_opportunities", "pass_rush_matchup", "game_total", "team_total", "spread",
+    "weather", "nfl_confidence", "nfl_confidence_factors",
 })
 
 

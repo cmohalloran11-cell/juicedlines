@@ -1,6 +1,6 @@
 # JUICED
 
-A live sports-projections platform for MLB, WNBA, and Tennis player props. Real Monte
+A live sports-projections platform for MLB, WNBA, Tennis, and NFL player props. Real Monte
 Carlo simulation engines (not a market copy) produce a projection, a probability
 distribution, and a Juice Score for every prop pulled from PrizePicks, Underdog, and
 Sleeper — plus a full self-monitoring Model Health system that tracks its own accuracy,
@@ -8,13 +8,20 @@ calibration, and drift against graded outcomes.
 
 ## What's here
 
-- **Three real projection engines**, one per sport, each a genuine per-player Monte Carlo
+- **Four real projection engines**, one per sport, each a genuine per-player Monte Carlo
   simulation with empirical-Bayes shrinkage and two-stage (parameter + outcome)
   uncertainty propagation — not a market-derived number:
   - `projector/` — MLB (batters/pitchers), vendored from the sibling `stat-projector`
     project so a deploy that only checks out this repo still runs the real engine.
   - `basketball/` — WNBA, per-possession rate model with measured combo correlation.
   - `tennis/` — ATP/WTA, serve/return point model with an exact game/set/match DP.
+  - `nfl/` — regular season AND preseason, off the free nflverse-data releases. Per-snap
+    opportunity fitted separately from per-attempt efficiency, a sampled playing-time
+    distribution, and game environment read straight off the market's own spread/total.
+    Preseason is a genuinely separate model built on depth-chart rotation tiers, because no
+    free source publishes preseason snap counts — see `nfl/config.py`, which records the
+    measurement window and sample size behind every constant and flags the one block that
+    is an assumption.
 - **`projector_bridge.py`** — the MLB glue layer (feature building, correlation-aware
   combo simulation, ensemble blending) between the raw engine and the board.
 - **`valuation.py`** — EV, Kelly fraction, Confidence, and the 7-component Juice Score,
@@ -83,7 +90,8 @@ python -m pytest -q
 by FastAPI's `TestClient`) are test-only and deliberately kept out of the production
 dependency list. Use `requirements-dev.txt` for local test runs; CI already does.
 
-150+ tests across `tests/`, `basketball/tests/`, and `tennis/tests/` — pure-function unit
+350+ tests across `tests/`, `basketball/tests/`, `tennis/tests/`, and `nfl/tests/` —
+pure-function unit
 tests for every scoring/simulation component plus integration tests against a real
 (temp-file) database and the live FastAPI app. CI (`.github/workflows/test.yml`) runs this
 on every push and PR; `deploy-prod.yml` won't deploy to production unless it passes first.

@@ -6,7 +6,7 @@ Unified Line schema:
 {
   "id":            str,          # unique key: "ud_{over_under_id}", "pp_{id}"
   "source":        str,          # "underdog" | "prizepicks"
-  "sport":         str,          # "MLB" | "Tennis" | "WNBA" | "other"
+  "sport":         str,          # "MLB" | "Tennis" | "WNBA" | "NFL" | "other"
   "player":        str | None,
   "team":          str | None,
   "position":      str | None,
@@ -63,7 +63,7 @@ _UD_SPORT_MAP: dict[str, str] = {
     "KBO": "other",
     "WNBA": "WNBA",
     "PGA": "other",
-    "NFL": "other",
+    "NFL": "NFL",
     "CFL": "other",
     "TENNIS": "Tennis",
     "MMA": "other",
@@ -98,9 +98,15 @@ def _sport_from_pp_league(league: str | None) -> str:
         return "other" if any(t in l for t in _period) else "WNBA"
     if any(x in l for x in _PP_LEAGUE_TENNIS):
         return "Tennis"
+    # NFL — exclude period/half/quarter/season-long sub-leagues (NFL1H, NFL1Q, NFLSZN…) the
+    # same way WNBA does above: those carry a partial-game or rest-of-season stat_type the
+    # full-game model would misproject against. CFL is a distinct league key (no "nfl"
+    # substring) and stays mapped to "other" — no CFL engine exists.
+    if "nfl" in l:
+        return "other" if any(t in l for t in _period) else "NFL"
     # Guard against leagues that share a token (e.g. "EUROGOLF", regular-season NBA).
     if any(x in l for x in ("golf", "basket", "hockey", "nascar",
-                            "cricket", "rugby", "nba", "nfl")):
+                            "cricket", "rugby", "nba")):
         return "other"
     if l in _PP_LEAGUE_MLB or "mlb" in l or "baseball" in l:
         # Exclude season-long / period sub-leagues (MLBSZN2 = rest-of-season futures, whose
@@ -233,7 +239,7 @@ def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | N
         props = ud.get_props()
 
         # Filter to wanted sports
-        wanted = ({"MLB", "Tennis", "WNBA"}
+        wanted = ({"MLB", "Tennis", "WNBA", "NFL"}
                   if not sport_filter or sport_filter == "all" else {sport_filter})
         filtered = []
         filter_skipped = 0
@@ -258,7 +264,7 @@ def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | N
 # fingerprints the browser. The PARTNER API host serves the identical JSON:API feed
 # with NO bot wall and NO auth, so we read straight from it. No cookie, no library.
 _PP_PARTNER = "https://partner-api.prizepicks.com"
-_PP_WANTED = ("MLB", "Tennis", "WNBA")
+_PP_WANTED = ("MLB", "Tennis", "WNBA", "NFL")
 
 # PrizePicks is a flat pick'em — no per-pick moneyline. A STANDARD leg's implied
 # price is the break-even of a 2-pick Power play (pays 3x → each leg needs a

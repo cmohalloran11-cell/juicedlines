@@ -341,7 +341,8 @@ def pending_grades(today: str, sport: str = "MLB", limit: int = 400) -> list[dic
 
 
 def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
-                k: float = 300.0, model_version: str | None = None) -> dict:
+                k: float = 300.0, model_version: str | None = None,
+                proj_kind: str | None = None) -> dict:
     """Per-stat TRUST weight learned from the graded ledger — how much to trust the model over
     the market line, PER STAT. trust = the edge-regression slope γ of (actual−line) on
     (model−line): the optimal shrinkage of the model toward the line (proj = line + γ·(model−
@@ -359,15 +360,23 @@ def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
     real Monte-Carlo engine — can't have its trust weights computed from a blend of the old
     model's graded history and the new one's. Until enough NEW-version rows accrue this
     honestly returns fewer/no stats rather than reusing a stale-model fit — the same "empty
-    until we actually have enough to trust" behavior this function already had for thin data."""
+    until we actually have enough to trust" behavior this function already had for thin data.
+
+    `proj_kind` (default None = no filter) additionally scopes to one `proj_kind` value, e.g.
+    "nfl_preseason" vs "nfl_regular" — two engines that already share `sport`/`model_version`
+    but must not have their trust weights blended (a preseason rotation-tier projection and a
+    regular-season measured-snap-history one are different models in practice)."""
     mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
-        rows = c.execute(
-            """SELECT LOWER(stat_type) st, close_line L, COALESCE(model_raw, close_proj) m, actual y
+        q = """SELECT LOWER(stat_type) st, close_line L, COALESCE(model_raw, close_proj) m, actual y
                FROM prop_clv WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL
                AND stat_type IS NOT NULL AND model_version=?
-               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
-            (sport, mv)).fetchall()
+               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))"""
+        params: list = [sport, mv]
+        if proj_kind is not None:
+            q += " AND proj_kind=?"
+            params.append(proj_kind)
+        rows = c.execute(q, params).fetchall()
     import statistics
     by: dict = {}
     for r in rows:
@@ -391,7 +400,8 @@ def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
 
 
 def stat_side_losing(sport: str = "MLB", min_n: int = 60, k: float = 50.0,
-                     breakeven: float = 0.5238, model_version: str | None = None) -> dict:
+                     breakeven: float = 0.5238, model_version: str | None = None,
+                     proj_kind: str | None = None) -> dict:
     """
     {(lowercased stat, "over"|"under"): {hit_rate, shrunk_hit_rate, n}} for a (stat, side)
     pair where the side the model actually RECOMMENDS on that stat (model_prob>0.5 -> over,
@@ -408,17 +418,21 @@ def stat_side_losing(sport: str = "MLB", min_n: int = 60, k: float = 50.0,
     correctly-directed pick toward a coin flip; it cannot fix one pointed the wrong way.
 
     Scoped to model_version (default: current) — same reasoning as stat_gammas: a
-    deliberate engine change shouldn't be judged on the era before it.
+    deliberate engine change shouldn't be judged on the era before it. `proj_kind`
+    (default None = no filter) additionally scopes to one proj_kind, same as stat_gammas.
     """
     mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
-        rows = c.execute(
-            """SELECT LOWER(stat_type) st, close_line L, actual y,
+        q = """SELECT LOWER(stat_type) st, close_line L, actual y,
                       COALESCE(model_raw_prob, close_prob) p
                FROM prop_clv WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL
                AND COALESCE(model_raw_prob, close_prob) IS NOT NULL AND model_version=?
-               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
-            (sport, mv)).fetchall()
+               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))"""
+        params: list = [sport, mv]
+        if proj_kind is not None:
+            q += " AND proj_kind=?"
+            params.append(proj_kind)
+        rows = c.execute(q, params).fetchall()
     by: dict[tuple[str, str], list[bool]] = {}
     for r in rows:
         if r["p"] is None or r["L"] is None or r["y"] == r["L"]:
@@ -439,7 +453,8 @@ def stat_side_losing(sport: str = "MLB", min_n: int = 60, k: float = 50.0,
 
 
 def prob_calibration(sport: str = "MLB", min_n: int = 400,
-                     model_version: str | None = None) -> dict:
+                     model_version: str | None = None,
+                     proj_kind: str | None = None) -> dict:
     """Platt calibration of P(over) — {"a":…, "b":…} for p_cal = sigmoid(a·logit(p)+b). The model's
     Monte-Carlo distributions are OVERCONFIDENT (measured 2026-07-21: a "62% over" hits ~51%), so a<1
     shrinks confidence toward 0.5. Fit by IRLS on the graded ledger's `model_raw_prob` (the PRE-
@@ -449,16 +464,21 @@ def prob_calibration(sport: str = "MLB", min_n: int = 400,
 
     Scoped to `model_version` (default: current, per provenance.model_version) — see
     stat_gammas's docstring for why pooling graded rows across a deliberate model change would
-    apply one model's measured overconfidence correction to a different model's output."""
+    apply one model's measured overconfidence correction to a different model's output.
+    `proj_kind` (default None = no filter) additionally scopes to one proj_kind value, same as
+    stat_gammas — e.g. NFL preseason and regular season must not share a Platt fit."""
     import numpy as np
     mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
-        rows = c.execute(
-            """SELECT close_line L, actual y, COALESCE(model_raw_prob, close_prob) p FROM prop_clv
+        q = """SELECT close_line L, actual y, COALESCE(model_raw_prob, close_prob) p FROM prop_clv
                WHERE sport=? AND actual IS NOT NULL AND close_line IS NOT NULL
                AND COALESCE(model_raw_prob, close_prob) IS NOT NULL AND model_version=?
-               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
-            (sport, mv)).fetchall()
+               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))"""
+        params: list = [sport, mv]
+        if proj_kind is not None:
+            q += " AND proj_kind=?"
+            params.append(proj_kind)
+        rows = c.execute(q, params).fetchall()
     pts = [(r["p"], 1.0 if r["y"] > r["L"] else 0.0) for r in rows
            if r["p"] is not None and abs(r["y"] - r["L"]) > 1e-9]
     if len(pts) < min_n:
@@ -485,7 +505,8 @@ def prob_calibration(sport: str = "MLB", min_n: int = 400,
 
 
 def interval_width(sport: str = "MLB", min_n: int = 300,
-                   model_version: str | None = None) -> float:
+                   model_version: str | None = None,
+                   proj_kind: str | None = None) -> float:
     """How much to STRETCH the reported floor–ceiling band so it means what it says.
 
     Our p10–p90 band should contain 80% of outcomes. Measured 2026-07-21 on MLB it contained
@@ -506,17 +527,21 @@ def interval_width(sport: str = "MLB", min_n: int = 300,
     Scoped to `model_version` (default: current) — see stat_gammas's docstring. A stretch
     factor measured against the OLD model's coverage gap is not the right correction for a
     newly-fixed/changed model's distributions, which can be narrow (or wide) by a different
-    amount.
+    amount. `proj_kind` (default None = no filter) additionally scopes to one proj_kind value,
+    same as stat_gammas.
     """
     from statistics import NormalDist
     mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
-        rows = c.execute(
-            """SELECT actual y, model_floor lo, model_ceiling hi FROM prop_clv
+        q = """SELECT actual y, model_floor lo, model_ceiling hi FROM prop_clv
                WHERE sport=? AND actual IS NOT NULL AND model_floor IS NOT NULL
                AND model_ceiling IS NOT NULL AND model_ceiling > model_floor AND model_version=?
-               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))""",
-            (sport, mv)).fetchall()
+               AND (odds_type IS NULL OR LOWER(odds_type) IN ('standard','boosted'))"""
+        params: list = [sport, mv]
+        if proj_kind is not None:
+            q += " AND proj_kind=?"
+            params.append(proj_kind)
+        rows = c.execute(q, params).fetchall()
     if len(rows) >= min_n:
         hit = sum(1 for r in rows if r["lo"] <= r["y"] <= r["hi"]) / len(rows)
         hit = min(0.98, max(0.30, hit))
@@ -525,7 +550,7 @@ def interval_width(sport: str = "MLB", min_n: int = 300,
         z_tgt = NormalDist().inv_cdf(0.90)            # p10–p90
         if z_act > 1e-6:
             return round(min(3.0, max(1.0, z_tgt / z_act)), 2)
-    cal = prob_calibration(sport, model_version=mv)
+    cal = prob_calibration(sport, model_version=mv, proj_kind=proj_kind)
     a = float(cal.get("a") or 0)
     if 0.2 < a < 1.0:
         return round(min(3.0, 1.0 / a), 2)
@@ -687,7 +712,8 @@ def recent_prop_moves(limit: int = 400) -> list[dict]:
 
 
 def stat_biases(sport: str = "MLB", min_n: int = 60,
-                model_version: str | None = None) -> dict:
+                model_version: str | None = None,
+                proj_kind: str | None = None) -> dict:
     """
     Per-stat systematic bias = mean(projection − actual) from graded props,
     deduped to one point per (player, stat, game). A stable, sufficiently-sampled
@@ -695,14 +721,19 @@ def stat_biases(sport: str = "MLB", min_n: int = 60,
     {stat_type_lower: bias} only for stats with ≥ min_n data points.
 
     Scoped to `model_version` (default: current) — see stat_gammas's docstring.
+    `proj_kind` (default None = no filter) additionally scopes to one proj_kind value,
+    same as stat_gammas.
     """
     mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
-        rows = c.execute(
-            "SELECT player, stat_type, game_date, close_proj, actual FROM prop_clv "
-            "WHERE actual IS NOT NULL AND close_proj IS NOT NULL AND sport = ? "
-            "AND model_version = ?",
-            (sport, mv)).fetchall()
+        q = ("SELECT player, stat_type, game_date, close_proj, actual FROM prop_clv "
+             "WHERE actual IS NOT NULL AND close_proj IS NOT NULL AND sport = ? "
+             "AND model_version = ?")
+        params: list = [sport, mv]
+        if proj_kind is not None:
+            q += " AND proj_kind = ?"
+            params.append(proj_kind)
+        rows = c.execute(q, params).fetchall()
     seen: dict = {}                      # (player,stat,date) → (proj, actual), constant per group
     for r in rows:
         k = (r["player"], r["stat_type"], r["game_date"])
