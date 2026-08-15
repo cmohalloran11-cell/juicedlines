@@ -76,6 +76,16 @@ def _resolve_market(label: str) -> Optional[str]:
     if any(t in l for t in ("1h", "2h", "1q", "2q", "3q", "4q", "quarter", "half",
                             "first td", "anytime", "longest", "period")):
         return None
+    # Season-long futures ("Season Receiving Yards", "Season Pass Tds", "Regular Season
+    # Games Started") are a REST-OF-SEASON total, not a single game — the same class of bug
+    # pullers.py's MLB/WNBA "SZN"/period sub-league exclusion exists to prevent (see that
+    # module's docstring). Found live 2026-08 (production verification): Underdog ships these
+    # under the same "NFL" league as real per-game props, distinguished only by this "season"
+    # qualifier in the label text, so it has to be caught here rather than at the league-key
+    # level. "preseason" is a different token ("preseason" != "season" in this token set) and
+    # is unaffected — a preseason GAME's per-game props still resolve normally.
+    if "season" in tokens:
+        return None
     # Touchdown props: passing TDs ARE modelled; rushing/receiving TDs deliberately are not
     # (the TD probability model isn't proven), so they resolve to None and get skipped rather
     # than mis-mapped onto a yardage market.

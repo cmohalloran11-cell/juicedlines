@@ -421,6 +421,22 @@ def test_market_resolution():
         assert P._resolve_market(label) is None, label
 
 
+def test_season_long_futures_never_resolve_to_a_per_game_market():
+    """Found live 2026-08 in production verification: Underdog ships rest-of-season futures
+    ("Season Receiving Yards", "Season Pass Tds", ...) under the same "NFL" league as real
+    per-game props, distinguished only by this "season" qualifier in the label text -- and
+    four of them (the yardage ones + "Season Pass Tds") were silently matching the per-game
+    market before this guard, producing a projection for a single game's model run against a
+    rest-of-season total. 110 of 600 live NFL lines were affected at the time this was found."""
+    for label in ("Season Receiving Yards", "Season Rush Yards", "Season Pass Yards",
+                  "Season Pass Tds", "Season Rec Tds", "Season Rush Tds", "Season Sacks",
+                  "Regular Season Games Started"):
+        assert P._resolve_market(label) is None, label
+    # a preseason GAME's own per-game props are a different thing entirely and must still
+    # resolve normally -- "preseason" is not the token "season"
+    assert P._resolve_market("Receiving Yards") == "rec_yards"
+
+
 def test_position_gating_stops_a_receiver_being_projected_for_pass_attempts():
     assert P.supports("QB", "pass_attempts") and not P.supports("WR", "pass_attempts")
     assert P.supports("RB", "rush_rec_yards") and not P.supports("QB", "rush_rec_yards")
