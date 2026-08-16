@@ -793,15 +793,22 @@ def enrich_lines(lines: list[dict]) -> None:
             try:
                 from basketball.analytics import team_asset
                 from basketball import projections as _bp
-                # resolve the player → their ESPN team (always has a logo); the book's
-                # own team abbr often doesn't match ESPN's, so it's only a fallback.
+                from basketball.data import gamelog_source
+                # resolve the player → their real team (always has a logo); the book's
+                # own team abbr often doesn't match the source's, so it's only a fallback.
                 ref = _bp.resolve(sport, l.get("player"))
                 a = (team_asset(sport, ref.team) if ref else None) or team_asset(sport, l.get("team"))
                 if a:
                     if a.get("logo"):
                         l["team_logo"] = a["logo"]
                     if a.get("abbr"):
-                        l["team"] = a["abbr"]          # normalize to the ESPN abbr
+                        l["team"] = a["abbr"]          # normalize to the source's abbr
+                # Real per-player photo, same "authoritative when matched, book's own image
+                # kept as fallback" contract as MLB's headshot above and NFL's ESPN headshot.
+                if ref:
+                    hs = gamelog_source().all_headshots(sport).get(_bp._norm(ref.name))
+                    if hs:
+                        l["headshot"] = hs
             except Exception:
                 pass
 
