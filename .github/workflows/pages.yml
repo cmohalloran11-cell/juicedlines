@@ -36,4 +36,4 @@ jobs:
         with:
           path: static            # serve the site shell; data comes from the `data` branch
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
