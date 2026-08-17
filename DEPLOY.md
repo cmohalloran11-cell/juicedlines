@@ -166,14 +166,18 @@ All optional — the app runs with none set. Configure on the host (Render/Railw
 | `SENTRY_ENVIRONMENT` | `production` | Tag shown on Sentry issues (e.g. `staging`, `production`) — only matters if `SENTRY_DSN` is set. |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.0` | Performance-tracing sample rate (`0.0`–`1.0`). Off by default; only matters if `SENTRY_DSN` is set. |
 | `NFL_CACHE_DIR` | `data/nfl_cache/` | Where the NFL engine caches the fetched nflverse-data release CSVs (tens of MB). Relocate off a read-only or ephemeral filesystem if needed. |
+| `BALLDONTLIE_API_KEY` | *(unset)* | WNBA's data source (`basketball/data/balldontlie.py`) — rosters, game logs, pace, upcoming opponents. Sign up free at [balldontlie.io](https://balldontlie.io) for a key. Unset ⇒ WNBA has no real projections (props still post, but with no `model_proj` — the board hides them from the picks list, same as any unprojected line). Two prior free/keyless sources (ESPN, then stats.wnba.com) were tried and both failed in production — see the module's own docstring for the history. |
 
 New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/ai/explain?id=`, and the authenticated `/api/me`, `/api/watchlists*`, `/api/portfolio*`.
 
 ## Notes
 
-- **No secrets/keys required to run.** PrizePicks reads the cookie-free partner API;
-  MLB/ESPN need no keys; the NFL engine reads the free, no-auth nflverse-data GitHub
-  releases. Auth and AI features activate only when their env vars are set.
+- **No secrets/keys required to run** the app or the other three sports. PrizePicks reads
+  the cookie-free partner API; MLB/ESPN need no keys; the NFL engine reads the free,
+  no-auth nflverse-data GitHub releases. Auth and AI features activate only when their env
+  vars are set. WNBA is the one exception: it needs `BALLDONTLIE_API_KEY` for real
+  projections (see the table above) — without it the sport still loads, just with no
+  model-projected props.
 - The `betting_dashboard` clients (Underdog, Kalshi, MLB) are **vendored** here
   (`underdog.py`, `kalshi.py`, `mlb_model.py`) so the repo is self-contained. Local dev
   still prefers the sibling `../betting_dashboard` if present. Re-copy if you update them.
