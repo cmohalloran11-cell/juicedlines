@@ -146,12 +146,31 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
             if arr is None:
                 continue
             model_mean = float(np.mean(arr))
+            model_median_raw = float(np.median(arr))
             std = [float(l["line"]) for l in glines if (l.get("odds_type") or "standard") == "standard"]
             anchor = float(np.median(std)) if std else float(np.median([float(l["line"]) for l in glines]))
-            blended = trust * model_mean + (1.0 - trust) * anchor
+            # Blend on the MEDIAN, not the mean — see nfl/board.py's identical fix (2026-08)
+            # for the full mechanism. A market line is definitionally the book's implied
+            # 50/50 point, so blending the model's own median toward it — and recentering by
+            # (blended_median - raw_median) instead of the old mean-based shift — is the
+            # apples-to-apples fix. The old mean-based shift pinned the array's MEAN to the
+            # line while leaving its MEDIAN (what model_prob is computed from) below it for
+            # any right-skewed stat, producing model_prob well under 50% on lines with zero
+            # real model/market disagreement whenever trust was low (anchored = True below is
+            # EVERY tennis line today — see proj_kind's own comment further down).
+            blended_median = trust * model_median_raw + (1.0 - trust) * anchor
             anchored = trust < 0.2      # thin/unknown player → defer fully to the market line
             if anchored:
-                blended = anchor
+                blended_median = anchor
+            arr_line = arr + (blended_median - model_median_raw)
+            # Displayed "Proj" stays the MEAN of the (now correctly) recentered array —
+            # informative and differentiating (a qualifier's games-won mean can be 8.4 while
+            # the median sits lower), unchanged design intent from before this fix. It now
+            # honestly differs from a zero-trust line by the stat's own skew instead of being
+            # forced to sit on it.
+            center = float(arr_line.mean())
+            med = float(np.median(arr_line))
+            lo10, hi90 = (float(x) for x in np.percentile(arr_line, [10, 90]))
 
             for l in glines:
                 line = float(l["line"])
@@ -159,27 +178,20 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
                 # projection >1.5x the line down to the line (assuming a partial-game prop),
                 # which just flattened legit big edges on low lines. Partial props are handled
                 # upstream now, so trust the model.
-                center = blended
-                arr_line = arr + (center - model_mean)
-                # Projection = the MEAN (`center`) — informative and differentiating (a
-                # qualifier's games-won mean can be 8.4 while the median sits lower). The
-                # direction guarantee (recommendation vs the market) lives in probability
-                # (valuation.recommend_side), not in this display field — see the 2026-07-29
-                # projection-realism pass (after the mean→median swap made thin-data
-                # projections look flatter than they should).
-                med = float(np.median(arr_line))
-                lo10, hi90 = (float(x) for x in np.percentile(arr_line, [10, 90]))
                 l["model_prob"] = round(float((arr_line > line).mean()), 4)
                 l["model_proj"] = round(center, 2)
                 l["model_median"] = round(med, 2)
                 l["model_floor"] = round(max(0.0, lo10), 1)
                 l["model_ceiling"] = round(max(hi90, lo10), 1)
                 l["model_edge"] = round(center - line, 1)
-                # Be honest about what the number IS. Fully anchored → the projection is the
-                # market's own median standard line, NOT a model call, and any apparent "edge"
-                # is just this variant's distance from that median (demons/goblins sit far off
-                # it by design). The data is stale enough that this is currently EVERY tennis
-                # line; mislabelling them "tennis" would imply a model that isn't there.
+                # Be honest about what the number IS. Fully anchored → the model contributed
+                # no real disagreement (blended_median IS the market's own standard line, not
+                # a model call) — the displayed "Proj" can still differ from that line for a
+                # skewed stat (the honest mean of a distribution centered at the market's
+                # implied median), and any apparent "edge" is just that skew, not a real
+                # model opinion. The data is stale enough that full anchoring is currently
+                # EVERY tennis line; mislabelling them "tennis" would imply a model that
+                # isn't there.
                 l["proj_kind"] = "market" if anchored else "tennis"
                 l["model_n"] = res["eff_matches"]
                 l["tennis_confidence"] = res["confidence"]

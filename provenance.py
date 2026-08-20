@@ -51,7 +51,18 @@ MODEL_VERSIONS: dict[str, str] = {
     # naive point-estimate calculation (a real, expected effect of honest parameter
     # uncertainty on a nonlinear win-probability function). Approved for production
     # baseline 2026-08.
-    "Tennis": "tennis-1.2.0",
+    #
+    # 1.3.0 (2026-08): fixed the same mean-vs-median market-anchoring bug as NFL/WNBA (see
+    # NFL's own version-bump comment for the full mechanism). tennis/board.py blended the
+    # model's MEAN toward the market line and recentered the array so its MEAN sat on the
+    # line, leaving the MEDIAN (what model_prob is computed from) below it for any
+    # right-skewed count stat. Tennis is currently fully anchored on EVERY line (the mirror
+    # history is too stale for real model trust — see board.py's own proj_kind comment), so
+    # this bug affected the ENTIRE tennis board, not an edge case. Fixed by
+    # blending/shifting on the median instead — a zero-trust line now correctly reads as a
+    # coinflip. See nfl/tests/test_board.py's regression tests for the measured before/after
+    # (same mechanism, same numbers apply here).
+    "Tennis": "tennis-1.3.0",
     # 1.1.0 (2026-08): two-stage uncertainty propagation (same principle as MLB/Tennis
     # above) PLUS real measured pts/reb/ast combo correlation (basketball/model/combo_corr.py
     # — previously combos only correlated incidentally through shared minutes/pace, ~0.05-0.08
@@ -61,7 +72,18 @@ MODEL_VERSIONS: dict[str, str] = {
     # (debut-game) players, and bumping then would have discarded ~6,790 rows of still-valid
     # calibration history for a narrow-effect change. This bump covers the two materially
     # broader changes above. Approved for production baseline 2026-08.
-    "WNBA": "wnba-1.1.0",
+    #
+    # 1.2.0 (2026-08): fixed the same mean-vs-median market-anchoring bug as NFL/Tennis (see
+    # NFL's own version-bump comment for the full mechanism). basketball/board.py blended
+    # the model's MEAN toward the market line and recentered the array so its MEAN sat on
+    # the line, leaving the MEDIAN (what model_prob is computed from) below it for any
+    # right-skewed count stat — every WNBA counting stat this engine models. At low trust
+    # (thin-sample players, e.g. early-slate rookies) that produced model_prob well under
+    # 50% on lines with no real model/market disagreement. Fixed by blending/shifting on the
+    # median instead — a zero-trust line now correctly reads as a coinflip. See
+    # nfl/tests/test_board.py's regression tests for the measured before/after (same
+    # mechanism, same numbers apply here).
+    "WNBA": "wnba-1.2.0",
     # 1.0.0 (2026-08): NEW engine, not a bump of an existing one — nothing to orphan, no
     # calibration history to blend, so this entry costs nothing to add. Per-snap opportunity x
     # per-attempt efficiency, both empirical-Bayes shrunk toward positional priors measured
@@ -145,6 +167,20 @@ MODEL_CHANGELOG: dict[str, list[dict]] = {
                     "fitted rate instead of reusing one shared point estimate for the "
                     "whole match. Pulls thin-sample favorites' win probability toward "
                     "0.5 relative to the naive point-estimate calculation."},
+        {"version": "tennis-1.3.0", "date": "2026-08",
+         "summary": "Fixed a mean-vs-median market-anchoring bug: board.py blended the "
+                    "model's MEAN toward the market line and recentered the simulated "
+                    "array so its MEAN sat on the line, leaving the MEDIAN (what "
+                    "model_prob is computed from) below it for any right-skewed count "
+                    "stat, because a right-skewed distribution's median always sits below "
+                    "its mean. Tennis is fully anchored on every line today (the mirror "
+                    "history is too stale for real model trust), so this affected the "
+                    "entire tennis board, not an edge case -- every line's model_prob was "
+                    "biased toward Under regardless of any real edge. Fixed by "
+                    "blending/shifting on the median instead, so a zero-trust line now "
+                    "correctly reads as a coinflip; found and fixed alongside the "
+                    "identical NFL and WNBA bugs (see NFL's changelog entry for the "
+                    "measured before/after numbers -- same mechanism)."},
     ],
     "WNBA": [
         {"version": "wnba-1.1.0", "date": "2026-08",
@@ -156,6 +192,17 @@ MODEL_CHANGELOG: dict[str, list[dict]] = {
                     "regression to the mean) shipped before this version bump and was "
                     "deliberately left unbumped on its own -- narrow effect, didn't "
                     "justify discarding ~6,790 rows of still-valid calibration history."},
+        {"version": "wnba-1.2.0", "date": "2026-08",
+         "summary": "Fixed a mean-vs-median market-anchoring bug: board.py blended the "
+                    "model's MEAN toward the market line and recentered the simulated "
+                    "array so its MEAN sat on the line, leaving the MEDIAN (what "
+                    "model_prob is computed from) below it for any right-skewed count "
+                    "stat -- every WNBA counting stat this engine models. At low trust "
+                    "(thin-sample players) this produced model_prob well under 50% on "
+                    "lines with no real model/market disagreement. Fixed by "
+                    "blending/shifting on the median instead; found and fixed alongside "
+                    "the identical NFL and Tennis bugs (see NFL's changelog entry for the "
+                    "measured before/after numbers -- same mechanism)."},
     ],
     "NFL": [
         {"version": "nfl-1.0.0", "date": "2026-08",

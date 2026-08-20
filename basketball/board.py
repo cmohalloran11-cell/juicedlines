@@ -96,17 +96,37 @@ def attach_basketball(lines: list[dict]) -> int:
         if arr is None:
             continue
         model_mean = float(np.mean(arr))
+        model_median_raw = float(np.median(arr))
 
-        # market anchor = the standard line (book's estimate of the mean); fall back to
-        # the median posted line for the market if no standard line is present.
+        # market anchor = the standard line (book's own implied 50/50 point — a line IS that
+        # by definition for a fair two-sided market); fall back to the median posted line for
+        # the market if no standard line is present.
         std = [float(l["line"]) for l in glines if (l.get("odds_type") or "standard") == "standard"]
         anchor = float(np.median(std)) if std else float(np.median([float(l["line"]) for l in glines]))
 
         trust = min(1.0, proj["sample_weight"] / _FULL_TRUST_AT)
         trust *= min(1.0, _GAME_RAMP_BASE + _GAME_RAMP_STEP * proj["n_games"])
-        blended = trust * model_mean + (1.0 - trust) * anchor
+        # Blend on the MEDIAN, not the mean — see nfl/board.py's identical fix (2026-08) for
+        # the full mechanism. Blending the MEAN toward the anchor and recentering the whole
+        # array by (blended_mean - raw_mean) pins the array's MEAN to the line while leaving
+        # its MEDIAN — what model_prob is actually computed from — below it for any
+        # right-skewed stat, because a right-skewed distribution's median always sits below
+        # its mean. At low trust the anchor IS the line, so that produced model_prob well
+        # under 50% on lines with zero real model/market disagreement. A market line is
+        # definitionally the book's implied 50/50 point, so blending/shifting on the median
+        # is the apples-to-apples fix: a zero-trust line now correctly reads as a coinflip.
+        blended_median = trust * model_median_raw + (1.0 - trust) * anchor
         if trust < 0.2:                 # ~no reliable model info → defer fully to the
-            blended = anchor            # market (edge≈0, symmetric) rather than a noisy drag
+            blended_median = anchor     # market (edge≈0, symmetric) rather than a noisy drag
+        arr_line = arr + (blended_median - model_median_raw)
+        # Displayed "Proj" stays the MEAN of the (now correctly) recentered array — an
+        # informative expected value that actually differentiates players (a bench player's
+        # rebounds mean can be 0.6 while the median is legitimately 0 for a low-count skewed
+        # stat), unchanged design intent from before this fix. It now honestly differs from
+        # a zero-trust line by the stat's own skew instead of being forced to sit on it.
+        center = float(arr_line.mean())
+        med = float(np.median(arr_line))
+        lo10, hi90 = (float(x) for x in np.percentile(arr_line, [10, 90]))
 
         # (The level-2 minutes-redistribution variant was DROPPED 2026-07-21: measured on the
         # ledger it made WNBA projections WORSE — MAE 4.15 → 4.41 on the rows it touched — so the
@@ -119,17 +139,6 @@ def attach_basketball(lines: list[dict]) -> int:
             # but those are now tagged "(1H)"/"(1Q)" and excluded upstream, so the guard only
             # suppressed legit big edges, e.g. Cameron Boozer projecting ~6.7 rebounds against a
             # low 3.5 line got flattened to 3.5.)
-            center = blended
-            arr_line = arr + (center - model_mean)
-            # Projection = the MEAN (`center`) — an informative expected value that actually
-            # differentiates players (a bench player's rebounds mean can be 0.6 while the
-            # median is legitimately 0 for a low-count skewed stat). `model_median` is
-            # reported separately — the value that explains an Under lean when it diverges
-            # from the mean. The direction guarantee (Projection/Line sign vs recommended
-            # side) lives in probability (valuation.recommend_side), not in this display
-            # field — see the 2026-07-29 projection-realism pass.
-            med = float(np.median(arr_line))
-            lo10, hi90 = (float(x) for x in np.percentile(arr_line, [10, 90]))
             l["model_prob"] = round(float((arr_line > line).mean()), 4)
             l["model_proj"] = round(center, 1)
             l["model_median"] = round(med, 1)
