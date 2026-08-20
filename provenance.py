@@ -87,7 +87,30 @@ MODEL_VERSIONS: dict[str, str] = {
     # this orphans a negligible amount of graded history. See model/rotation.py's module
     # docstring for the full hierarchy and provenance.MODEL_CHANGELOG for the measured
     # before/after distribution.
-    "NFL": "nfl-1.1.0",
+    #
+    # 1.2.0 (2026-08): fixed a mean-vs-median anchoring bug in board.py's market blend that
+    # systematically biased model_prob toward Under. board.py blends the model's own MEAN
+    # toward the market line, then shifted the whole simulated array by (blended_mean -
+    # raw_mean) to recenter it -- which for a right-skewed stat (Gamma yards -- every
+    # yardage market this engine has) sits the array's MEAN on the line while its MEDIAN
+    # (what model_prob is actually computed from -- see dataos.validate_direction) sits
+    # BELOW it, purely from the shape's own skew. At low trust (common in preseason by
+    # design, but not exclusive to it -- any thin-sample regular-season line hits the same
+    # path) the market line IS the anchor, so this produced model_prob well under 50% on
+    # lines with NO real model/market disagreement at all. Found live 2026-08: 94% of the
+    # live preseason board recommending Under, including lines where model_proj sat exactly
+    # on the market line. Fixed by blending/shifting on the MEDIAN instead of the mean -- a
+    # market line is definitionally the book's implied 50/50 point, so a zero-trust line now
+    # correctly reads as a coinflip; "Proj" (still the array's mean, unchanged as the
+    # informative headline number) honestly differs from the line by the stat's own skew
+    # rather than being forced to equal it. Measured on the exact scenario the bug was found
+    # on (nfl/tests/test_board.py's own regression tests): before, a zero-trust 45.5-yard
+    # line read model_proj=45.5 (dead on the line) / model_prob=0.381 (a fabricated 38%
+    # Under lean); after, model_proj=53.0 (the stat's honest skewed mean) / model_prob=0.500
+    # (a correct coinflip). Applies to every NFL line, both season types -- proj_kind still
+    # distinguishes nfl_preseason from nfl_regular, unaffected by which fields determine
+    # their values.
+    "NFL": "nfl-1.2.0",
 }
 _DEFAULT_MODEL_VERSION = "1.0.0"
 
@@ -167,6 +190,25 @@ MODEL_CHANGELOG: dict[str, list[dict]] = {
                     "(nfl/tests/test_preseason_snap_model.py): 19 distinct expected_snaps "
                     "values vs the old model's 3, 14.3% within +-2 of 20 vs 76.5%. "
                     "Regular-season projections are untouched by this change."},
+        {"version": "nfl-1.2.0", "date": "2026-08",
+         "summary": "Fixed a mean-vs-median anchoring bug in board.py's market blend: it "
+                    "recentered the simulated array so its MEAN sat on the market line but "
+                    "left its MEDIAN (what model_prob is actually computed from) sitting "
+                    "below it for any right-skewed stat (every yardage market this engine "
+                    "has), because a right-skewed distribution's mean always sits above its "
+                    "median. At low trust -- common in preseason by design, but not "
+                    "exclusive to it -- the market line IS the anchor, so this produced "
+                    "model_prob well under 50% on lines with no real model/market "
+                    "disagreement at all. Found live 2026-08: 94% of the live preseason "
+                    "board recommending Under, including lines where model_proj sat exactly "
+                    "on the market line. Fixed by blending/shifting on the MEDIAN instead of "
+                    "the mean -- a market line is definitionally the book's implied 50/50 "
+                    "point. Measured on the exact scenario the bug was found on "
+                    "(nfl/tests/test_board.py): before, a zero-trust 45.5-yard line read "
+                    "model_proj=45.5 / model_prob=0.381 (a fabricated 38% Under lean); "
+                    "after, model_proj=53.0 (the stat's honest skewed mean) / "
+                    "model_prob=0.500 (a correct coinflip). Applies to every NFL line, both "
+                    "season types."},
     ],
 }
 

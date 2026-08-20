@@ -206,6 +206,51 @@ def test_preseason_lines_are_tagged_separately_and_trusted_less():
     assert pull(pre[0]) < pull(reg[0])
 
 
+def test_zero_trust_line_reads_as_a_coinflip_not_a_systematic_under():
+    """The mean-vs-median anchoring bug, reproduced and fixed. Real live evidence (2026-08):
+    94% of the live preseason board recommended Under, even on lines where model_proj sat
+    EXACTLY on the market line (zero visible edge). Root cause: the old code blended the
+    model's MEAN toward the market anchor and shifted the whole (right-skewed, Gamma-shaped)
+    simulated array by (blended_mean - raw_mean) to match — which recenters the array so its
+    MEAN sits on the line while its MEDIAN (what model_prob is actually computed from) sits
+    BELOW it, because a right-skewed distribution's median is always below its mean. At zero
+    trust the market line IS the anchor, so this produced model_prob well under 50% on a
+    line with no real disagreement at all. Fixed by blending/shifting on the MEDIAN — a
+    market line is definitionally the book's implied 50/50 point, so a zero-trust line
+    should land close to a coinflip."""
+    fw, fs = F.league_filler(40, weeks_per=6)
+    # A player with ZERO usable game history -> sample_weight 0.0 -> trust 0.0 < min_trust,
+    # so model_proj is anchored fully to the market line (the exact zero-disagreement case
+    # the live production bug was found on).
+    _install(fw, fs, [], [_depth("Nobody Yet", rank=2)], [_roster("Nobody Yet")])
+    lines = [F.line(player="Nobody Yet", stat="Receiving Yards", value=45.5)]
+    assert B.attach_nfl(lines) == 1
+    l = lines[0]
+    assert l["trust_weight"] == 0.0
+    assert 0.40 <= l["model_prob"] <= 0.60, (
+        f"zero-trust line should read near a coinflip, got model_prob={l['model_prob']}")
+    # The invariant the fix restores: median direction and probability direction must agree
+    # (dataos.validate_direction's own rule) -- trivially true here since the line landed
+    # dead center, but the real point is model_prob is no longer skew-biased toward Under.
+
+
+def test_low_trust_edge_still_reflects_a_right_skewed_stats_true_mean_not_the_bare_line():
+    """A near-zero-trust line still gets an informative "Proj" that differs from the bare
+    market line — the fix changes HOW the recentering works, it doesn't collapse "Proj" back
+    to just echoing the line. For a right-skewed stat (Gamma yards), the honest mean sits
+    ABOVE a line that represents the median, so model_proj > line is the expected,
+    correct-by-construction result at zero trust, not a bug."""
+    fw, fs = F.league_filler(40, weeks_per=6)
+    _install(fw, fs, [], [_depth("Nobody Yet", rank=2)], [_roster("Nobody Yet")])
+    lines = [F.line(player="Nobody Yet", stat="Receiving Yards", value=45.5)]
+    B.attach_nfl(lines)
+    l = lines[0]
+    assert l["trust_weight"] == 0.0
+    assert l["model_proj"] > l["line"], (
+        "a right-skewed stat's mean sits above the market's implied median")
+    assert l["model_median"] == pytest.approx(l["line"], abs=1.0)
+
+
 # ── book_season_type (PrizePicks' NFLP league code) — confirmed live 2026-08 ────────────
 
 def test_resolve_season_type_trusts_book_preseason_hint_over_a_real_schedule_match():

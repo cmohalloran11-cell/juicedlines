@@ -194,6 +194,7 @@ def attach_nfl(lines: list[dict]) -> int:
             continue
 
         model_mean = float(np.mean(arr))
+        model_median_raw = float(np.median(arr))
         std = [float(l["line"]) for l in glines
                if (l.get("odds_type") or "standard") == "standard"]
         anchor = float(np.median(std)) if std else float(np.median([float(l["line"]) for l in glines]))
@@ -201,14 +202,36 @@ def attach_nfl(lines: list[dict]) -> int:
         trust = min(1.0, proj["sample_weight"] / full_trust)
         if season_type == "preseason":
             trust = min(trust, pre_cap)
-        blended = trust * model_mean + (1.0 - trust) * anchor
+        # Blend on the MEDIAN, not the mean. A market line IS, definitionally, the book's
+        # implied 50/50 threshold, so the model's own median — not its mean — is the
+        # apples-to-apples quantity to blend it with. The old code blended the MEAN toward
+        # the anchor and then shifted the whole array by (blended - mean) to match, which
+        # recenters a right-skewed array (Gamma yards) so its MEAN sits on the line while its
+        # MEDIAN — the value model_prob is actually computed from, see
+        # dataos.validate_direction's own docstring — sits BELOW the line by the
+        # distribution's own skew. At low trust (blended ~= anchor = the market line exactly)
+        # that produced model_prob < 50% ("Under") on a line showing NO visible edge at all.
+        # Found live 2026-08: 94% of the live preseason board recommending Under; verified
+        # the mechanism directly on the simulated array (mean 134.7, median 122.4, P(>mean)
+        # 44.1%, P(>median) 50.0% exactly). Shifting by median instead makes a zero-trust
+        # line correctly read as a 50/50 coinflip, matching what "the line" means.
+        blended_median = trust * model_median_raw + (1.0 - trust) * anchor
         if trust < min_trust:
-            blended = anchor
+            blended_median = anchor
+        shifted = arr + (blended_median - model_median_raw)
+        q = np.percentile(shifted, [10, 25, 50, 75, 90])
+        # Displayed "Proj" is the MEAN of the correctly-recentered array — still an
+        # informative expected value (see WNBA board.py's identical design choice), but now
+        # honestly computed: at zero trust it will sit ABOVE a right-skewed stat's market
+        # line by the shape's own skew, not exactly on it, because the book's line is their
+        # implied median and this engine's own Gamma shape says the mean runs higher than
+        # that for this kind of stat.
+        center = float(shifted.mean())
 
         pt = proj["playing_time"]
         env = proj["environment"]
         conf = nfl_confidence(proj, {"model_raw": round(model_mean, 2),
-                                     "model_proj": round(blended, 2),
+                                     "model_proj": round(center, 2),
                                      "trust_weight": round(trust, 3),
                                      "lineup_status": first.get("lineup_status")})
 
@@ -222,9 +245,6 @@ def attach_nfl(lines: list[dict]) -> int:
 
         for l in glines:
             line_val = float(l["line"])
-            center = blended
-            shifted = arr + (center - model_mean)
-            q = np.percentile(shifted, [10, 25, 50, 75, 90])
             l["model_prob"] = round(float((shifted > line_val).mean()), 4)
             l["model_proj"] = round(center, 1)
             l["model_median"] = round(float(q[2]), 1)
