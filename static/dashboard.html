@@ -193,9 +193,10 @@ select,.ctl{padding:8px 12px;border-radius:9px;border:1px solid var(--line2);bac
 .filters{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px;position:sticky;top:10px}
 .filters .fh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .filters .fh h4{margin:0;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
-.filters .fh .rst{color:var(--dim);font-size:10.5px;cursor:pointer;font-weight:700}.filters .fh .rst:hover{color:var(--accent)}
+.filters .fh .rst,.filters .fg .rst{color:var(--dim);font-size:10.5px;cursor:pointer;font-weight:700}.filters .fh .rst:hover,.filters .fg .rst:hover{color:var(--accent)}
 .fg{border-top:1px solid var(--line);padding:12px 0 6px}.fg:first-of-type{border-top:0}
 .fg .gt{font-size:11px;font-weight:800;margin-bottom:9px;color:var(--text)}
+.catsAll{display:flex;justify-content:flex-end;gap:10px;margin:-5px 0 8px}
 .chk{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:var(--muted);cursor:pointer}
 .chk input{accent-color:var(--accent);width:14px;height:14px}
 .chk:hover{color:var(--text)}
@@ -928,7 +929,7 @@ function renderFilters(){
    ${PF.sources.has('prizepicks')?`<div class="fg"><div class="gt">PrizePicks Lines</div><div class="segbar">${[['normal','Normal'],['demon','Demon'],['goblin','Goblin']].map(([k,n])=>`<span class="seg ${PF.lineMode===k?'on':''}" onclick="setLineMode('${k}')" title="${k==='normal'?'Standard/boosted PrizePicks lines (priced)':'PrizePicks boosted lines — no known payout multiplier, so no Edge %/EV, just the raw projection'}">${n}</span>`).join('')}</div></div>`:''}
    <div class="fg"><div class="gt">Side</div><div class="segbar">${[['all','All'],['over','Over'],['under','Under']].map(([k,n])=>`<span class="seg ${PF.side===k?'on':''}" onclick="PF.side='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>
    ${PF.projSport==='NFL'?`<div class="fg"><div class="gt">NFL Season Type</div><div class="segbar">${[['all','All'],['regular','Regular'],['preseason','Preseason']].map(([k,n])=>`<span class="seg ${PF.nflSeason===k?'on':''}" onclick="PF.nflSeason='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>`:''}
-   <div class="fg"><div class="gt">Prop Categories <span style="color:var(--dim);font-weight:600;margin-left:4px">${PF.projSport==='all'?'All Sports':PF.projSport}</span></div>${shown.map(catRow).join('')||'<span class="muted" style="font-size:11px">—</span>'}${more>0?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=true;renderFilters()">+ ${more} more</span>`:(PF.catsExpanded&&all.length>10?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=false;renderFilters()">Show less</span>`:'')}</div>
+   <div class="fg"><div class="gt">Prop Categories <span style="color:var(--dim);font-weight:600;margin-left:4px">${PF.projSport==='all'?'All Sports':PF.projSport}</span></div>${all.length?`<div class="catsAll"><span class="rst" onclick="togAllCats(true)">Select All</span><span class="rst" onclick="togAllCats(false)">Clear All</span></div>`:''}${shown.map(catRow).join('')||'<span class="muted" style="font-size:11px">—</span>'}${more>0?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=true;renderFilters()">+ ${more} more</span>`:(PF.catsExpanded&&all.length>10?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=false;renderFilters()">Show less</span>`:'')}</div>
    <div class="fg"><div class="gt">Juice Score</div><div class="frange"><div class="lab"><span>${PF.juiceMin}</span><span>100</span></div><input type="range" min="0" max="100" value="${PF.juiceMin}" oninput="PF.juiceMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value;applyProj()"></div></div>
    <div class="fg"><div class="gt">Confidence</div><div class="frange"><div class="lab"><span>${PF.confMin}%</span><span>100%</span></div><input type="range" min="0" max="100" value="${PF.confMin}" oninput="PF.confMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
    <div class="fg"><div class="gt">Min EV %</div><div class="frange"><div class="lab"><span>${PF.edgeMin}%</span><span>+50%</span></div><input type="range" min="-20" max="50" value="${PF.edgeMin}" oninput="PF.edgeMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
@@ -950,6 +951,7 @@ async function setLineMode(mode){
   PF.page=1;renderFilters();applyProj();
 }
 function togCat(c,on){on?PF.catsOff.delete(c):PF.catsOff.add(c);PF.page=1;applyProj()}
+function togAllCats(on){PF.catsOff=on?new Set():new Set(catsForSport().map(([c])=>c));PF.page=1;renderFilters();applyProj()}
 function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;PF.lineMode='normal';PF.side='all';PF.nflSeason='all';render()}
 function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move;
   const tile=(cap,big,cls,sub)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div></div>`;

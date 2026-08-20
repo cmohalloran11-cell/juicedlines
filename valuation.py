@@ -236,10 +236,12 @@ def _scale(x: Optional[float], lo: float, hi: float, default: float = 0.5) -> fl
 # direction that Juice Score should go a lot more off of how far the projection sits from
 # the book's line. Every other weight scaled down by the same factor (0.65/0.95 ≈ 0.684) so
 # their RELATIVE proportions to each other are unchanged — EV is still the second-largest
-# factor, Confidence third, etc. — only proj_diff's share of the total grew. The underlying
-# formula is untouched (still % of the line, not a raw diff or a volatility-normalized
-# z-score — see _juice_components below for why: a 1.6 edge on an 18.5 line means more than
-# the same 1.6 on a 3.5 line, and this is already safe for near-zero lines via the 0.5 floor).
+# factor, Confidence third, etc. — only proj_diff's share of the total grew. The base formula
+# is still % of the line, not a raw diff or a volatility-normalized z-score — see
+# _juice_components below for why: a 1.6 edge on an 18.5 line means more than the same 1.6 on
+# a 3.5 line, and this is already safe for near-zero lines via the 0.5 floor. (2026-08-17: now
+# also discounted by decisiveness — see _juice_components — so a big raw gap that doesn't
+# actually move P(over) off a coin flip no longer scores at full value.)
 _JUICE_WEIGHTS = {
     "proj_diff": 0.35,
     "ev": 0.21, "confidence": 0.17,
@@ -307,9 +309,24 @@ def _juice_components(line: dict[str, Any], model_prob: Optional[float]) -> dict
     # 6. Projection diff — the edge's size relative to the line itself (a +1.6 edge on an
     # 18.5 line means more than the same +1.6 on a 3.5 line). The DOMINANT component as of
     # 2026-08-05 (see _JUICE_WEIGHTS) — formerly "line_value" at a token 5%.
+    #
+    # 2026-08-17: discounted by how decisive model_prob actually is (same distance-from-0.5
+    # signal Confidence's Decisiveness factor uses). A raw mean-vs-line gap does not always
+    # mean a real edge — a wide or skewed distribution (e.g. a discrete counting stat like
+    # Hits+Runs+RBIs) can put the MEAN well past the line while P(over) stays near a coin
+    # flip, because the mode/median sits on the other side. Before this fix, proj_diff scored
+    # that gap at full value regardless of decisiveness, so a coin-flip prop with a big raw
+    # gap could out-score a genuinely decisive one — the "higher projection, lower over%"
+    # props users flagged as reading too high. Floored at 0.25 (not zeroed) so a real, if
+    # wide-distribution, edge still keeps a quarter credit rather than being wiped out.
     edge, ln = line.get("model_edge"), line.get("line")
     lv = (abs(float(edge)) / max(abs(float(ln)), 0.5)) if (edge is not None and ln is not None) else None
-    out["proj_diff"] = (_scale(lv, 0.0, 0.5), f"{lv*100:.0f}% of line" if lv is not None else "n/a")
+    decisiveness = _clamp(2.0 * abs(float(model_prob) - 0.5))
+    corroboration = 0.25 + 0.75 * decisiveness
+    proj_diff_raw = _scale(lv, 0.0, 0.5)
+    out["proj_diff"] = (proj_diff_raw * corroboration,
+                        (f"{lv*100:.0f}% of line" + (f" (×{corroboration:.2f} decisiveness)" if corroboration < 0.99 else ""))
+                        if lv is not None else "n/a")
 
     # 7. Data quality — sample size + lineup certainty (reuses model_n/lineup_status, but as
     # a DATA-COMPLETENESS signal, not a trust-in-the-math signal like Confidence's use of n).
