@@ -141,49 +141,85 @@ CONFIG = {
     },
 
     # ── preseason rotation tiers ─────────────────────────────────────────────────────────
-    # tier -> (snap_share_mean, snap_share_sd) for the sampled preseason playing-time
-    # distribution, plus the classification thresholds.
+    # DRIVES-FIRST model: expected_snaps = tier_drives_mean(tier) * position_snaps_per_drive
+    # (position), not a single flat "tier snap-share x league-baseline-snaps" lookup. The old
+    # single-factor version (one snap_share mean per tier, multiplied by the SAME constant
+    # league-baseline team-snaps number for every preseason game, since no preseason
+    # schedule/spread ever exists to vary it) is exactly why the board clustered: two tiers
+    # (confirmed_starter and third_team) happened to share the same 0.30 mean share, so every
+    # player in either tier produced the literal same expected_snaps number regardless of
+    # position. Two independent, position/tier-varying factors instead of one flat table
+    # entry per tier structurally cannot collide that way — see rotation.py:tier_playing_time.
     #
     # BASIS: ASSUMED, NOT MEASURED — and this is the one block in this file that is. No free
-    # data source publishes PRESEASON snap counts: verified live 2026-08-15, the nflverse
-    # `snap_counts` release contains 0 rows with game_type PRE across every season it
-    # publishes (2022-2025 all resolve to REG/WC/DIV/CON/SB only), and the `schedules`
-    # release contains 0 preseason games at all (7,548 rows, game_type in
-    # {REG,WC,DIV,CON,SB}). So a preseason snap-share distribution has never been measured in
-    # this codebase and a "measured-looking" table here would be a fabrication.
-    #
-    # What IS carried over from measurement is only the RELATIVE WIDTH pattern: in the
-    # measured regular-season table above, a lower-ranked player's snap share is markedly more
-    # volatile than a starter's, and that ordering of widths is preserved here. The LEVELS are
-    # NOT carried over, and deliberately do not follow the regular-season ordering — a
-    # preseason second-teamer plays MORE snaps than the starter he backs up, which is the
-    # entire reason this is a separate model rather than the regular-season one scaled down.
-    # Those levels are the assumption. Treat them as tunable priors, not findings; every
+    # data source publishes PRESEASON snap counts OR drive-level data: verified live
+    # 2026-08-15, the nflverse `snap_counts` release contains 0 rows with game_type PRE across
+    # every season it publishes (2022-2025 all resolve to REG/WC/DIV/CON/SB only), and the
+    # `schedules` release contains 0 preseason games at all (7,548 rows, game_type in
+    # {REG,WC,DIV,CON,SB}). So a preseason snap/drive distribution has never been measured in
+    # this codebase and a "measured-looking" table here would be a fabrication. Every
     # preseason projection carries playing_time_confidence "low" because of exactly this, and
     # board.py market-anchors accordingly.
     #
-    # rotation.measure_tier_shares() is the real measurement pipeline for this table: point it
-    # at snap rows with game_type PRE the day a preseason snap source is wired and it emits
-    # this block with real numbers and real sample sizes.
+    # rotation.measure_tier_shares() is the real measurement pipeline this table would be
+    # replaced by the day a real preseason snap/drive source is wired.
     "preseason_tiers": {
         "basis": "assumed",
-        "reason": "no free source publishes preseason snap counts (nflverse snap_counts has "
-                  "0 PRE rows; nflverse schedules has 0 preseason games)",
-        "snap_share": {
-            "confirmed_starter": (0.30, 0.10),
-            "expected_starter":  (0.28, 0.14),
-            "second_team":       (0.40, 0.18),
-            "third_team":        (0.30, 0.22),
-            "fringe":            (0.20, 0.20),
-            "unknown":           (0.25, 0.25),
+        "reason": "no free source publishes preseason snap counts or drive-level data "
+                  "(nflverse snap_counts has 0 PRE rows; nflverse schedules has 0 preseason "
+                  "games)",
+        # Real, well-documented mechanics of how a drive is played, not a fitted number: a QB
+        # in the game is on the field for literally every snap of his drives (no rotation
+        # within a drive is possible at the position); RB/WR/TE corps rotate by personnel
+        # package and play-type even within a single drive they are nominally part of, so
+        # their effective snaps-per-drive-they're-in is lower. ~5.8 plays/drive is the
+        # commonly-cited NFL-average drive length (external football convention, not measured
+        # from this repo's own data — this repo has no drive-level release to measure it
+        # from). "" is the fallback for a position this table doesn't cover.
+        "position_snaps_per_drive": {"QB": 5.8, "RB": 3.4, "WR": 4.1, "TE": 3.7, "": 4.0},
+        # ASSUMED mean/sd of DRIVES a player in this tier is involved in, in one preseason
+        # game. The ordering is the real, widely-reported coaching pattern for how preseason
+        # snaps are actually allocated: starters get a short, scripted look (limit injury
+        # exposure) and are pulled early; the rotation/second-team groups get the bulk of the
+        # game (this is when a team evaluates its roster bubble); fringe/unknown players are
+        # the least predictable — some weeks inactive, others playing deep into the second
+        # half. This is the SAME relative pattern the old single-factor table encoded
+        # (confirmed_starter < second_team, unknown widest) — decomposed into two factors and
+        # extended to 7 tiers instead of asserted as one flat number per tier.
+        # Means are deliberately kept numerically distinct across every tier (not just
+        # monotonic) — two tiers sharing a mean is exactly the collision the old flat
+        # snap-share table had (confirmed_starter and third_team both sat at 0.30), so the
+        # SAME conceptual bug could resurface here at the tier_drives level even after
+        # decomposing into two factors. See
+        # test_core.py::test_seven_tiers_produce_seven_distinct_expected_snaps_for_the_same_position.
+        "tier_drives": {
+            "confirmed_starter":   (3.2, 1.1),
+            "likely_starter":      (3.6, 1.4),
+            "first_team_rotation": (5.0, 1.7),
+            "second_team":         (6.5, 2.1),
+            "third_team":          (5.2, 2.5),
+            "fringe":              (2.8, 2.6),
+            "unknown":             (3.9, 3.0),
         },
-        # Depth-chart rank + prior-season snap share -> tier. The snap-share threshold that
-        # separates "confirmed" from "expected" IS measured: 0.60 sits between the measured
-        # rank-1 mean (0.5675 RB … 0.7283 WR) and the rank-2 mean (0.3012 … 0.4385), so a
-        # player above it is playing a genuinely rank-1 workload rather than merely being
-        # listed there.
+        # A team's actual preseason pass/rush split is unmeasurable (no PRE play-by-play), but
+        # its REGULAR-season split (team_tendency's own "regular_season_measured" field) is a
+        # real, if imperfect, proxy for offensive identity, and offensive identity plausibly
+        # carries into who a preseason coach chooses to feature. Small, capped nudge — never
+        # large enough to be a de-facto second global multiplier: +/-10% on skill-position
+        # drives at the observed extremes of team pass rate (~0.42-0.62 measured range).
+        "team_pass_rate_nudge_cap": 0.10,
+        "team_pass_rate_league_mean": 0.5673,   # = environment.league_dropback_share
+        # Depth-chart rank + prior-season snap share -> tier. The 0.60 confirmed-starter
+        # threshold IS measured: it sits between the measured rank-1 mean (0.5675 RB … 0.7283
+        # WR) and the rank-2 mean (0.3012 … 0.4385), so a player above it is playing a
+        # genuinely rank-1 workload rather than merely being listed there. The 0.35
+        # first-team-rotation threshold is the same logic one rung down: it sits between the
+        # measured rank-2 mean (0.30-0.44) and rank-3 mean (0.14-0.25), separating a real
+        # rotational rank-2 workload from a token one.
         "confirmed_snap_share": 0.60,
+        "first_team_rotation_snap_share": 0.35,
         "min_games_for_confirmation": 4,
+        "min_games_for_rotation": 3,
     },
 
     # ── preseason team tendency ──────────────────────────────────────────────────────────

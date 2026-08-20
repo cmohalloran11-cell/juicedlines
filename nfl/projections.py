@@ -248,9 +248,21 @@ def project_player(name: str, team: Optional[str] = None, position: Optional[str
         on_roster = (team, nname) in data["roster_status"] if team else False
         tier, tier_reason = ROT.classify_tier(depth_rank, prior_share, len(fit.snap_sample),
                                               on_roster)
-        pt = ROT.tier_playing_time(tier, environment.expected_team_snaps, depth_rank)
-        risk = ROT.preseason_risk(tier, pt)
         tendency = ROT.team_tendency(team, data["weeks"], data["schedule"]) if team else None
+        team_pass_rate = tendency.preseason_pass_rate if tendency else None
+        # Player's OWN preseason history — top of the hierarchy (see rotation.py's module
+        # docstring). Always empty with today's data source: nflverse publishes no PRE snap
+        # rows at all (season_type is "REG"|"POST" only). Real, tested code for the day one
+        # is wired, rather than a hook that only exists on paper.
+        pre_snaps = sorted(
+            (s for s in data["snaps"] if s.season_type == "PRE" and _norm(s.player) == nname),
+            key=lambda s: (s.season, s.week), reverse=True)
+        own_preseason_sample = [s.offense_pct for s in pre_snaps if s.offense_pct is not None]
+        pt = ROT.tier_playing_time(tier, environment.expected_team_snaps, depth_rank, pos,
+                                   team_pass_rate=team_pass_rate,
+                                   own_preseason_snap_sample=own_preseason_sample or None)
+        risk = ROT.preseason_risk(tier, pt)
+        rotation_nudge = ROT.team_rotation_nudge(pos, team_pass_rate)
     else:
         # Availability has to be counted against the TEAM's games, not the player's own rows:
         # a missed game leaves no player row at all, so counting only his own rows would make
@@ -264,6 +276,7 @@ def project_player(name: str, team: Optional[str] = None, position: Optional[str
                                      active_games=len(played),
                                      team_games=len(team_played) or None)
         tier, tier_reason, risk, tendency = None, None, None, None
+        own_preseason_sample, rotation_nudge = [], 0.0
 
     defense = data["defense"].get(environment.opponent) if environment.opponent else None
     multipliers = MU.matchup_multipliers(defense)
@@ -275,6 +288,18 @@ def project_player(name: str, team: Optional[str] = None, position: Optional[str
     snap_lo, snap_hi = pt.snap_share_range()
     plays = environment.expected_team_snaps
     dropback = environment.expected_dropback_share
+
+    # Real Monte Carlo output, not re-derived from the Beta shape alone: `sim["snaps"]` already
+    # carries BOTH stages of playing-time uncertainty (the team-snaps draw and the snap-share
+    # draw — see sim/engine.py's module docstring), so its own percentiles are the honest
+    # distribution, asymmetric where the underlying Beta is (a low-mean tier is right-skewed —
+    # see model/playing_time.py's PlayingTime.beta_params) rather than a forced-symmetric range.
+    snap_percentiles = E.summary(sim["snaps"]) if "snaps" in sim else None
+    snap_diag = None
+    if season_type == "preseason":
+        snap_diag = ROT.snap_diagnostic(
+            tier, tier_reason, pos, pt, tendency, snap_percentiles, pt.confidence,
+            depth_rank, len(own_preseason_sample), abs(rotation_nudge))
 
     proj = {
         "player": fit.player, "team": team, "position": pos,
@@ -299,6 +324,9 @@ def project_player(name: str, team: Optional[str] = None, position: Optional[str
         "n_games": fit.n_games, "eff_games": fit.eff_games,
         "sample_weight": fit.sample_weight,
         "confidence": _confidence(fit.eff_games),
+        "snap_percentiles": snap_percentiles,
+        "snap_diagnostic": snap_diag,
+        "prior_influence": snap_diag["prior_influence"] if snap_diag else None,
         "sim": sim,
     }
     _proj_cache[ck] = (time.time(), proj)

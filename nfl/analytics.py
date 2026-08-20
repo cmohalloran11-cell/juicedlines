@@ -223,6 +223,8 @@ def analyze(line: dict) -> dict:
                          "which this engine does not pull.",
         "rotation_tier": proj["rotation_tier"],
         "preseason_risk": proj["preseason_risk"],
+        "snap_percentiles": proj.get("snap_percentiles"),
+        "snap_diagnostic": proj.get("snap_diagnostic"),
         "team_tendency": (None if tendency is None else {
             "team": tendency.team, "coach": tendency.coach,
             "starter_snap_rate": tendency.starter_snap_rate,

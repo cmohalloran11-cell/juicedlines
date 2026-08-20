@@ -121,12 +121,22 @@ def test_depth_rank_3_and_beyond_are_pooled():
 def test_rotation_tiers_classify_off_depth_chart_plus_real_workload():
     tier, why = ROT.classify_tier(1, 0.85, 12)
     assert tier == "confirmed_starter" and "85%" in why
-    assert ROT.classify_tier(1, None, 0)[0] == "expected_starter"
-    assert ROT.classify_tier(1, 0.85, 1)[0] == "expected_starter", "one game can't confirm"
-    assert ROT.classify_tier(2, 0.4, 10)[0] == "second_team"
+    assert ROT.classify_tier(1, None, 0)[0] == "likely_starter"
+    assert ROT.classify_tier(1, 0.85, 1)[0] == "likely_starter", "one game can't confirm"
     assert ROT.classify_tier(4, 0.1, 10)[0] == "third_team"
     assert ROT.classify_tier(None, None, 0, on_roster=True)[0] == "fringe"
     assert ROT.classify_tier(None, None, 0, on_roster=False)[0] == "unknown"
+
+
+def test_rank_2_splits_into_first_team_rotation_vs_second_team_on_real_evidence():
+    """The tier a rank-2 depth-chart player lands in now depends on whether he has a real,
+    qualifying prior-season workload behind him — collapsing both into one "second_team"
+    tier (the old 6-tier model) threw away real depth-chart+history information."""
+    tier, why = ROT.classify_tier(2, 0.40, 10)
+    assert tier == "first_team_rotation" and "40%" in why
+    assert ROT.classify_tier(2, 0.40, 2)[0] == "second_team", "not enough games to confirm"
+    assert ROT.classify_tier(2, 0.10, 10)[0] == "second_team", "share too low to be rotational"
+    assert ROT.classify_tier(2, None, 0)[0] == "second_team"
 
 
 def test_each_rotation_tier_has_its_own_distribution_shape_and_fringe_is_widest():
@@ -138,6 +148,18 @@ def test_each_rotation_tier_has_its_own_distribution_shape_and_fringe_is_widest(
         assert pt.basis == "preseason_tier" and pt.confidence == "low"
     assert widths["confirmed_starter"] < widths["second_team"] < widths["unknown"]
     assert widths["confirmed_starter"] < widths["fringe"]
+    assert len(ROT.TIERS) == 7, "TIER1..TIER7 from confirmed_starter through unknown"
+
+
+def test_seven_tiers_produce_seven_distinct_expected_snaps_for_the_same_position():
+    """The actual bug this module was rebuilt to fix: the old model's confirmed_starter and
+    third_team tiers shared the same mean snap SHARE (0.30), so multiplying by the one
+    constant preseason team-snaps number (no schedule ever varies it) produced the literal
+    identical expected_snaps for both tiers. Drives x position-snaps-per-drive structurally
+    can't collide that way."""
+    snaps = [ROT.tier_playing_time(t, expected_team_snaps=65.3, position="WR").expected_snaps
+            for t in ROT.TIERS]
+    assert len(set(snaps)) == len(ROT.TIERS), f"expected 7 distinct values, got {snaps}"
 
 
 def test_preseason_risk_rises_as_the_tier_gets_less_certain():
@@ -160,6 +182,92 @@ def test_team_tendency_reports_unmeasurable_preseason_fields_as_none_with_a_reas
         assert "preseason" in t.reasons[f]
 
 
+def test_position_changes_expected_snaps_within_the_same_tier():
+    """A QB in the game plays every snap of his own drives (no within-drive rotation is
+    possible at the position); RB/WR/TE corps rotate by personnel package even within a
+    single drive they're nominally part of — so the SAME tier must produce a DIFFERENT
+    expected_snaps for a QB than for a skill position."""
+    qb = ROT.tier_playing_time("likely_starter", expected_team_snaps=65.0, position="QB")
+    wr = ROT.tier_playing_time("likely_starter", expected_team_snaps=65.0, position="WR")
+    rb = ROT.tier_playing_time("likely_starter", expected_team_snaps=65.0, position="RB")
+    assert qb.expected_snaps != wr.expected_snaps != rb.expected_snaps
+    assert qb.expected_snaps > wr.expected_snaps, "a QB plays every snap of his drives"
+
+
+def test_team_rotation_nudge_is_signed_capped_and_position_scoped():
+    cap = float(cfg("preseason_tiers", "team_pass_rate_nudge_cap"))
+    lg = float(cfg("preseason_tiers", "team_pass_rate_league_mean"))
+    # A pass-heavy team nudges WR/TE UP and RB DOWN; a run-heavy team the reverse.
+    assert ROT.team_rotation_nudge("WR", lg + 0.30) > 0
+    assert ROT.team_rotation_nudge("RB", lg + 0.30) < 0
+    assert abs(ROT.team_rotation_nudge("WR", lg + 5.0)) == pytest.approx(cap)
+    assert ROT.team_rotation_nudge("QB", lg + 0.30) == 0.0, "doesn't change a QB's own snaps"
+    assert ROT.team_rotation_nudge("WR", None) == 0.0, "no signal -> no nudge, not a guess"
+
+
+def test_historical_preseason_snap_share_is_real_and_tested_but_always_empty_from_nflverse():
+    assert ROT.historical_preseason_snap_share(None) is None
+    assert ROT.historical_preseason_snap_share([]) is None
+    mean, n = ROT.historical_preseason_snap_share([0.40, 0.30, 0.50])
+    assert n == 3 and 0.30 < mean < 0.50   # recency-weighted toward the most-recent game
+
+
+def test_own_preseason_history_overrides_the_tier_prior_when_it_exists():
+    """Top of the hierarchy: a player's own real preseason usage — when a source publishes
+    it — must move the projection, not just sit next to the tier estimate unused."""
+    no_history = ROT.tier_playing_time("second_team", expected_team_snaps=65.0, position="WR")
+    high_history = ROT.tier_playing_time("second_team", expected_team_snaps=65.0, position="WR",
+                                         own_preseason_snap_sample=[0.55, 0.60, 0.58, 0.52])
+    assert high_history.basis == "preseason_own_history"
+    assert high_history.confidence in ("medium", "high")
+    assert high_history.expected_snaps > no_history.expected_snaps
+    assert high_history.n_games == 4
+
+
+def test_prior_influence_weights_sum_to_about_one_and_shift_toward_historical_when_present():
+    no_hist = ROT.prior_influence_weights(depth_rank=2, own_preseason_n=0,
+                                          team_rotation_nudge_magnitude=0.0)
+    assert sum(no_hist.values()) == pytest.approx(1.0, abs=0.01)
+    assert no_hist["historical_usage_weight"] == 0.0
+    with_hist = ROT.prior_influence_weights(depth_rank=2, own_preseason_n=8,
+                                            team_rotation_nudge_magnitude=0.0)
+    assert sum(with_hist.values()) == pytest.approx(1.0, abs=0.01)
+    assert with_hist["historical_usage_weight"] > no_hist["historical_usage_weight"]
+    no_depth = ROT.prior_influence_weights(depth_rank=None, own_preseason_n=0,
+                                           team_rotation_nudge_magnitude=0.0)
+    assert no_depth["depth_chart_weight"] == 0.0, "no real depth-chart signal -> zero weight"
+
+
+def test_snap_diagnostic_traces_every_field_to_a_real_input():
+    pt = ROT.tier_playing_time("first_team_rotation", expected_team_snaps=65.0, position="RB")
+    tendency = ROT.TeamTendency(team="CIN", preseason_pass_rate=0.58,
+                                basis={"preseason_pass_rate": "regular_season_measured (own team)"})
+    diag = ROT.snap_diagnostic("first_team_rotation", "listed second with real usage", "RB", pt,
+                               tendency, {"p10": 10.0, "p90": 30.0}, "low", 2, 0, 0.05)
+    assert diag["depth_chart_tier"] == "first_team_rotation"
+    assert diag["expected_snaps"] == pt.expected_snaps
+    assert diag["snap_percentiles"] == {"p10": 10.0, "p90": 30.0}
+    assert "58" in diag["team_rotation"] or "0.58" in diag["team_rotation"] \
+        or "58.0" in diag["team_rotation"]
+    assert diag["historical_usage"].startswith("None")
+    assert set(diag["prior_influence"]) == {"historical_usage_weight", "depth_chart_weight",
+                                            "team_rotation_weight", "position_prior_weight",
+                                            "league_prior_weight"}
+
+
+def test_snap_clustering_report_detects_a_degenerate_distribution_vs_a_healthy_one():
+    degenerate = [19.6] * 25 + [26.1] * 8 + [18.3]     # the OLD model's real live 2026-08 output
+    report = ROT.snap_clustering_report(degenerate)
+    assert report["n_distinct_values"] == 3
+    assert report["pct_within_2_of_target"] == pytest.approx(76.5, abs=0.5)
+
+    healthy = [12.3, 13.9, 20.5, 26.7, 21.3, 11.5, 15.6, 9.8, 24.1, 17.2, 30.0, 6.5]
+    report2 = ROT.snap_clustering_report(healthy)
+    assert report2["n_distinct_values"] == len(healthy)
+    assert report2["pct_within_2_of_target"] < report["pct_within_2_of_target"]
+    assert ROT.snap_clustering_report([]) == {}
+
+
 def test_tier_share_measurement_pipeline_returns_nothing_when_no_preseason_rows_exist():
     """The pipeline that WOULD replace the assumed preseason table. Today it correctly
     produces {} because nflverse publishes no PRE snap rows — the honest answer."""
@@ -169,8 +277,8 @@ def test_tier_share_measurement_pipeline_returns_nothing_when_no_preseason_rows_
                              player="Star Receiver")]
     assert ROT.measure_tier_shares(snaps, depth, season_type="PRE") == {}
     measured = ROT.measure_tier_shares(snaps, depth, season_type="REG")
-    assert measured["expected_starter"][0] == pytest.approx(0.85)
-    assert measured["expected_starter"][2] == 40
+    assert measured["likely_starter"][0] == pytest.approx(0.85)
+    assert measured["likely_starter"][2] == 40
 
 
 # ── matchup ──────────────────────────────────────────────────────────────────────────────

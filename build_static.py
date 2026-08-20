@@ -117,6 +117,7 @@ _KEEP = (
     "preseason_risk", "rotation_tier", "role", "depth_chart_position",
     "red_zone_opportunities", "pass_rush_matchup", "game_total", "team_total", "spread",
     "weather", "nfl_confidence", "nfl_confidence_factors",
+    "snap_p10", "snap_p90", "snap_std_dev", "prior_influence",   # preseason snap-model diagnostics
     "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
     "market_book_count",                # juice_score's market-quality component (attach_market_quality)
@@ -145,6 +146,7 @@ _PREMIUM_FIELDS = frozenset({
     "preseason_risk", "rotation_tier", "role", "depth_chart_position",
     "red_zone_opportunities", "pass_rush_matchup", "game_total", "team_total", "spread",
     "weather", "nfl_confidence", "nfl_confidence_factors",
+    "snap_p10", "snap_p90", "snap_std_dev", "prior_influence",
 })
 
 

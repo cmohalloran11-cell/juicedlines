@@ -167,6 +167,10 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
         "weather": line.get("weather"),
         "nflConfidence": line.get("nfl_confidence"),
         "nflConfidenceFactors": line.get("nfl_confidence_factors"),
+        "snapP10": line.get("snap_p10"),
+        "snapP90": line.get("snap_p90"),
+        "snapStdDev": line.get("snap_std_dev"),
+        "priorInfluence": line.get("prior_influence"),
     }
 
 

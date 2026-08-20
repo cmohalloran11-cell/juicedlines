@@ -44,6 +44,7 @@ NFL_FIELDS = (
     "role", "depth_chart_position", "red_zone_opportunities", "pass_rush_matchup",
     "nfl_confidence", "nfl_confidence_factors", "trust_weight", "model_raw",
     "model_raw_prob", "p25", "p75", "model_std_dev", "opponent", "is_home",
+    "snap_p10", "snap_p90", "snap_std_dev", "prior_influence",
 )
 
 
@@ -258,6 +259,13 @@ def attach_nfl(lines: list[dict]) -> int:
             l["depth_chart_position"] = proj["depth_rank"]
             l["rotation_tier"] = proj["rotation_tier"]
             l["preseason_risk"] = proj["preseason_risk"]
+            sp = proj.get("snap_percentiles")
+            if sp:
+                l["snap_p10"] = sp["p10"]
+                l["snap_p90"] = sp["p90"]
+                l["snap_std_dev"] = sp["std_dev"]
+            if proj.get("prior_influence"):
+                l["prior_influence"] = proj["prior_influence"]
             l["pass_rush_matchup"] = proj["pass_rush_matchup"]
             l["game_total"] = env.game_total
             l["team_total"] = env.team_total

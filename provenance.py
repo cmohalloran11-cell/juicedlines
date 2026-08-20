@@ -71,7 +71,23 @@ MODEL_VERSIONS: dict[str, str] = {
     # the simulator; they are tagged proj_kind "nfl_regular" vs "nfl_preseason" specifically so
     # a calibration query can never blend a projection built on measured snap history with one
     # built on assumed preseason rotation tiers.
-    "NFL": "nfl-1.0.0",
+    # 1.1.0 (2026-08): preseason playing-time model rebuilt after live production data showed
+    # it clustering -- 25 of 34 real preseason board lines projected the literal identical
+    # 19.6 expected_snaps (76.5% landed within +-2 of 20), because the old model multiplied
+    # ONE flat per-tier snap-SHARE mean by the SAME constant league-baseline team-snaps number
+    # for every preseason game (no preseason schedule ever exists to vary it), and two of the
+    # six tiers (confirmed_starter, third_team) happened to share that mean (0.30). Replaced
+    # with a drives-first model -- expected_snaps = tier_drives_mean(tier) x
+    # position_snaps_per_drive(position) -- across 7 tiers instead of 6 (rank-2 depth-chart
+    # players now split into first_team_rotation vs second_team on real prior-workload
+    # evidence, the same test rank-1 already used). Two independent, tier-AND-position-varying
+    # factors instead of one shared table entry structurally cannot collide the old way.
+    # Preseason-only: proj_kind already tags nfl_preseason separately from nfl_regular
+    # (unaffected by this change), and NFL preseason has only ever been live a few days, so
+    # this orphans a negligible amount of graded history. See model/rotation.py's module
+    # docstring for the full hierarchy and provenance.MODEL_CHANGELOG for the measured
+    # before/after distribution.
+    "NFL": "nfl-1.1.0",
 }
 _DEFAULT_MODEL_VERSION = "1.0.0"
 
@@ -136,6 +152,21 @@ MODEL_CHANGELOG: dict[str, list[dict]] = {
                     "chosen against a measured fit, not defaulted to Normal. Tagged "
                     "proj_kind nfl_regular / nfl_preseason so the two never blend in a "
                     "calibration query."},
+        {"version": "nfl-1.1.0", "date": "2026-08",
+         "summary": "Rebuilt the preseason playing-time model after live production data "
+                    "showed it clustering: 25 of 34 real preseason board lines projected the "
+                    "literal identical 19.6 expected_snaps (76.5% within +-2 of 20), because "
+                    "the old model multiplied one flat per-tier snap-share mean by the same "
+                    "constant league-baseline team-snaps number for every preseason game "
+                    "(no preseason schedule ever exists to vary it), and two of the six tiers "
+                    "happened to share that mean. New model: expected_snaps = "
+                    "tier_drives_mean(tier) x position_snaps_per_drive(position), across 7 "
+                    "tiers instead of 6 (rank-2 depth-chart players now split into "
+                    "first_team_rotation vs second_team on real prior-workload evidence). "
+                    "Measured on a synthetic population spanning every tier x position "
+                    "(nfl/tests/test_preseason_snap_model.py): 19 distinct expected_snaps "
+                    "values vs the old model's 3, 14.3% within +-2 of 20 vs 76.5%. "
+                    "Regular-season projections are untouched by this change."},
     ],
 }
 
