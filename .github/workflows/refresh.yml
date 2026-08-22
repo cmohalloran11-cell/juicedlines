@@ -117,7 +117,7 @@ jobs:
             cp static/board.json _data/board.json || return 1
             # analytics/history/clv/trust = drawer + CLV data (unchanged on fast cycles);
             # the rest are the SPA page payloads the static frontend reads instead of /api/*.
-            for f in analytics.json history.json clv.db board.free.json trust.json \
+            for f in analytics.json history.json board.free.json trust.json \
                      dashboard.json projections.json boosted.json direction_report.json \
                      injuries.json weather.json books.json optimizer.json \
                      optimizer_books.json optimizer_mlb.json optimizer_wnba.json \
@@ -125,6 +125,16 @@ jobs:
                      auth.json model_health.json backtest.json drift.json; do
               if [ -f "static/$f" ]; then cp "static/$f" "_data/$f"; fi
             done
+            # clv.db keeps every GRADED row forever by design (db.py::prune_clv) so it grows
+            # without bound and crossed GitHub's 100 MiB per-file push limit in August 2026 —
+            # every push silently failed for 14+ hours, freezing board/analytics/everything
+            # else in this same commit even though only clv.db was oversized. gzip instead of
+            # trimming retained history: ~5x on this data (build_static.py's _load_prev_clv
+            # decompresses it back on load), which is a wire-format change, not a data change.
+            if [ -f static/clv.db ]; then
+              gzip -c static/clv.db > _data/clv.db.gz
+              rm -f _data/clv.db   # drop the old uncompressed copy so the tree stops carrying both
+            fi
             # Tell Vercel NOT to deploy the data branch. It's force-pushed every ~5 min; without
             # this each push is a wasted preview build that burns the free 100/day deploy cap and
             # starves the real (main) production deploy. Written at the data-branch ROOT so a

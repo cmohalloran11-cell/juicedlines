@@ -59,9 +59,17 @@ _HIST_MAX_POINTS = 40          # per line; plenty for a movement chart, keeps th
 #
 # NOTE this is prop_clv ONLY. The local history.db is 1.8 GB, but that's almost entirely
 # line_history (9.6M rows) which the static build doesn't need — line movement is served by
-# history.json. The ledger alone is 22.5 MB, and ~0.9 MB once pruned to graded rows.
+# history.json. GRADED rows are kept forever by design (prune_clv's docstring: they're the
+# only historical data multi-season calibration can be built from) so the ledger grows
+# without bound — it reached 107.6 MB / 197k graded rows in August 2026 and every push past
+# GitHub's 100 MiB per-file limit was silently rejected for 14+ hours (board/analytics froze
+# because the whole publish() step fails atomically, not just the clv.db file), which is
+# what actually caused that outage rather than any modeling or data-source bug. Publishing
+# gzip-compressed (~5x on this data, see refresh.yml's publish()) buys a long runway without
+# deleting anything — it's a wire format change only, never a retention decision.
 OUT_CLV = Path(__file__).parent / "static" / "clv.db"
 SEED_CLV = Path(__file__).parent / "clv_seed.db"     # one-time bootstrap, committed to the repo
+_CLV_GZ_URL = "https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/clv.db.gz"
 _CLV_URL = "https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/clv.db"
 
 
@@ -69,14 +77,26 @@ def _load_prev_clv() -> str:
     """Published ledger → static/clv.db. Falls back to the committed seed on first run."""
     OUT_CLV.parent.mkdir(parents=True, exist_ok=True)
     try:
+        import gzip
+        import urllib.request
+        req = urllib.request.Request(f"{_CLV_GZ_URL}?t={int(time.time())}",
+                                     headers={"User-Agent": "juiced-build"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            data = gzip.decompress(r.read())
+        if data[:15] == b"SQLite format 3":        # don't write a 404 page over the ledger
+            OUT_CLV.write_bytes(data)
+            return "data-branch"
+    except Exception:
+        pass
+    try:                                            # legacy uncompressed copy, one-time migration
         import urllib.request
         req = urllib.request.Request(f"{_CLV_URL}?t={int(time.time())}",
                                      headers={"User-Agent": "juiced-build"})
         with urllib.request.urlopen(req, timeout=120) as r:
             data = r.read()
-        if data[:15] == b"SQLite format 3":        # don't write a 404 page over the ledger
+        if data[:15] == b"SQLite format 3":
             OUT_CLV.write_bytes(data)
-            return "data-branch"
+            return "data-branch (legacy uncompressed)"
     except Exception:
         pass
     if SEED_CLV.exists():                          # first run: bootstrap from the seed
