@@ -523,19 +523,25 @@ function toggleLoginMode(){loginMode=loginMode==='signin'?'signup':'signin';
   $('#login-go').textContent=loginMode==='signin'?'Sign in':'Create account';
   $('#login-toggle').innerHTML=loginMode==='signin'?'New here? <b>Create an account</b>':'Have an account? <b>Sign in</b>';
   $('#login-sub').textContent=loginMode==='signin'?'Sync your watchlist, portfolio, and alerts across devices.':'Create an account to sync across devices.'}
-async function doLogin(){if(!SB){$('#login-err').textContent='Auth is not configured on the server.';return}
+async function doLogin(){console.log('[auth]',loginMode,'attempt for', $('#login-email').value.trim());
+  if(!SB){console.error('[auth] doLogin: SB is null -- Supabase client never initialized this load (see the [auth] logs at boot)');$('#login-err').textContent='Auth is not configured on the server.';return}
   const email=$('#login-email').value.trim(),pass=$('#login-pass').value;
   if(!email||!pass){$('#login-err').textContent='Enter email and password.';return}
   $('#login-go').textContent='…';
   const {data,error}=await (loginMode==='signin'?SB.auth.signInWithPassword({email,password:pass}):SB.auth.signUp({email,password:pass}));
   $('#login-go').textContent=loginMode==='signin'?'Sign in':'Create account';
-  if(error){$('#login-err').textContent=error.message;return}
+  if(error){console.error('[auth]',loginMode,'failed:',error);$('#login-err').textContent=error.message;return}
+  console.log('[auth]',loginMode,'succeeded, session:', data.session?'issued':'none (email confirmation pending)');
   if(!data.session){$('#login-err').textContent='Account created — check your email to confirm, then sign in.';loginMode='signin';return}
   setSession(data.session);closeLogin();await refreshWatched();renderAuthUI();render();toast('Signed in')}
-async function doLogout(){if(SB)await SB.auth.signOut();setSession(null);$('#umenu').classList.remove('open');await refreshWatched();renderAuthUI();render();toast('Signed out')}
-async function doGoogle(){if(!SB){$('#login-err').textContent='Auth is not configured.';return}
-  const {error}=await SB.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin+'/dashboard'}});
-  if(error)$('#login-err').textContent=error.message.includes('provider')?'Enable Google in your Supabase dashboard (Auth → Providers).':error.message}
+async function doLogout(){console.log('[auth] sign out');if(SB)await SB.auth.signOut();setSession(null);$('#umenu').classList.remove('open');await refreshWatched();renderAuthUI();render();toast('Signed out')}
+async function doGoogle(){if(!SB){console.error('[auth] doGoogle: SB is null -- Supabase client never initialized this load');$('#login-err').textContent='Auth is not configured.';return}
+  const redirectTo=window.location.origin+'/dashboard';
+  console.log('[auth] starting Google OAuth, redirectTo =', redirectTo,
+             '-- this must be in the Supabase project\'s Auth > URL Configuration > Redirect URLs allowlist or the callback will fail after Google redirects back.');
+  const {error}=await SB.auth.signInWithOAuth({provider:'google',options:{redirectTo}});
+  if(error){console.error('[auth] signInWithOAuth failed:',error);
+    $('#login-err').textContent=error.message.includes('provider')?'Enable Google in your Supabase dashboard (Auth → Providers).':error.message}}
 
 // ── nav ──
 // Grouped nav — organized around how users research props (spec Step 10).
@@ -2273,24 +2279,47 @@ async function boot(){
     $('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load Juiced.<br><span class="muted">${e.message||e}</span><br><button class="btn pri" style="margin-top:14px" onclick="location.reload()">Retry</button></div>`;
   }
 }
-async function bootInner(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
+async function bootInner(){await detectMode();
+  console.log('[auth] deploy mode:', STATIC?'static':'live-server');
+  try{AUTH=await api('/api/auth/status');
+    console.log('[auth] /api/auth/status ->', {server_supabase_url: !!AUTH.supabase_url, server_supabase_key: !!AUTH.supabase_anon_key});
+  }catch(e){AUTH={};console.error('[auth] /api/auth/status failed -- falling back to {}:', e)}
   // On static, auth.json can't know if the Vercel AI function has a key — probe it.
   if(STATIC){try{const s=await api('/api/ai/status');if(s&&typeof s.available==='boolean')AUTH.ai=s.available}catch(e){}}
   // Real Supabase auth — prefer the server-provided config when present, else the hardcoded
   // fallback above, so this page's sign-in state can never diverge from index.html/app.html's
   // just because a deploy's repo secrets weren't set.
   const sbUrl=AUTH.supabase_url||_SB_URL_FALLBACK, sbKey=AUTH.supabase_anon_key||_SB_KEY_FALLBACK;
+  console.log('[auth] resolved config: url source =', AUTH.supabase_url?'server':'hardcoded fallback',
+             '| supabase-js loaded =', !!window.supabase);
+  if(!window.supabase){
+    // The CDN <script src> tag (cdn.jsdelivr.net) is a plain blocking tag loaded before this
+    // script runs, so window.supabase should always exist by now — this only fires if that
+    // request itself failed (network blip, ad-blocker, CDN outage). Every sign-in action
+    // already checks `if(!SB)` and shows a real error instead of failing silently, but this
+    // makes the actual cause diagnosable instead of just "auth is not configured".
+    console.error('[auth] window.supabase is undefined -- the supabase-js CDN script '+
+      '(cdn.jsdelivr.net/npm/@supabase/supabase-js@2) did not load. Sign-in will not work '+
+      'until this succeeds; check the Network tab for that request.');
+  }
   if(sbUrl && sbKey && window.supabase){
     try{
       // PKCE flow returns ?code= (not a #hash token) so it never collides with the SPA's
       // hash router; supabase-js exchanges the code and cleans the URL automatically.
       SB=window.supabase.createClient(sbUrl, sbKey,
         {auth:{flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true,storage:_authStorage}});
-      const {data}=await SB.auth.getSession(); setSession(data.session);
+      const {data,error}=await SB.auth.getSession();
+      if(error)console.error('[auth] getSession() returned an error:', error);
+      console.log('[auth] getSession() ->', data.session?`signed in as ${data.session.user.email}`:'no session');
+      setSession(data.session);
       let first=true;
-      SB.auth.onAuthStateChange(async (ev,s)=>{setSession(s);await refreshWatched();renderAuthUI();await loadAiUsage();
+      SB.auth.onAuthStateChange(async (ev,s)=>{console.log('[auth] onAuthStateChange:', ev, s?`(${s.user.email})`:'(no session)');
+        setSession(s);await refreshWatched();renderAuthUI();await loadAiUsage();
         if(ev==='SIGNED_IN'&&!first){toast('Signed in');render()} first=false;});
-    }catch(e){}
+    }catch(e){console.error('[auth] Supabase client init or getSession() threw:', e)}
+  }else{
+    console.warn('[auth] Supabase auth not initialized this load -- sbUrl:', !!sbUrl,
+                'sbKey:', !!sbKey, 'supabase-js:', !!window.supabase);
   }
   await refreshWatched();
   renderAuthUI();

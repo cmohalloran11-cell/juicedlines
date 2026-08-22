@@ -260,6 +260,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;margin-top:40px}
   var sb=window.supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,storage:authStorage}});
   sb.auth.getSession().then(function(res){
     var u=res && res.data && res.data.session && res.data.session.user;
+    console.log('[auth] index.html getSession() ->', u?('signed in as '+u.email):'no session');
     if(!u) return;
     var name=(u.email||'account').split('@')[0];
     var si=document.getElementById('nav-signin');

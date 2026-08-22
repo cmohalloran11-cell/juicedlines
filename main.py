@@ -350,9 +350,9 @@ def root():
 
 @app.get("/app.html")
 def app_page():
-    # The landing page (index.html) links to ./app.html for "Launch app". In the static
-    # deploy both files are siblings; on the FastAPI server we map it explicitly so the
-    # launch buttons resolve instead of 404ing.
+    # v1 dashboard, superseded by dashboard.html -- index.html no longer links here (every
+    # CTA points at ./dashboard.html now), but the file itself is kept and still served
+    # directly at this URL in case anything external still links to it.
     return FileResponse(STATIC_DIR / "app.html", headers=_HTML_HEADERS)
 
 
