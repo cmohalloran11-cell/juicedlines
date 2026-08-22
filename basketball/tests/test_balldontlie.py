@@ -79,6 +79,19 @@ def test_no_api_key_degrades_to_empty_everywhere(monkeypatch):
     assert adapter.injuries("WNBA") == {}
 
 
+def test_missing_api_key_prints_a_diagnostic_exactly_once_per_process(monkeypatch, capsys):
+    monkeypatch.delenv("BALLDONTLIE_API_KEY", raising=False)
+    monkeypatch.setattr(B, "_warned_no_key", False)
+    adapter = B.BallDontLie()
+    adapter.teams("WNBA")
+    adapter.players("WNBA")
+    adapter.gamelog("WNBA", "101")
+    out = capsys.readouterr().out
+    assert out.count("BALLDONTLIE_API_KEY is not set") == 1, (
+        "must warn once per process, not once per request -- a refresh cycle makes "
+        "hundreds of calls while the key is unset")
+
+
 def test_team_table_and_assets(monkeypatch):
     monkeypatch.setattr(B, "_get", _fake_get)
     adapter = B.BallDontLie()

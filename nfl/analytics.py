@@ -121,7 +121,9 @@ def analyze(line: dict) -> dict:
     player, team = line.get("player"), P.norm_team(line.get("team"))
     try:
         data = P.league_data()
-    except Exception:
+    except Exception as exc:
+        print(f"[RecentGames] player={player!r} sport=NFL provider=nflverse "
+             f"-> league_data() failed: {type(exc).__name__}: {exc}", flush=True)
         return {"available": False, "reason": "NFL data source unavailable right now."}
 
     from .board import _schedule_index, resolve_season_type

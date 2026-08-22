@@ -377,10 +377,15 @@ def _full_logs(pid: int, group: str) -> list[dict]:
             r = mlb._session.get(f"{mlb.BASE}/people",
                                  params={"personIds": pid, "hydrate": hyd}, timeout=25)
             r.raise_for_status()
-        except Exception:
+        except Exception as exc:
+            print(f"[RecentGames] player_id={pid} sport=MLB provider=statsapi.mlb.com "
+                 f"group={group} -> request failed: {type(exc).__name__}: {exc}", flush=True)
             return []
         people = r.json().get("people", [])
         if not people:
+            print(f"[RecentGames] player_id={pid} sport=MLB provider=statsapi.mlb.com "
+                 f"group={group} -> 200 OK but 'people' array is empty (bad/unknown "
+                 f"personId?)", flush=True)
             return []
         splits = []
         for b in people[0].get("stats", []) or []:
@@ -1766,6 +1771,9 @@ def analyze(line: dict) -> dict:
             from nfl.analytics import analyze as _nfl
             return _nfl(line)
     except Exception as exc:
+        print(f"[RecentGames] player={line.get('player')!r} sport={sport} "
+             f"stat={line.get('stat_type')!r} -> analyze() raised {type(exc).__name__}: {exc}",
+             flush=True)
         return {"available": False, "reason": f"analytics error: {exc}"}
     return {"available": False, "reason": f"No analytics wired for {sport} yet."}
 

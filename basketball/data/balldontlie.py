@@ -57,12 +57,25 @@ def _norm_name(s: str) -> str:
     return " ".join(s.lower().replace(".", "").replace("'", "").split())
 
 
+_warned_no_key = False
+
+
 def _get(path: str, params: dict | None = None, ttl: float = 900) -> dict | None:
     """None (never a crash) on: no API key configured, any HTTP/network failure, or a
-    response that doesn't parse as JSON. Every failure prints a diagnostic — the only
-    silent case is 'no key configured', which is expected/normal until one is set."""
+    response that doesn't parse as JSON. Every failure prints a diagnostic. 'No key
+    configured' is logged once per process (not per-call — every WNBA request hits this
+    identically until a key is set, and refresh.yml's cycle can make hundreds of calls) so
+    a genuine data-pipeline investigation ("why are WNBA recent games empty") doesn't have
+    to guess between this and every other possible failure mode — see the 2026-08 live
+    audit that found this specific silent case was masking the single actual cause."""
+    global _warned_no_key
     key = _key()
     if not key:
+        if not _warned_no_key:
+            print("[basketball.balldontlie] BALLDONTLIE_API_KEY is not set -- every WNBA "
+                 "request (rosters, game logs, pace, recent games) returns empty until it "
+                 "is. See DEPLOY.md's env var table.", flush=True)
+            _warned_no_key = True
         return None
     ck = (path, tuple(sorted((params or {}).items())))
     now = time.time()
