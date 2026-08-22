@@ -371,25 +371,53 @@ def _batter_vs_pitcher(batter_id: int, pitcher_id: int) -> Optional[dict]:
 
 def _full_logs(pid: int, group: str) -> list[dict]:
     """[{date, opp_id, opp_name, is_home, stat}], oldest→newest. Cached 3h."""
-    def produce():
+    def _attempt() -> Optional[list]:
+        """One hydrate call. Returns None if the personId itself didn't resolve (distinct
+        from a resolved player whose splits came back empty)."""
         hyd = f"stats(group=[{group}],type=[gameLog],season=[{mlb.season()}])"
+        r = mlb._session.get(f"{mlb.BASE}/people",
+                             params={"personIds": pid, "hydrate": hyd}, timeout=25)
+        r.raise_for_status()
+        people = r.json().get("people", [])
+        if not people:
+            return None
+        splits = []
+        for b in people[0].get("stats", []) or []:
+            splits = b.get("splits", []) or splits
+        return splits
+
+    def produce():
         try:
-            r = mlb._session.get(f"{mlb.BASE}/people",
-                                 params={"personIds": pid, "hydrate": hyd}, timeout=25)
-            r.raise_for_status()
+            splits = _attempt()
         except Exception as exc:
             print(f"[RecentGames] player_id={pid} sport=MLB provider=statsapi.mlb.com "
                  f"group={group} -> request failed: {type(exc).__name__}: {exc}", flush=True)
             return []
-        people = r.json().get("people", [])
-        if not people:
+        if splits is None:
             print(f"[RecentGames] player_id={pid} sport=MLB provider=statsapi.mlb.com "
                  f"group={group} -> 200 OK but 'people' array is empty (bad/unknown "
                  f"personId?)", flush=True)
             return []
-        splits = []
-        for b in people[0].get("stats", []) or []:
-            splits = b.get("splits", []) or splits
+        if not splits:
+            # A resolved, active player with zero splits is usually statsapi's gameLog
+            # hydrate coming back under-hydrated -- observed under the bulk sequential
+            # load a full build puts on it (~5000 player lookups in a few minutes). One
+            # retry recovers most of these without risking a real zero-game player being
+            # retried forever (still returns [] below, just with a diagnosable reason).
+            time.sleep(0.5)
+            try:
+                splits = _attempt()
+            except Exception as exc:
+                print(f"[RecentGames] player_id={pid} sport=MLB provider=statsapi.mlb.com "
+                     f"group={group} -> retry request failed: {type(exc).__name__}: {exc}",
+                     flush=True)
+                splits = None
+            if not splits:
+                print(f"[RecentGames] player_id={pid} sport=MLB provider=statsapi.mlb.com "
+                     f"group={group} -> person resolved but gameLog splits are empty after "
+                     f"one retry (no games this season in this group, or a persistently "
+                     f"under-hydrated response)", flush=True)
+                return []
         out = []
         for sp in splits:
             opp = sp.get("opponent", {}) or {}
