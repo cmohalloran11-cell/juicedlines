@@ -293,15 +293,15 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px}
   <aside class="side">
     <div class="brand"><span class="logo"><span class="wordmark">JUICED</span><svg width="17" height="17" viewBox="0 0 24 24" fill="#c6f24e"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></span><span class="collapse" id="collapseBtn" onclick="toggleCollapse()" title="Collapse sidebar">‹</span></div>
     <nav class="nav" id="nav"></nav>
-    <div class="plan"><div class="t" style="display:flex;align-items:center;gap:7px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M21 8l-9-5-9 5m18 0l-9 5m9-5v8l-9 5m0-13L3 8m9 5v8m-9-5V8"/></svg> Pro Plan</div><div class="s">Demo mode</div><button onclick="go('upgrade')"><span>Upgrade to Pro</span></button></div>
+    <div class="plan"><div class="t" style="display:flex;align-items:center;gap:7px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M21 8l-9-5-9 5m18 0l-9 5m9-5v8l-9 5m0-13L3 8m9 5v8m-9-5V8"/></svg> Pro Plan</div><div class="s" title="Every Pro feature -- portfolio analytics, AI Juice explanations, saved filters, CSV export -- is unlocked free for everyone during the beta. No card, no separate demo data.">Free during beta</div><button onclick="go('upgrade')"><span>See plans</span></button></div>
     <nav class="navbottom" id="navbottom"></nav>
-    <div class="ver"><span>Juiced </span>v2.0 · <span title="Informational only · Not financial advice · You must be of legal age to engage with sports wagering content in your jurisdiction">18+</span></div>
+    <div class="ver"><span>Juiced </span><span title="App version — helps us match a bug report to the exact build">v2.0</span> · <span title="Informational only · Not financial advice · You must be of legal age to engage with sports wagering content in your jurisdiction">18+</span></div>
   </aside>
   <div class="main">
     <div class="topbar">
       <button class="menubtn" id="menubtn" onclick="toggleSide()" aria-label="Menu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
       <div class="hello"><h1 id="greet" style="display:flex;align-items:center;gap:7px">Good morning, Juice <svg width="19" height="19" viewBox="0 0 24 24" fill="#c6f24e"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></h1><p id="subgreet">Here's your edge for today.</p></div>
-      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="globalsearch" placeholder="Search players, teams, props…"><kbd>⌘K</kbd></div>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="globalsearch" placeholder="Search players, teams, props…"><kbd id="kbdhint">⌘K</kbd></div>
       <div class="topright"><div class="aijuice"><svg width="16" height="16" viewBox="0 0 24 24" fill="#c6f24e"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg><div><div class="lbl">AI Juice</div><div class="val" id="aijuice-val">—</div></div></div><span class="badge pro">Pro</span><div class="avatar" id="avatar"></div></div>
     </div>
     <div class="view" id="view"><div class="empty"><div class="em"><svg width="30" height="30" viewBox="0 0 24 24" fill="#5c675a"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg></div>Loading…</div></div>
@@ -342,6 +342,16 @@ const $=(s,r=document)=>r.querySelector(s),el=(t,c,h)=>{const e=document.createE
 // Caching the in-flight PROMISE (not just the resolved value) also dedupes concurrent
 // requests for the same URL fired within the same tick (e.g. Promise.all([...,
 // api('/api/projections?...')]) from two views navigated in quick succession).
+// Bare fetch() never times out on a truly stalled connection -- a promise that never
+// resolves/rejects blocks its await chain forever even inside a try/catch, which is exactly
+// what left the dashboard stuck on its static "Loading…" placeholder with no way out short
+// of a manual refresh (found via a live UX audit, 2026-08). Every fetch on the boot-critical
+// path (api(), detectMode(), the static-JSON loader) now races against this instead.
+function _fetchT(url,opts={},ms=15000){
+  const ctrl=new AbortController();
+  const to=setTimeout(()=>ctrl.abort(),ms);
+  return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(to));
+}
 const _projCache={};
 const _PROJ_CACHE_TTL=30000;
 function _cachedProjectionsFetch(url,doFetch){
@@ -361,7 +371,7 @@ const api=(p,opt={})=>{
   const h={'Content-Type':'application/json'};
   if(AUTH.token)h['Authorization']='Bearer '+AUTH.token; else if(AUTH.dev)h['X-Dev-User']='demo';
   const url=(STATIC && p.startsWith('/api/'))?'.'+p:p;
-  const doFetch=()=>fetch(url,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined}).then(r=>r.json());
+  const doFetch=()=>_fetchT(url,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined}).then(r=>r.json());
   if(!STATIC&&(!opt.method||opt.method==='GET')&&p.startsWith('/api/projections'))
     return _cachedProjectionsFetch(p,doFetch);
   return doFetch();};
@@ -428,10 +438,10 @@ const fsSignedIn=()=>!!AUTH.token;
 // static site is served locally for testing, the JSON sits next to this file, so read relative.
 const _LOCAL=location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:';
 const DATA_BASE=_LOCAL?'./':'https://raw.githubusercontent.com/cmohalloran11-cell/juicedlines/data/';
-async function detectMode(){try{const r=await fetch('./api/status',{cache:'no-store'});STATIC=!r.ok;}catch(e){STATIC=true;}}
+async function detectMode(){try{const r=await _fetchT('./api/status',{cache:'no-store'},6000);STATIC=!r.ok;}catch(e){STATIC=true;}}
 async function staticApi(path){
   const [base,qs]=path.split('?'); const q=new URLSearchParams(qs||'');
-  const J=f=>fetch(DATA_BASE+f+'?t='+Math.floor(Date.now()/60000)).then(r=>r.json()).catch(()=>({}));
+  const J=f=>_fetchT(DATA_BASE+f+'?t='+Math.floor(Date.now()/60000)).then(r=>r.json()).catch(()=>({}));
   switch(base){
     case '/api/dashboard': return J('dashboard.json');
     case '/api/projections': return J(q.get('boosted')==='true'?'boosted.json':'projections.json');
@@ -2207,6 +2217,10 @@ window.addEventListener('hashchange',()=>{closeDrawer();closeSide();render()});
 // floor. PF.q is the actual filter state vProjections reads (line ~613) and applies via
 // applyProj() on render, so setting it before navigating is enough — no DOM timing hack.
 $('#globalsearch').addEventListener('keydown',e=>{if(e.key==='Enter'){PF.q=e.target.value;PF.page=1;go('projections')}});
+// The visible <kbd> hint only ever showed the Mac symbol even though the listener below
+// already accepted Ctrl on every platform (found via a live UX audit, 2026-08) -- Windows/
+// Linux users had a working shortcut with no correct on-screen hint for it.
+{const kh=$('#kbdhint');if(kh&&!/mac|iphone|ipad|ipod/i.test(navigator.platform||navigator.userAgent||''))kh.textContent='Ctrl K';}
 // ⌘K / Ctrl+K focuses global search from anywhere (the hint shown next to the input was
 // never actually wired to a listener).
 window.addEventListener('keydown',e=>{
@@ -2245,7 +2259,21 @@ const _authStorage={
   setItem:(k,v)=>{try{(localStorage.getItem('juiced-remember')!=='0'?localStorage:sessionStorage).setItem(k,v)}catch(e){}},
   removeItem:k=>{try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}}
 };
-async function boot(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
+// Unconditional safety net: whatever hangs inside bootInner() (a stalled fetch even the
+// _fetchT timeouts above didn't catch, an unexpected throw before render() is ever reached),
+// the user gets a real error + Retry after 20s instead of the static "Loading…" placeholder
+// sitting there forever — found via a live UX audit, 2026-08. If bootInner() finishes late in
+// the background after this fires, its own render() call still lands and quietly replaces
+// the error state with the real page.
+async function boot(){
+  try{
+    await Promise.race([bootInner(), new Promise((_,rej)=>
+      setTimeout(()=>rej(new Error('Startup timed out — the server may be slow or unreachable right now.')), 20000))]);
+  }catch(e){
+    $('#view').innerHTML=`<div class="empty"><div class="em">${icon('warn',30,'var(--warn)')}</div>Could not load Juiced.<br><span class="muted">${e.message||e}</span><br><button class="btn pri" style="margin-top:14px" onclick="location.reload()">Retry</button></div>`;
+  }
+}
+async function bootInner(){await detectMode();try{AUTH=await api('/api/auth/status')}catch(e){AUTH={}}
   // On static, auth.json can't know if the Vercel AI function has a key — probe it.
   if(STATIC){try{const s=await api('/api/ai/status');if(s&&typeof s.available==='boolean')AUTH.ai=s.available}catch(e){}}
   // Real Supabase auth — prefer the server-provided config when present, else the hardcoded
