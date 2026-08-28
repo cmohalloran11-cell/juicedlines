@@ -125,6 +125,8 @@ _KEEP = (
     "headshot", "team_logo", "flag", "country", "opponent", "is_home",
     "model_proj", "model_edge", "model_prob", "proj_kind", "model_n", "model_median",
     "model_floor", "model_ceiling",     # the p10-p90 range shown under the projection
+    "prior_tier_reason",                 # CFB's 3-tier-fallback "why" (cfb.board.attach_cfb) --
+                                         # mirrors dashboard.py's _drop, same additive pattern
     "model_raw",                        # pre-anchor model mean — juice_score's model-vs-market
                                          # agreement component (MLB/WNBA; tennis has its own
                                          # 3-way model_agreement below)
@@ -160,7 +162,7 @@ _KEEP = (
 # is safe to serve publicly; the premium file must only ever reach authenticated payers
 # (Phase 3 routes it through the auth gate instead of the public data branch).
 _PREMIUM_FIELDS = frozenset({
-    "model_proj", "model_edge", "model_prob", "proj_kind", "model_n", "model_raw", "model_median",
+    "model_proj", "model_edge", "model_prob", "proj_kind", "prior_tier_reason", "model_n", "model_raw", "model_median",
     "bball_confidence", "tennis_confidence", "model_floor", "model_ceiling",
     "surface", "model_agreement", "elo_eff_matches", "market_book_count", "stat_trust_gamma",
     "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",

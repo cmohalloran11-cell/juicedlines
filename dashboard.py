@@ -175,6 +175,13 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
         "snapP90": line.get("snap_p90"),
         "snapStdDev": line.get("snap_std_dev"),
         "priorInfluence": line.get("prior_influence"),
+        # CFB-specific (cfb.board.attach_cfb) — which of the 3-tier prior fallback priced
+        # this line (cfb_prior_a/b/c: returning production / transfer / recruiting-rating
+        # freshman) and why, so the board can show it as a discoverable tier badge instead
+        # of an opaque proj_kind string. None for every other sport via .get(), same
+        # zero-risk additive pattern as the NFL-specific block above.
+        "projKind": line.get("proj_kind"),
+        "priorTierReason": line.get("prior_tier_reason"),
     }
 
 
