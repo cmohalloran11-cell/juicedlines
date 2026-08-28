@@ -416,7 +416,7 @@ const IC2={
 };
 const FILLED=new Set(['bolt','star','sparkle','fire']);
 const icon=(n,s=16,color)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" ${FILLED.has(n)?`fill="${color||'currentColor'}" stroke="none"`:`fill="none" stroke="${color||'currentColor'}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"`} style="vertical-align:middle;flex:none"><path d="${IC2[n]}"/></svg>`;
-const LEAGUE={MLB:'mlb',NBA:'nba',WNBA:'wnba',NFL:'nfl',NHL:'nhl'};
+const LEAGUE={MLB:'mlb',NBA:'nba',WNBA:'wnba',NFL:'nfl',NHL:'nhl',CFB:'college-football'};
 function leagueLogo(sport,size=15){const k=LEAGUE[sport];
   return k?`<img src="https://a.espncdn.com/i/teamlogos/leagues/500/${k}.png" width="${size}" height="${size}" style="object-fit:contain;vertical-align:middle;flex:none" onerror="this.style.display='none'">`:icon('tennis',size);}
 function teamBadge(x,size=22){return x&&x.teamLogo?`<img src="${x.teamLogo}" width="${size}" height="${size}" style="object-fit:contain;background:#0e130d;border-radius:5px;flex:none" onerror="this.style.display='none'">`:leagueLogo(x&&x.sport,size);}
@@ -585,7 +585,7 @@ function closeSide(){$('.side').classList.remove('open');$('#sidescrim').classLi
 // from the real mean (model_proj) server-side and are untouched by this.
 const dispProj=x=>x.median!=null?(x.projection+x.median)/2:x.projection;
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
-  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${nflBadge(x)}</div><div class="tm">${esc(x.team)||''} ${x.position?'· '+esc(x.position):''}${nflSub(x)}</div></div></div></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${nflBadge(x)}${cfbBadge(x)}</div><div class="tm">${esc(x.team)||''} ${x.position?'· '+esc(x.position):''}${nflSub(x)}</div></div></div></td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${esc(x.stat)||''}</div></td>
   <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${esc(x.team)||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${esc(x.opponent)}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
   <td class="mono" style="font-weight:800" title="Average of the model's mean and median projection">${fmt(dispProj(x))}</td>
@@ -644,7 +644,7 @@ async function vDashboard(){
   renderBankroll(d,opt);
   loadCoach(d,opt);
 }
-function renderTabs(){const S=[['All Sports','all'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis'],['NFL','NFL']];
+function renderTabs(){const S=[['All Sports','all'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis'],['NFL','NFL'],['CFB','CFB']];
   const box=$('#tabs');if(!box)return;box.innerHTML=S.map(([n,k])=>`<span class="tab ${k===sport?'active':''}" onclick="sport='${k}';render()">${k==='all'?icon('bolt',14,'currentColor'):leagueLogo(k,15)}${n}</span>`).join('');}
 
 // ── Today's Edge: hero tiles ──
@@ -876,7 +876,7 @@ let PROJ=[], PROJUP=null, SELID=null;
 // structurally inflated by design (that's how the boosted payout works), so mixed in they'd
 // swamp real priced props out of every top-N view. Lazy-loaded only when the filter is enabled.
 let BOOSTED=[], BOOSTED_LOADED=false;
-const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25,lineMode:'normal',side:'all',nflSeason:'all'};
+const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25,lineMode:'normal',side:'all',nflSeason:'all',cfbTier:'all'};
 const skelRows=(n=9,cols=14)=>Array.from({length:n},()=>`<tr class="skrow">${Array.from({length:cols},(_,i)=>`<td><span class="sk" style="width:${i?30+Math.floor(Math.random()*55):70}%"></span></td>`).join('')}</tr>`).join('');
 // Only books we actually pull. Logos via Google's favicon service (real brand marks, CORS-ok).
 const BOOKS=[
@@ -908,6 +908,19 @@ function nflSub(x){
   if(x.seasonType!=='preseason'&&x.role&&x.role!=='unknown')bits.push(cap(x.role));
   if(x.expectedSnaps!=null)bits.push(Math.round(x.expectedSnaps)+' snaps proj');
   return bits.length?' · '+bits.join(' · '):'';
+}
+// CFB's three-tier prior fallback (cfb/model/rates.py) — which tier actually priced a given
+// row matters more here than for any other sport (they're three genuinely different models,
+// tier C being the weakest by construction), so it's a discoverable badge exactly like NFL's
+// preseason rotation-tier chip above. `projKind`/`priorTierReason` are additive fields (same
+// zero-risk pattern as seasonType) — render nothing until the backend exposes them, never a
+// guessed label.
+const CFB_TIER_LABEL={cfb_prior_a:'RETURNING PROD.',cfb_prior_b:'TRANSFER',cfb_prior_c:'FRESHMAN/RECRUIT'};
+function cfbBadge(x){
+  if(x.sport!=='CFB'||!x.projKind)return '';
+  const lbl=CFB_TIER_LABEL[x.projKind];
+  if(!lbl)return '';
+  return `<span class="chip ${x.projKind==='cfb_prior_c'?'y':''}" style="padding:1px 6px;font-size:9px" title="${esc(x.priorTierReason||'Which of the three prior tiers priced this projection — see the CFB Prior Tier section below')}">${lbl}</span>`;
 }
 
 async function vProjections(title,sub){
@@ -945,6 +958,7 @@ function renderFilters(){
    ${PF.sources.has('prizepicks')?`<div class="fg"><div class="gt">PrizePicks Lines</div><div class="segbar">${[['normal','Normal'],['demon','Demon'],['goblin','Goblin']].map(([k,n])=>`<span class="seg ${PF.lineMode===k?'on':''}" onclick="setLineMode('${k}')" title="${k==='normal'?'Standard/boosted PrizePicks lines (priced)':'PrizePicks boosted lines — no known payout multiplier, so no Edge %/EV, just the raw projection'}">${n}</span>`).join('')}</div></div>`:''}
    <div class="fg"><div class="gt">Side</div><div class="segbar">${[['all','All'],['over','Over'],['under','Under']].map(([k,n])=>`<span class="seg ${PF.side===k?'on':''}" onclick="PF.side='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>
    ${PF.projSport==='NFL'?`<div class="fg"><div class="gt">NFL Season Type</div><div class="segbar">${[['all','All'],['regular','Regular'],['preseason','Preseason']].map(([k,n])=>`<span class="seg ${PF.nflSeason===k?'on':''}" onclick="PF.nflSeason='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>`:''}
+   ${PF.projSport==='CFB'?`<div class="fg"><div class="gt">CFB Prior Tier <span class="muted" style="font-weight:600;text-transform:none;letter-spacing:0">— which prior fed this player's projection</span></div><div class="segbar">${[['all','All'],['cfb_prior_a','Returning'],['cfb_prior_b','Transfer'],['cfb_prior_c','Freshman']].map(([k,n])=>`<span class="seg ${PF.cfbTier===k?'on':''}" onclick="PF.cfbTier='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>`:''}
    <div class="fg"><div class="gt">Prop Categories <span style="color:var(--dim);font-weight:600;margin-left:4px">${PF.projSport==='all'?'All Sports':PF.projSport}</span></div>${all.length?`<div class="catsAll"><span class="rst" onclick="togAllCats(true)">Select All</span><span class="rst" onclick="togAllCats(false)">Clear All</span></div>`:''}${shown.map(catRow).join('')||'<span class="muted" style="font-size:11px">—</span>'}${more>0?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=true;renderFilters()">+ ${more} more</span>`:(PF.catsExpanded&&all.length>10?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=false;renderFilters()">Show less</span>`:'')}</div>
    <div class="fg"><div class="gt">Juice Score</div><div class="frange"><div class="lab"><span>${PF.juiceMin}</span><span>100</span></div><input type="range" min="0" max="100" value="${PF.juiceMin}" oninput="PF.juiceMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value;applyProj()"></div></div>
    <div class="fg"><div class="gt">Confidence</div><div class="frange"><div class="lab"><span>${PF.confMin}%</span><span>100%</span></div><input type="range" min="0" max="100" value="${PF.confMin}" oninput="PF.confMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value+'%';applyProj()"></div></div>
@@ -968,7 +982,7 @@ async function setLineMode(mode){
 }
 function togCat(c,on){on?PF.catsOff.delete(c):PF.catsOff.add(c);PF.page=1;applyProj()}
 function togAllCats(on){PF.catsOff=on?new Set():new Set(catsForSport().map(([c])=>c));PF.page=1;renderFilters();applyProj()}
-function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;PF.lineMode='normal';PF.side='all';PF.nflSeason='all';render()}
+function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;PF.lineMode='normal';PF.side='all';PF.nflSeason='all';PF.cfbTier='all';render()}
 function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move;
   const tile=(cap,big,cls,sub)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div></div>`;
   $('#ptiles').innerHTML=
@@ -982,12 +996,15 @@ function dsAvg(){if(!PROJ.length)return null;return Math.round(PROJ.reduce((s,p)
 function pickNfl(season){PF.projSport='NFL';PF.nflSeason=season;PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()}
 function renderToolbar(){
   const vt=(k,n)=>`<span class="qf ${(k==='high'&&PF.high)||(k==='watch'&&PF.onlyWatch)?'on':''}" onclick="tbClick('${k}')">${n}</span>`;
-  const sports=[['all','All Sports'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis'],['NFL','NFL']];
+  const sports=[['all','All Sports'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis'],['NFL','NFL'],['CFB','CFB']];
   // NFL Preseason gets its own chip (not just a sidebar toggle) so it's discoverable without
   // first clicking into NFL — one click sets both the sport AND the season-type filter.
   const nflPreOn=PF.projSport==='NFL'&&PF.nflSeason==='preseason';
-  const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k&&!(k==='NFL'&&nflPreOn)?'on':''}" onclick="PF.projSport='${k}';PF.nflSeason='all';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}<span class="seg ${nflPreOn?'on':''}" onclick="pickNfl('preseason')">${leagueLogo('NFL',14)}NFL Preseason</span></div>`;
-  $('#ptoolbar').innerHTML=`${sp}<input class="ctl" id="pq" placeholder="Search player…" style="min-width:150px" oninput="PF.q=this.value;PF.page=1;applyProj()" value="${PF.q}">
+  const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k&&!(k==='NFL'&&nflPreOn)?'on':''}" onclick="PF.projSport='${k}';PF.nflSeason='all';PF.cfbTier='all';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}<span class="seg ${nflPreOn?'on':''}" onclick="pickNfl('preseason')">${leagueLogo('NFL',14)}NFL Preseason</span></div>`;
+  // Required by the CFBD Patreon Tier 3 license — must be visible near the CFB board, not
+  // buried in a footer nobody scrolls to (cfb/README.md's license-constraints section).
+  const cfbAttr=PF.projSport==='CFB'?`<span class="muted" style="font-size:10.5px;flex-basis:100%">Data provided by <a href="https://collegefootballdata.com" target="_blank" rel="noopener" style="color:var(--muted);text-decoration:underline">CollegeFootballData.com</a> · CFB is a newly added sport with no graded history yet — see Model Health for real calibration once it exists</span>`:'';
+  $('#ptoolbar').innerHTML=`${sp}${cfbAttr}<input class="ctl" id="pq" placeholder="Search player…" style="min-width:150px" oninput="PF.q=this.value;PF.page=1;applyProj()" value="${PF.q}">
     ${vt('high',icon('fire',13)+' High Juice (80+)')}${vt('watch',icon('star',13)+' Watchlist')}
     <select class="ctl" onchange="PF.sort=this.value;PF.dir=-1;applyProj()"><option value="juice">Sort: Juice</option><option value="edge">Sort: EV %</option><option value="confidence">Sort: Confidence</option><option value="projection">Sort: Projection</option></select>`;
 }
@@ -1000,6 +1017,7 @@ function applyProj(){
   let rows=base.filter(p=>PF.sources.has(p.source));
   if(PF.projSport!=='all')rows=rows.filter(p=>(p.sport||'').toLowerCase()===PF.projSport.toLowerCase());
   if(PF.projSport==='NFL'&&PF.nflSeason!=='all')rows=rows.filter(p=>p.seasonType===PF.nflSeason);
+  if(PF.projSport==='CFB'&&PF.cfbTier!=='all')rows=rows.filter(p=>p.projKind===PF.cfbTier);
   if(PF.catsOff.size)rows=rows.filter(p=>!PF.catsOff.has((p.stat||'').trim()));
   rows=rows.filter(p=>p.juiceScore>=PF.juiceMin && (p.confidence||0)>=PF.confMin && (p.edgePct==null||p.edgePct>=PF.edgeMin));
   if(PF.high)rows=rows.filter(p=>p.juiceScore>=80);
@@ -1020,7 +1038,7 @@ function applyProj(){
 }
 const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
   <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td>
-  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${nflBadge(x)}</div><div class="tm">${esc(x.position)||''} ${x.startTime?'· '+timeOf(x.startTime):''}${nflSub(x)}</div></div></div></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${nflBadge(x)}${cfbBadge(x)}</div><div class="tm">${esc(x.position)||''} ${x.startTime?'· '+timeOf(x.startTime):''}${nflSub(x)}</div></div></div></td>
   <td><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">${teamBadge(x,18)} ${esc(x.team)||''}</span></td>
   <td class="muted">${x.opponent?`${x.isHome?'vs':'@'} ${esc(x.opponent)}`:'—'}</td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${esc(x.stat)||''}</div></td>
@@ -1284,7 +1302,7 @@ async function vOptimizer(){
   $('#view').innerHTML=`<div class="ph2"><div><h2>Entry Optimizer <span class="chip g">New</span></h2><p>JUICED scores every priced prop, builds every legal combination for the book you pick, and Monte-Carlo simulates each one (100,000+ sims on every entry shown) — ranked by Quality Score, so you don't have to build a slip by hand.</p></div>
     <div style="display:flex;gap:8px;flex:none">
       <select id="opt-book" class="ctl" onchange="loadOptimizer()" style="width:150px" title="Every leg in an entry must come from the same book">${bookOpts}</select>
-      <select id="opt-sport" class="ctl" onchange="loadOptimizer()" style="width:140px"><option value="all">All Sports</option><option value="MLB">MLB</option><option value="WNBA">WNBA</option><option value="Tennis">Tennis</option><option value="NFL">NFL</option></select>
+      <select id="opt-sport" class="ctl" onchange="loadOptimizer()" style="width:140px"><option value="all">All Sports</option><option value="MLB">MLB</option><option value="WNBA">WNBA</option><option value="Tennis">Tennis</option><option value="NFL">NFL</option><option value="CFB">CFB</option></select>
     </div></div>
    <div id="opt-content"><div class="panel" style="padding:40px;text-align:center"><span class="muted skel">Running the combination search and Monte Carlo simulation…</span></div></div>`;
   loadOptimizer();
@@ -1950,7 +1968,7 @@ async function vModelHealth(){
         byver=(s.accuracy_by_model_version||{}).by_version||{}, chg=s.changelog||[],
         runs=s.snapshot_history||[];
 
-  const sportTabs=['MLB','WNBA','Tennis','NFL'].map(sp=>{
+  const sportTabs=['MLB','WNBA','Tennis','NFL','CFB'].map(sp=>{
     const sm=sports[sp]||{};
     return `<div class="mv" style="cursor:pointer;${sp===MH_SPORT?'background:#131a10;border-radius:10px':''}" onclick="mhGoSport('${sp}')">
       <span class="lg" style="width:26px">${leagueLogo(sp,20)}</span>
@@ -2123,6 +2141,21 @@ function nflSection(x){
     ${usage}${preseasonBlock}${gameCtx}
   </div>${nflConfBreakdown(x)}`;
 }
+// CFB's three-tier prior (cfb/model/rates.py) plus honest "no track record yet" messaging —
+// zero graded CFB rows exist anywhere in this environment (cfb/README.md), so this section
+// never implies a measured accuracy/calibration number for this sport.
+const CFB_TIER_FULL_LABEL={cfb_prior_a:'Returning production, opponent-adjusted',
+  cfb_prior_b:"Transfer — prior school's production translated to the new competition level",
+  cfb_prior_c:'True freshman / no college production — priced off recruiting rating'};
+function cfbSection(x){
+  if(x.sport!=='CFB')return '';
+  const tier=CFB_TIER_FULL_LABEL[x.projKind];
+  return `<div class="dsec"><h5>CFB Prior Tier</h5>
+    <div class="kv"><div class="b"><div class="l">Which Prior Fed This Projection</div><div class="v" style="font-size:14px">${tier?esc(tier):'not enough data yet'}</div></div></div>
+    ${x.priorTierReason?`<p class="muted" style="font-size:10.5px;margin:8px 0 0">${esc(x.priorTierReason)}</p>`:''}
+    <p class="muted" style="font-size:10.5px;margin:8px 0 0">CFB is a newly added sport with zero graded rows so far, so its accuracy and calibration aren't measurable yet — Model Health will show real numbers here once games have been graded under this model version.</p>
+  </div>`;
+}
 async function openProp(x,tab){
   SELID=x.id; if(cur()==='projections'&&typeof applyProj==='function')try{applyProj()}catch(e){}
   const D=$('#drawer');$('#scrim').classList.add('open');D.classList.add('open');
@@ -2130,6 +2163,7 @@ async function openProp(x,tab){
    <div class="dsec" style="border:0;padding-bottom:0"><button class="btn" style="width:100%;justify-content:center" onclick='goPlayer(${JSON.stringify(x.player).replace(/'/g,"&#39;")})'>${icon('user',13)} View Full Player Page</button></div>
    <div class="dsec">${edgeEvKV(x)}</div>
    ${nflSection(x)}
+   ${cfbSection(x)}
    ${juiceBreakdown(x)}
    <div class="dsec"><h5>Projection Distribution</h5><svg class="distbar" id="dist" viewBox="0 0 420 90" preserveAspectRatio="none"></svg><div id="simkv"></div></div>
    ${confBreakdown(x)}
