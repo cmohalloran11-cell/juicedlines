@@ -168,6 +168,8 @@ All optional — the app runs with none set. Configure on the host (Render/Railw
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.0` | Performance-tracing sample rate (`0.0`–`1.0`). Off by default; only matters if `SENTRY_DSN` is set. |
 | `NFL_CACHE_DIR` | `data/nfl_cache/` | Where the NFL engine caches the fetched nflverse-data release CSVs (tens of MB). Relocate off a read-only or ephemeral filesystem if needed. |
 | `BALLDONTLIE_API_KEY` | *(unset)* | WNBA's data source (`basketball/data/balldontlie.py`) — rosters, game logs, pace, upcoming opponents. Sign up free at [balldontlie.io](https://balldontlie.io) for a key. Unset ⇒ WNBA has no real projections (props still post, but with no `model_proj` — the board hides them from the picks list, same as any unprojected line). Two prior free/keyless sources (ESPN, then stats.wnba.com) were tried and both failed in production — see the module's own docstring for the history. |
+| `CFBD_API_KEY` | *(unset)* | College Football (`cfb/data/cfbd_client.py`) — teams, rosters, schedule + market spread/total, per-player box scores, per-team advanced efficiency. Requires a [CollegeFootballData.com](https://collegefootballdata.com) Patreon Tier 3 key. **Server-side only** — never exposed to the browser or written into `build_static.py`'s output JSON (license constraint). Unset ⇒ every CFBD-backed CFB endpoint returns an honestly-empty result; the roster sync loop (`cfb/players_sync.py`) idles as a no-op. |
+| `ODDS_API_KEY` | *(unset)* | College Football player props (`cfb/data/odds_provider.py`, [the-odds-api.com](https://the-odds-api.com)) — CFBD carries no player props, so this is the only source of CFB prop lines. Unset ⇒ `cfb.lines.fetch_cfb_props` returns `([], None)`, a clean no-op (same as any other optional book in `books.py`). |
 
 New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/ai/explain?id=`, and the authenticated `/api/me`, `/api/watchlists*`, `/api/portfolio*`.
 
@@ -179,6 +181,10 @@ New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/
   vars are set. WNBA is the one exception: it needs `BALLDONTLIE_API_KEY` for real
   projections (see the table above) — without it the sport still loads, just with no
   model-projected props.
+- **CFB has no real projections yet** (Phase 4 part A shipped only the data/plumbing layer —
+  see `cfb/README.md`). `CFBD_API_KEY`/`ODDS_API_KEY` unset ⇒ CFB is entirely inert (no
+  teams synced, no props pulled); set only `ODDS_API_KEY` ⇒ real prop lines post with no
+  `model_proj` yet, same visible state as WNBA with no `BALLDONTLIE_API_KEY`.
 - The `betting_dashboard` clients (Underdog, Kalshi, MLB) are **vendored** here
   (`underdog.py`, `kalshi.py`, `mlb_model.py`) so the repo is self-contained. Local dev
   still prefers the sibling `../betting_dashboard` if present. Re-copy if you update them.

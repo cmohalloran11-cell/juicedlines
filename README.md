@@ -6,6 +6,12 @@ distribution, and a Juice Score for every prop pulled from PrizePicks, Underdog,
 Sleeper — plus a full self-monitoring Model Health system that tracks its own accuracy,
 calibration, and drift against graded outcomes.
 
+**College Football (FBS) is being added as a fifth sport** — `cfb/` currently ships the
+data/plumbing layer only (CFBD client, a swappable player-prop `OddsProvider` + The Odds API
+adapter, canonical player-id mapping with fuzzy-match review, the same `prop_clv` ledger
+schema every sport uses, and a manual player-status override table). No projection math
+exists yet — see `cfb/README.md` for the current state and its extension points.
+
 ## What's here
 
 - **Four real projection engines**, one per sport, each a genuine per-player Monte Carlo
@@ -90,7 +96,8 @@ python -m pytest -q
 by FastAPI's `TestClient`) are test-only and deliberately kept out of the production
 dependency list. Use `requirements-dev.txt` for local test runs; CI already does.
 
-370+ tests across `tests/`, `basketball/tests/`, `tennis/tests/`, and `nfl/tests/` —
+370+ tests across `tests/`, `basketball/tests/`, `tennis/tests/`, `nfl/tests/`, and
+`cfb/tests/` —
 pure-function unit tests for every scoring/simulation component plus integration tests against a real
 (temp-file) database and the live FastAPI app. CI (`.github/workflows/test.yml`) runs this
 on every push and PR; `deploy-prod.yml` won't deploy to production unless it passes first.

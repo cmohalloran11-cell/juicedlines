@@ -18,7 +18,7 @@ import db
 import provenance
 import backtest
 
-_SPORTS = ("MLB", "WNBA", "Tennis", "NFL")
+_SPORTS = ("MLB", "WNBA", "Tennis", "NFL", "CFB")
 
 # 2026-08 (production-readiness audit): every function in this module does several full
 # scans of the graded CLV ledger (db.py's stat_gammas/prob_calibration/interval_width/

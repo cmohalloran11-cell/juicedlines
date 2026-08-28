@@ -146,6 +146,21 @@ def fetch_sleeper(sport_filter: Optional[str] = None) -> tuple[list[dict], Optio
     return out, None
 
 
+# ── CFB (The Odds API) ──────────────────────────────────────────────────────
+# Lazily imported so a problem in the cfb package can never break book status /
+# import-time behaviour for the three fantasy-site books above -- same isolation
+# analytics.attach_projections gives each sport's board-attach step.
+def fetch_cfb(sport_filter: Optional[str] = None) -> tuple[list[dict], Optional[str]]:
+    try:
+        from cfb.lines import fetch_cfb_props
+    except Exception as exc:
+        return [], f"cfb import: {exc}"
+    try:
+        return fetch_cfb_props(sport_filter)
+    except Exception as exc:
+        return [], f"cfb: {exc}"
+
+
 # ── registry ──────────────────────────────────────────────────────────────────
 # Only books we can actually pull are listed. DraftKings Pick6 / ParlayPlay / Chalkboard
 # are bot-walled (Akamai/Cloudflare) with no server-reachable feed, so they're omitted
@@ -156,6 +171,11 @@ REGISTRY = [
     {"key": "prizepicks", "name": "PrizePicks", "status": "live", "where": "core"},
     {"key": "underdog", "name": "Underdog", "status": "live", "where": "core"},
     {"key": "sleeper", "name": "Sleeper", "status": "live", "where": "extra", "fetch": fetch_sleeper},
+    # CFB player props: real sportsbook lines via The Odds API (event-odds), not a fantasy-
+    # site scrape -- CFBD itself carries no player props (see cfb/README.md). Silently
+    # returns ([], None) with no ODDS_API_KEY set, so this is a safe no-op until configured.
+    {"key": "cfb_odds", "name": "CFB (The Odds API)", "status": "live", "where": "extra",
+     "fetch": fetch_cfb},
 ]
 
 

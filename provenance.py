@@ -133,6 +133,17 @@ MODEL_VERSIONS: dict[str, str] = {
     # distinguishes nfl_preseason from nfl_regular, unaffected by which fields determine
     # their values.
     "NFL": "nfl-1.2.0",
+    # 0.1.0 (2026-08): DATA/PLUMBING LAYER ONLY -- no projection math exists yet. cfb/board.py's
+    # attach_cfb is a no-op stub (see its own module docstring); every CFB line reaches the
+    # board unprojected. Registered now, rather than left absent (which would fall back to
+    # _DEFAULT_MODEL_VERSION below and read as a real, generic version rather than "no model
+    # shipped"), specifically so a future graded row can never be misattributed to logic that
+    # didn't exist yet. New sport, no math shipped -> CFB starts UNMEASURABLE by definition
+    # (model_health/backtest already report "insufficient_data" honestly for zero graded rows
+    # -- no special-casing needed, see the health()/current_accuracy() paths MLB/WNBA/Tennis
+    # validated on day one). Bump to cfb-1.0.0 on the modeling agent's first real engine --
+    # same "new engine, nothing to orphan" reasoning as NFL's 1.0.0 entry above.
+    "CFB": "cfb-0.1.0",
 }
 _DEFAULT_MODEL_VERSION = "1.0.0"
 
@@ -256,6 +267,17 @@ MODEL_CHANGELOG: dict[str, list[dict]] = {
                     "after, model_proj=53.0 (the stat's honest skewed mean) / "
                     "model_prob=0.500 (a correct coinflip). Applies to every NFL line, both "
                     "season types."},
+    ],
+    "CFB": [
+        {"version": "cfb-0.1.0", "date": "2026-08",
+         "summary": "Data/plumbing layer only: CFBD team/roster/schedule/box-score client, "
+                    "a swappable OddsProvider (The Odds API adapter for player props -- CFBD "
+                    "carries none), canonical player table with a fuzzy-match id-mapping "
+                    "layer, a manual player-status override table, and the full prop_clv "
+                    "ledger schema (pre-anchor model_raw/model_raw_prob/trust_weight included "
+                    "from day one). No projection math exists yet -- attach_cfb is a no-op "
+                    "stub; every CFB line reaches the board unprojected until the modeling "
+                    "agent's garbage-time/pace/3-tier-prior engine lands."},
     ],
 }
 
