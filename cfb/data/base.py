@@ -86,6 +86,20 @@ class TeamGameEfficiency:
 
 
 @dataclass
+class RecruitRating:
+    """One signed recruit's composite rating. The ONLY real prior a true freshman has -- the
+    tier-C input in cfb/model/rates.py. The recruiting feed carries no athlete id that the box
+    scores share, so callers join it on the normalized name."""
+    season: int                             # signing class year
+    name: str
+    team: Optional[str] = None
+    position: Optional[str] = None
+    rating: Optional[float] = None          # 247 composite, ~0.70-1.00
+    stars: Optional[int] = None
+    ranking: Optional[int] = None
+
+
+@dataclass
 class ScheduleGame:
     """One scheduled game. `spread`/`over_under` are the market's own numbers where CFBD's
     `/lines` endpoint has them (it aggregates real sportsbook lines) -- read these directly
@@ -103,6 +117,22 @@ class ScheduleGame:
     spread: Optional[float] = None          # home-team perspective, negative = home favoured
     over_under: Optional[float] = None
     completed: bool = False
+    # Final score, present only once `completed`. The garbage-time layer measures how far a
+    # real final margin lands from the market's expected margin, which is the only thing that
+    # turns a point spread into a blowout PROBABILITY -- see cfb/model/garbage_time.py.
+    home_points: Optional[int] = None
+    away_points: Optional[int] = None
+
+    def margin_for(self, team: str) -> Optional[float]:
+        """Final margin in `team`'s favour, or None for a game with no published score."""
+        if self.home_points is None or self.away_points is None:
+            return None
+        diff = float(self.home_points - self.away_points)
+        if team == self.home_team:
+            return diff
+        if team == self.away_team:
+            return -diff
+        return None
 
     def opponent_of(self, team: str) -> Optional[str]:
         if team == self.home_team:
@@ -143,3 +173,10 @@ class CfbDataSource(ABC):
     def team_efficiency(self, season: int, week: Optional[int] = None) -> list[TeamGameEfficiency]:
         """Per-team-game advanced efficiency (PPA, success rate) -- the modeling agent's
         opponent-adjustment and pace inputs."""
+
+    def recruiting(self, season: int) -> list[RecruitRating]:
+        """One signing class's composite ratings. Deliberately NOT abstract: a source that
+        publishes no recruiting data is a real, supportable case (the return is then [] and
+        the tier-C prior falls back to the positional league mean), and making it abstract
+        would force every alternative source to stub it."""
+        return []

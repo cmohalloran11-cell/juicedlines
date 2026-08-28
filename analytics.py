@@ -1830,10 +1830,6 @@ def attach_projections(lines: list[dict]) -> dict[str, str]:
         sub_errors["nfl"] = str(exc)
         print(f"[nfl] attach failed: {exc}")
 
-    # cfb: data/plumbing layer only (Phase 4 part A) -- attach_cfb is currently a no-op stub
-    # the modeling agent's real projection math fills in. Wired in now so that work is a
-    # body-only change with zero further dispatch/registration, matching every other sport's
-    # attach_* shape. See cfb/board.py's module docstring.
     try:
         from cfb.board import attach_cfb
         attach_cfb(lines)

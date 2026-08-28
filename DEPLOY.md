@@ -181,10 +181,20 @@ New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/
   vars are set. WNBA is the one exception: it needs `BALLDONTLIE_API_KEY` for real
   projections (see the table above) — without it the sport still loads, just with no
   model-projected props.
-- **CFB has no real projections yet** (Phase 4 part A shipped only the data/plumbing layer —
-  see `cfb/README.md`). `CFBD_API_KEY`/`ODDS_API_KEY` unset ⇒ CFB is entirely inert (no
-  teams synced, no props pulled); set only `ODDS_API_KEY` ⇒ real prop lines post with no
-  `model_proj` yet, same visible state as WNBA with no `BALLDONTLIE_API_KEY`.
+- **CFB needs BOTH keys to be useful, and each does a different job.** `ODDS_API_KEY` is the
+  only source of CFB prop *lines* (CFBD carries no player props); `CFBD_API_KEY` is the only
+  source of the *data the engine fits on* — the engine estimates every prior, shrinkage
+  strength, opponent factor and pace coefficient at runtime from real CFBD rows rather than
+  from constants, so with no CFBD key there is nothing to fit and `cfb.projections.league_data`
+  returns `None`. Neither key set ⇒ CFB is entirely inert (no teams synced, no props pulled).
+  `ODDS_API_KEY` only ⇒ real prop lines post with no `model_proj`, the same visible state as
+  WNBA with no `BALLDONTLIE_API_KEY`. Both set ⇒ full projections
+  (`proj_kind` = `cfb_prior_a`/`b`/`c`, see `cfb/README.md`). Also run the roster sync
+  (`cfb/players_sync.py`, wired into `main.py`'s lifespan): the box-score feed carries no
+  position, so an unsynced `cfb_players` table leaves every player in the pooled prior bucket.
+- **CFB accuracy is not measurable yet, by construction.** It is a brand-new engine with zero
+  graded rows, so `model_health`/`backtest` report `insufficient_data` for it — that is
+  correct, not a bug, and it will stay that way until real games grade under `cfb-1.0.0`.
 - The `betting_dashboard` clients (Underdog, Kalshi, MLB) are **vendored** here
   (`underdog.py`, `kalshi.py`, `mlb_model.py`) so the repo is self-contained. Local dev
   still prefers the sibling `../betting_dashboard` if present. Re-copy if you update them.

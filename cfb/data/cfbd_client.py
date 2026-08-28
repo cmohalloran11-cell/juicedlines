@@ -21,7 +21,10 @@ live call:
   GET /roster?team=&year=    -> [{id, first_name, last_name, team, position, jersey, ...}]
   GET /games?year=&week=&seasonType=
                               -> [{id, season, week, seasonType, startDate, homeTeam, awayTeam,
-                                   homeClassification, awayClassification, completed, ...}]
+                                   homeClassification, awayClassification, completed,
+                                   homePoints, awayPoints, ...}]
+  GET /recruiting/players?year=
+                              -> [{name, position, committedTo, rating, stars, ranking, ...}]
   GET /lines?year=&week=&team=
                               -> [{id (=gameId), homeTeam, awayTeam,
                                    lines: [{provider, spread, overUnder}, ...]}]
@@ -46,8 +49,8 @@ from typing import Optional
 
 import requests
 
-from .base import (CfbDataSource, TeamRef, PlayerRef, PlayerGameStats, TeamGameEfficiency,
-                   ScheduleGame)
+from .base import (CfbDataSource, TeamRef, PlayerRef, PlayerGameStats, RecruitRating,
+                   TeamGameEfficiency, ScheduleGame)
 from ..config import CFBD_BASE_URL, HTTP_TIMEOUT, CACHE_TTL, cfbd_api_key
 
 _memory: dict = {}
@@ -102,6 +105,13 @@ def _f(v) -> float:
 def _of(v) -> Optional[float]:
     try:
         return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _oi(v) -> Optional[int]:
+    try:
+        return int(v) if v not in (None, "") else None
     except (TypeError, ValueError):
         return None
 
@@ -171,7 +181,9 @@ class CFBDClient(CfbDataSource):
                 home_team=home, away_team=away,
                 home_classification=g.get("homeClassification") or g.get("home_classification"),
                 away_classification=g.get("awayClassification") or g.get("away_classification"),
-                spread=spread, over_under=ou, completed=bool(g.get("completed"))))
+                spread=spread, over_under=ou, completed=bool(g.get("completed")),
+                home_points=_oi(g.get("homePoints") or g.get("home_points")),
+                away_points=_oi(g.get("awayPoints") or g.get("away_points"))))
         return out
 
     def _lines_by_game(self, season: int, week: Optional[int]) -> dict[str, tuple]:
@@ -295,4 +307,23 @@ class CFBDClient(CfbDataSource):
                 offense_success_rate=_of(off.get("successRate")),
                 defense_success_rate=_of(dfn.get("successRate")),
                 plays=int(r["plays"]) if r.get("plays") not in (None, "") else None))
+        return out
+
+    def recruiting(self, season: int) -> list[RecruitRating]:
+        raw = _get("/recruiting/players", {"year": season})
+        if not isinstance(raw, list):
+            return []
+        out = []
+        for r in raw:
+            if not isinstance(r, dict):
+                continue
+            name = r.get("name") or " ".join(
+                x for x in (r.get("firstName"), r.get("lastName")) if x).strip()
+            if not name:
+                continue
+            out.append(RecruitRating(
+                season=r.get("year", season), name=name,
+                team=r.get("committedTo") or r.get("committed_to"),
+                position=r.get("position"), rating=_of(r.get("rating")),
+                stars=_oi(r.get("stars")), ranking=_oi(r.get("ranking"))))
         return out

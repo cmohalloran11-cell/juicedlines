@@ -1,10 +1,15 @@
 """
-cfb — College Football (FBS, all 134 teams) data + plumbing layer inside JUICED.
+cfb — College Football (FBS, all 134 teams) inside JUICED: data layer + Monte Carlo engine.
 
-This package is DATA/PLUMBING ONLY (Phase 4, part A). It does not simulate anything -- there
-is no cfb/model/ or cfb/sim/ yet, unlike basketball/nfl/tennis. What it provides for the
-modeling agent to build on top of:
-
+  model/                 The fitting layer -- league priors and their empirical-Bayes
+                         shrinkage strengths, team pace, opponent strength, the garbage-time
+                         blowout discount, and the three-tier prior (returning / transfer /
+                         true freshman) that blends them. Pure functions of already-fetched
+                         dataclasses; no I/O, no database.
+  sim/engine.py          The Monte Carlo run: projected team plays x usage share x efficiency,
+                         with the two-stage parameter+outcome uncertainty layer every other
+                         engine in this repo uses.
+  projections.py         The engine's only I/O: fetch, cache, fit, project one player-game.
   data/cfbd_client.py   CFBD REST adapter (teams, rosters, schedule + market spread/total,
                          per-player box scores, per-team advanced efficiency). Server-side
                          only -- CFBD_API_KEY never reaches a browser or a static-build output.
@@ -23,18 +28,20 @@ modeling agent to build on top of:
                          a market actually being posted, and registers into books.REGISTRY so
                          both deploy paths (main.py's live loop, build_static.py) pick it up
                          with zero further wiring.
-  board.py                attach_cfb(lines) -- the extension point the modeling agent's real
-                         projection math (garbage-time model, pace model, 3-tier prior
-                         fallback, opponent adjustment) plugs into. Registered in
-                         analytics.attach_projections exactly like tennis/basketball/nfl.
+  board.py                attach_cfb(lines) -- writes model_proj/model_prob/... onto every CFB
+                         line the engine can price, market-anchored on the MEDIAN. Registered
+                         in analytics.attach_projections exactly like tennis/basketball/nfl.
 
 Every CFB row logs the same prop_clv ledger schema every other sport does (sport='CFB'), pre-
 anchor model_raw/model_raw_prob/trust_weight/model_version included from day one -- see
 cfb/tests/test_ledger.py.
 
-New sport, no math shipped yet -> CFB starts UNMEASURABLE by definition. model_health /
-backtest already report "insufficient_data" honestly for any sport with zero graded rows
-(the same path MLB/WNBA/Tennis validated on day one); CFB needs no special-casing there.
+CFB IS STILL UNMEASURABLE, and shipping an engine did not change that: no CFBD_API_KEY has
+existed in any environment this code has run in, so none of its fits has seen a live response,
+and the ledger holds zero graded CFB rows. model_health / backtest report "insufficient_data"
+honestly for any sport with zero graded rows (the same path MLB/WNBA/Tennis validated on day
+one); CFB needs no special-casing there, and will keep reporting it until real games grade
+under cfb-1.0.0. See cfb/README.md's "What's genuinely NOT verified".
 """
 from __future__ import annotations
 
