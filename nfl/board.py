@@ -45,6 +45,7 @@ NFL_FIELDS = (
     "nfl_confidence", "nfl_confidence_factors", "trust_weight", "model_raw",
     "model_raw_prob", "p25", "p75", "model_std_dev", "opponent", "is_home",
     "snap_p10", "snap_p90", "snap_std_dev", "prior_influence",
+    "model_pre_mean", "model_pre_median", "model_pre_sd", "model_pre_prob", "model_anchor_t",
 )
 
 
@@ -262,6 +263,14 @@ def attach_nfl(lines: list[dict]) -> int:
             l["model_raw"] = round(model_mean, 2)
             l["model_raw_prob"] = round(float((arr > line_val).mean()), 4)
             l["trust_weight"] = round(float(trust), 3)
+            # PRE-anchor moments of the untouched array + the weight actually left on the
+            # model, for the Juice Score. Zero on the snap-to-market branch above, which is
+            # the state juice must report as "no model signal" rather than score.
+            l["model_pre_mean"] = round(model_mean, 2)
+            l["model_pre_median"] = round(model_median_raw, 2)
+            l["model_pre_sd"] = round(float(arr.std()), 4)
+            l["model_pre_prob"] = l["model_raw_prob"]
+            l["model_anchor_t"] = 0.0 if trust < min_trust else round(float(trust), 3)
 
             l["season_type"] = season_type
             l["season_type_confirmed"] = confirmed

@@ -79,8 +79,9 @@ def init_db() -> None:
         #    reads as a huge edge and is actually just the price.
         #  * odds_type: demon/goblin lines are deliberately warped, so (m−L) vs (y−L) on them
         #    manufactures correlation and inflates the edge regression. Must be filterable.
-        #  * model_raw / trust_weight: MLB doesn't anchor (close_proj IS the raw model), but
-        #    WNBA/tennis blend toward the line, so their close_proj is NOT the model.
+        #  * model_raw / trust_weight: every sport now blends toward the line, so close_proj is
+        #    NOT the model. (This line used to read "MLB doesn't anchor"; that was true only
+        #    until MLB's per-stat anchoring went live 2026-07-21 — see analytics._mlb_trust.)
         #    The edge regression (y−L)=a+γ(m−L) needs the PRE-anchor m. Recovering it later via
         #    m=L+(final−L)/t is impossible at t=0 (snap-to-line) and numerically unstable at
         #    small t (tennis ~0.05 → 20× any rounding), so log it directly.
@@ -101,6 +102,18 @@ def init_db() -> None:
                          ("model_version", "TEXT"),
                          ("feature_version", "TEXT"),
                          ("data_snapshot", "TEXT"),
+                         # ── Juice Score v2 inputs (2026-08-28) ──────────────────────────
+                         # The score is built entirely on the PRE-anchor distribution, and
+                         # none of these three are recoverable from what the ledger already
+                         # stores: close_proj is the anchored mean, model_raw is only stamped
+                         # when an anchor was applied, and model_floor/ceiling are the WIDTH-
+                         # STRETCHED display band, not the simulation's real spread. Without
+                         # them a graded row can never be re-scored, so juice can never be
+                         # backtested against outcomes — which is exactly why v2's own
+                         # validation had to fall back to a per-stat residual-SD proxy.
+                         ("model_raw_median", "REAL"),   # pre-anchor median m_med
+                         ("model_raw_sd", "REAL"),       # pre-anchor SD m_sd
+                         ("model_anchor_t", "REAL"),     # TOTAL anchor weight (engine × gamma)
                          # ── model-health archetype signal (2026-08) ─────────────────────
                          # model_n = games/PA/BF of history behind the projection at grading
                          # time -- already computed on every line for confidence_score, just
@@ -275,6 +288,7 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
             l.get("game_id"),
             l.get("model_version"), l.get("feature_version"), l.get("data_snapshot"),
             l.get("model_n"),
+            l.get("model_pre_median"), l.get("model_pre_sd"), l.get("model_anchor_t"),
         ))
     if not rows:
         return 0
@@ -288,8 +302,9 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
                 close_over_implied, close_under_implied,
                 model_raw, model_raw_prob, trust_weight,
                 model_floor, model_ceiling, game_id,
-                model_version, feature_version, data_snapshot, model_n)
-            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?)
+                model_version, feature_version, data_snapshot, model_n,
+                model_raw_median, model_raw_sd, model_anchor_t)
+            VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?, ?,?,?)
             ON CONFLICT(line_id, game_date) DO UPDATE SET
                 close_ts=excluded.close_ts, close_line=excluded.close_line,
                 close_prob=excluded.close_prob, close_proj=excluded.close_proj,
@@ -308,7 +323,10 @@ def log_clv(lines: list[dict[str, Any]], ts: str) -> int:
                 model_version=excluded.model_version,
                 feature_version=excluded.feature_version,
                 data_snapshot=excluded.data_snapshot,
-                model_n=excluded.model_n
+                model_n=excluded.model_n,
+                model_raw_median=excluded.model_raw_median,
+                model_raw_sd=excluded.model_raw_sd,
+                model_anchor_t=excluded.model_anchor_t
         """, rows)
         c.commit()
     return len(rows)

@@ -152,6 +152,15 @@ def attach_basketball(lines: list[dict]) -> int:
             l["model_raw"] = round(model_mean, 2)
             l["model_raw_prob"] = round(float((arr > line).mean()), 4)
             l["trust_weight"] = round(float(trust), 3)
+            # PRE-anchor moments of the same untouched array, for the Juice Score. `trust` is
+            # the weight actually left on the model, and it is 0 (not `trust`) on the
+            # snap-to-market branch above — juice reads it to null itself out when the board
+            # has already decided it has no model opinion.
+            l["model_pre_mean"] = round(model_mean, 2)
+            l["model_pre_median"] = round(model_median_raw, 2)
+            l["model_pre_sd"] = round(float(arr.std()), 4)
+            l["model_pre_prob"] = l["model_raw_prob"]
+            l["model_anchor_t"] = 0.0 if trust < 0.2 else round(float(trust), 3)
             l["model_n"] = proj["n_games"]
             l["bball_confidence"] = proj["confidence"]
             if status == "questionable":     # Day-To-Day/GTD → he may play; flag, don't suppress

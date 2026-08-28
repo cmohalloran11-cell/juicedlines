@@ -92,6 +92,14 @@ FORMATS: list[tuple[int, str]] = list(PAYOUTS.keys())
 # how many props are actually on the board.
 _POOL_CAP = {2: 35, 3: 30, 4: 24, 5: 20, 6: 16}
 
+
+def _juice_rank(leg: dict) -> float:
+    """Shortlist ranking on juice MAGNITUDE. Under valuation.JUICE_VERSION=2 the score is
+    signed — a strong Under is exactly as good a leg as an equally strong Over — and is None
+    when the model has no opinion to score, which must sort last, not mid-pack."""
+    js = leg.get("juiceScore")
+    return abs(js) if js is not None else -1.0
+
 # Hard-avoid correlated pairs by default (see module docstring) rather than price them with
 # an assumed, unmeasured rho.
 PREFER_INDEPENDENT = True
@@ -278,7 +286,7 @@ def candidate_legsets(pool: list[dict], picks: int, sport: Optional[str] = None,
     if len(eligible) < picks:
         return []
     cap = _POOL_CAP.get(picks, 16)
-    eligible.sort(key=lambda l: l.get("juiceScore") or 0, reverse=True)
+    eligible.sort(key=_juice_rank, reverse=True)
     eligible = eligible[:cap]
 
     scored: list[tuple[float, list[dict]]] = []
@@ -288,7 +296,7 @@ def candidate_legsets(pool: list[dict], picks: int, sport: Optional[str] = None,
         if not allow_correlated and any(
                 correlation_tag(a, b) != "independent" for a, b in itertools.combinations(combo, 2)):
             continue
-        score = sum(l.get("juiceScore") or 0 for l in combo) / picks
+        score = sum(_juice_rank(l) for l in combo) / picks
         scored.append((score, list(combo)))
     scored.sort(key=lambda t: t[0], reverse=True)
     return [combo for _, combo in scored[:shortlist]]

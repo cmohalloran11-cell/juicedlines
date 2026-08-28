@@ -193,6 +193,13 @@ def refresh_lines(sport: str = "all") -> dict[str, Any]:
     except Exception as exc:
         log.warning("attach_stat_trust failed: %s", exc)
 
+    # juice_v2's near-lock availability cap needs a clock, and valuation.py is pure — both
+    # deploy paths have to attach it or the cap silently never fires on one of them.
+    try:
+        analytics.attach_lock_clock(lines)
+    except Exception as exc:
+        log.warning("attach_lock_clock failed: %s", exc)
+
     _cache["lines"] = lines
     _cache["updated_at"] = _now_iso()
     _cache["errors"] = errors

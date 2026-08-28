@@ -198,5 +198,18 @@ def attach_tennis(lines: list[dict], surface: str = "Hard") -> int:
                 l["surface"] = match_surface
                 l["model_agreement"] = res.get("model_agreement")
                 l["elo_eff_matches"] = res.get("elo_eff_matches")
+                # PRE-anchor moments of the untouched array + the weight actually left on the
+                # model, for the Juice Score. `anchored` is currently true for every tennis
+                # line (see proj_kind above), which is exactly the state juice must report as
+                # "no model signal" rather than scoring the market's own line back at itself.
+                # Deliberately NOT also stamping model_raw/model_raw_prob here: those two feed
+                # db.stat_gammas/prob_calibration, which currently measure tennis off the
+                # ANCHORED close_proj/close_prob, and switching the quantity they read
+                # mid-model-version would blend two definitions of m inside one calibration fit.
+                l["model_pre_mean"] = round(model_mean, 2)
+                l["model_pre_median"] = round(model_median_raw, 2)
+                l["model_pre_sd"] = round(float(arr.std()), 4)
+                l["model_pre_prob"] = round(float((arr > line).mean()), 4)
+                l["model_anchor_t"] = 0.0 if anchored else round(float(trust), 3)
                 done += 1
     return done

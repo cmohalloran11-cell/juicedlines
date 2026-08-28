@@ -142,6 +142,11 @@ _KEEP = (
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
     "market_book_count",                # juice_score's market-quality component (attach_market_quality)
     "stat_trust_gamma",                 # juice_score's measured-per-stat-trust component (attach_stat_trust)
+    # juice_v2's inputs: the PRE-anchor simulated distribution + the total anchor weight left
+    # on the model + the lock horizon. All four must survive into the static payload or the
+    # static deploy scores a different (null) juice than the live server for the same prop.
+    "model_pre_mean", "model_pre_median", "model_pre_sd", "model_pre_prob",
+    "model_anchor_t", "minutes_to_lock",
     # 2026-08: projection version metadata (spec Principle 4 reproducibility) -- stamped on
     # every line by provenance.stamp_lines but previously stripped here before reaching any
     # served output, so a user could never actually see which model version produced their
@@ -159,6 +164,7 @@ _PREMIUM_FIELDS = frozenset({
     "bball_confidence", "tennis_confidence", "model_floor", "model_ceiling",
     "surface", "model_agreement", "elo_eff_matches", "market_book_count", "stat_trust_gamma",
     "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",
+    "model_pre_mean", "model_pre_median", "model_pre_sd", "model_pre_prob", "model_anchor_t",
     "lineup_slot", "lineup_status", "workload_status", "layoff_days", "workload_outs",
     "season_type", "season_type_confirmed", "expected_snaps", "snap_range",
     "expected_routes", "expected_routes_basis", "expected_targets", "expected_carries",
@@ -211,6 +217,10 @@ def main() -> None:
         analytics.attach_stat_trust(lines)   # juice_score's measured-per-stat-trust signal
     except Exception as exc:
         errors["stat_trust"] = str(exc)
+    try:
+        analytics.attach_lock_clock(lines)   # juice_v2's near-lock availability cap
+    except Exception as exc:
+        errors["lock_clock"] = str(exc)
 
     # Direction-invariant validation (2026-07-29 Over/Under bias audit): every exported
     # projection must satisfy Projection > Line ⇒ P(Over) > 50% (and the reverse). The engines
@@ -257,6 +267,28 @@ def main() -> None:
             print("::endgroup::")
     except Exception as exc:
         errors["ev_audit"] = str(exc)
+
+    # Juice Score coherence review queue. A fault means the engine's own P(over) and its
+    # median-vs-line displacement point opposite ways by more than the distribution's skew can
+    # explain — an engine contradicting itself, not a weak prop. juice_v2 already nulls these
+    # and dashboard._projected() drops them; this is where they get seen by a human. Runs
+    # regardless of JUICE_VERSION, because the integrity check is worth having even while the
+    # score itself is flag-gated off.
+    try:
+        faults = valuation.audit_juice_coherence(lines)
+        if faults:
+            print(f"::group::Juice coherence — {len(faults)} model-integrity faults "
+                  f"(excluded from the board)")
+            for f in faults[:25]:
+                print(f"  {f['sport']}/{f['proj_kind']}  {f['player']} — {f['stat_type']} "
+                      f"line {f['line']}: p={f['p']:.3f} vs b={f['b']:.3f} (e={f['e']:+.3f}) "
+                      f"but median sits z={f['z']:+.2f} SD away, skew g={f['g']:+.2f}")
+            if len(faults) > 25:
+                print(f"  … and {len(faults) - 25} more")
+            print("::endgroup::")
+            errors["juice_coherence_faults"] = f"{len(faults)} lines excluded (model integrity)"
+    except Exception as exc:
+        errors["juice_coherence"] = str(exc)
 
     slim = [{k: l[k] for k in _KEEP if l.get(k) is not None} for l in lines]
     updated = datetime.now(timezone.utc).isoformat(timespec="seconds")

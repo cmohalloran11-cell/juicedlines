@@ -82,7 +82,11 @@ def test_attach_nfl_writes_the_shared_valuation_fields_and_the_nfl_contract():
     assert l["nfl_confidence"] is not None and l["nfl_confidence_factors"]
     # the shared, sport-agnostic engine must work off these fields unmodified
     assert 0 <= valuation.confidence_score(l) <= 100
-    assert 0 <= valuation.juice_score(l) <= 100
+    # juice_score's range depends on valuation.JUICE_VERSION: v1 is unsigned 0-100, v2 is
+    # signed [-100, +100] and None when the model has no opinion to score. Assert the contract
+    # both versions share, so this stays a real check under either.
+    js = valuation.juice_score(l)
+    assert js is None or -100 <= js <= 100
 
 
 def test_attach_nfl_resolves_opponent_and_is_home_from_the_real_matched_schedule_game():

@@ -13,6 +13,14 @@ import valuation
 import dataos
 
 
+@pytest.fixture(autouse=True)
+def _pin_juice_v1(monkeypatch):
+    """The juice assertions in this module are about the v1 composite specifically (unsigned
+    0-100, seven weighted components). Pin the version so they don't silently start testing
+    the v2 signed score if the env flag is set — v2 has its own file, tests/test_juice_v2.py."""
+    monkeypatch.setattr(valuation, "JUICE_VERSION", "1")
+
+
 # ── valuation: exact algebra ──────────────────────────────────────────────────
 
 def test_expected_value_matches_formula():

@@ -151,6 +151,7 @@ All optional — the app runs with none set. Configure on the host (Render/Railw
 | Variable | Default | Purpose |
 |---|---|---|
 | `HISTORY_RETENTION_DAYS` | `14` | Rolling window for the line-movement snapshot table. `0` disables pruning. Keeps `history.db` bounded (it reached 1.77 GB unbounded). |
+| `JUICE_VERSION` | `1` | Which Juice Score the board serves. `1` = the 2026-08-05 unsigned 0–100 composite (current production). `2` = the rebuilt **signed** score in `[-100, +100]` (positive = over, negative = under, `null` = no model opinion / model-integrity fault). **Do not set to `2` in production yet** — `static/dashboard.html` still assumes an unsigned, never-null score in its colour scale, sort order and "Juice ≥ 80" filters, and the score's decile-monotonicity validation exists for MLB only. Set it on **both** deploy paths or the static and live boards will disagree. See `reports/02-juice.md`. |
 | `DATABASE_URL` | *(unset → SQLite)* | Point at Postgres (`postgres://…`) to move the users/watchlists/portfolio store off SQLite. Requires `psycopg` (see requirements.txt). |
 | `SUPABASE_URL` | *(unset)* | Supabase project URL (e.g. `https://<ref>.supabase.co`). Enables **ES256/JWKS** verification of Supabase JWTs — the current default. Unset + no secret ⇒ per-user endpoints fail closed (401). |
 | `SUPABASE_JWT_SECRET` | *(unset)* | Legacy HS256 symmetric secret (only if not using JWKS). |
