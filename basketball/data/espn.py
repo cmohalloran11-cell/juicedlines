@@ -323,6 +323,11 @@ class EspnBasketball(GameLogSource):
                         blk=_num(g("blocks")), to=_num(g("turnovers")),
                         fgm=fgm, fga=fga, tpm=tpm, tpa=tpa, ftm=ftm, fta=fta,
                         pf=_num(g("fouls"))))
+        # fit_rates/project_minutes weight purely by LIST INDEX (0.5**(i/halflife)), so the
+        # feed's own nested seasonTypes→categories→events order silently decides the entire
+        # recency weighting — oldest-first would invert it. Every other GameLogSource sorts
+        # here for the same reason.
+        games.sort(key=lambda g: g.date, reverse=True)
         return games
 
     # ── pace ────────────────────────────────────────────────────────────────────

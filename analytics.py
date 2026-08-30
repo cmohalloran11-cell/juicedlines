@@ -443,6 +443,14 @@ def _median(vals: list[float]) -> float:
     return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
 
+def _pstdev(vals: list[float]) -> float:
+    s = [float(v) for v in vals if v is not None]
+    if len(s) < 2:
+        return 0.0
+    mu = sum(s) / len(s)
+    return math.sqrt(sum((v - mu) ** 2 for v in s) / len(s))
+
+
 def _proj_games(logs: list[dict], is_pitcher: bool) -> list[dict]:
     """
     Pick which game logs feed a projection.
@@ -1191,6 +1199,32 @@ def attach_market_quality(lines: list[dict]) -> None:
         l["market_book_count"] = len(by_key.get(key, ()))
 
 
+def attach_lock_clock(lines: list[dict], now: Optional[datetime] = None) -> None:
+    """
+    Attach `minutes_to_lock` — minutes from now until the game starts, negative once it has.
+
+    Juice Score caps its magnitude and flags a prop stale when availability is still unknown
+    this close to lock (valuation.juice_v2). That check needs a clock, and valuation.py is
+    deliberately a pure, I/O-free, deterministic module (see its docstring), so the clock is
+    read once here at board-build time — the same pattern attach_market_quality/
+    attach_stat_trust use for their own non-pure inputs. `now` is injectable so the behaviour
+    is testable without freezing real time. Left unset on a line with no parseable start
+    time, which juice reads as "no lock horizon known" and leaves uncapped.
+    """
+    ref = now or datetime.now(timezone.utc)
+    for l in lines:
+        st = l.get("start_time")
+        if not st:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(st).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        l["minutes_to_lock"] = round((dt - ref).total_seconds() / 60.0, 1)
+
+
 def attach_stat_trust(lines: list[dict]) -> None:
     """
     Attach `stat_trust_gamma` — the model's own MEASURED trust in this stat type, from
@@ -1271,6 +1305,13 @@ def attach_stat_trust(lines: list[dict]) -> None:
             l["model_edge"] = round(l["model_proj"] - line_val, 2)
             if prob is not None:
                 l["model_prob"] = round(0.5 + gamma * (float(prob) - 0.5), 4)
+            # This is a SECOND anchor stacked on the engine's own, and both shrink toward the
+            # same line, so the total weight left on the model is the product. Juice Score
+            # reads this to decide whether any model signal survives at all (t < 0.2 → null);
+            # reading only one of the two would overstate it. Stashed the same way model_raw is
+            # so a repeated call re-derives instead of compounding gamma twice.
+            t_engine = l.setdefault("model_engine_anchor_t", float(l.get("model_anchor_t") or 1.0))
+            l["model_anchor_t"] = round(float(t_engine) * gamma, 4)
 
         if sport == "MLB" and (l.get("model_raw_prob") if "model_raw_prob" in l else l.get("model_prob")) is not None:
             if losing_mlb is None:
@@ -1672,7 +1713,19 @@ def attach_projections(lines: list[dict]) -> dict[str, str]:
                     if _tw_use is not None:
                         l["model_raw"] = eng.get("model_raw")
                         l["trust_weight"] = round(float(_tw_use), 3)
-
+                    # The PRE-anchor distribution's own moments, for the Juice Score. Separate
+                    # from model_raw/model_raw_prob because those two mean something narrower
+                    # here: model_raw is only stamped when an anchor was applied, and
+                    # model_raw_prob is the pre-PLATT (still post-anchor) probability. These
+                    # are unconditionally the un-anchored simulation, Platt-calibrated on the
+                    # probability the same way model_prob is — calibration makes a probability
+                    # honest, it is not a market anchor, so it belongs on both.
+                    l["model_pre_mean"] = eng.get("model_raw")
+                    l["model_pre_median"] = eng.get("raw_median")
+                    l["model_pre_sd"] = eng.get("raw_sd")
+                    if eng.get("raw_prob_over") is not None:
+                        l["model_pre_prob"] = _apply_prob_cal(eng["raw_prob_over"], prob_cal)
+                    l["model_anchor_t"] = 1.0 if _tw_use is None else round(float(_tw_use), 3)
 
                     # variant B (A/B test): engine + matchup context + cached xBA prior.
                     ckb = (pid, is_pitcher, "b")
@@ -1744,7 +1797,14 @@ def attach_projections(lines: list[dict]) -> dict[str, str]:
                 l["model_prob"] = _apply_prob_cal(round(prob, 3), prob_cal)
                 if prob_cal:
                     l["model_raw_prob"] = round(prob, 3)
+                l["model_pre_prob"] = l["model_prob"]
             l["model_n"] = len(vals)
+            # Nothing anchors on this path, so the empirical game-log sample IS the pre-anchor
+            # distribution and its own spread is the real m_sd.
+            l["model_pre_mean"] = proj
+            l["model_pre_median"] = l["model_median"]
+            l["model_pre_sd"] = round(_pstdev(vals), 4)
+            l["model_anchor_t"] = 1.0
 
     # tennis: serve/return + Monte-Carlo model on live ATP/WTA prop lines
     try:
@@ -1769,6 +1829,13 @@ def attach_projections(lines: list[dict]) -> dict[str, str]:
     except Exception as exc:
         sub_errors["nfl"] = str(exc)
         print(f"[nfl] attach failed: {exc}")
+
+    try:
+        from cfb.board import attach_cfb
+        attach_cfb(lines)
+    except Exception as exc:
+        sub_errors["cfb"] = str(exc)
+        print(f"[cfb] attach failed: {exc}")
 
     # Reproducibility: stamp model/feature/sim versions + data snapshot onto every
     # projected line (and mirror the ledger-persisted subset as flat fields). Runs last

@@ -43,10 +43,13 @@ import books
 import middleware
 import fantasy
 from fantasy import players_sync as fantasy_players_sync
+import cfb
+from cfb import players_sync as cfb_players_sync
 from auth import require_role, optional_user, get_current_user
 from routes_user import router as user_router
 from routes_optimizer import router as optimizer_router
 from routes_fantasy import router as fantasy_router
+from routes_cfb import router as cfb_router
 from pullers import fetch_prizepicks, fetch_underdog, mock_lines
 
 FALLBACK_TO_MOCK = os.getenv("FALLBACK_TO_MOCK", "1").lower() not in ("0", "false", "no")
@@ -193,6 +196,13 @@ def refresh_lines(sport: str = "all") -> dict[str, Any]:
     except Exception as exc:
         log.warning("attach_stat_trust failed: %s", exc)
 
+    # juice_v2's near-lock availability cap needs a clock, and valuation.py is pure — both
+    # deploy paths have to attach it or the cap silently never fires on one of them.
+    try:
+        analytics.attach_lock_clock(lines)
+    except Exception as exc:
+        log.warning("attach_lock_clock failed: %s", exc)
+
     _cache["lines"] = lines
     _cache["updated_at"] = _now_iso()
     _cache["errors"] = errors
@@ -284,6 +294,28 @@ async def _fantasy_sync_loop() -> None:
         await asyncio.sleep(3600)
 
 
+async def _cfb_sync_loop() -> None:
+    """Same shape as _fantasy_sync_loop, for CFB's own daily bulk fetch: 134 FBS teams' worth
+    of CFBD roster calls must never happen on a request path. No CFBD_API_KEY configured ->
+    cfb_players_sync.sync_teams_and_rosters is a safe no-op (0 teams), so this loop is a
+    harmless idle poll until a key is set."""
+    if USE_MOCK:
+        log.info("USE_MOCK set -- cfb roster sync loop disabled.")
+        return
+    loop = asyncio.get_event_loop()
+    while True:
+        try:
+            db_ = store.get_database()
+            if await loop.run_in_executor(None, cfb_players_sync.should_sync, db_):
+                log.info("CFB roster sync due — fetching CFBD FBS teams/rosters …")
+                result = await loop.run_in_executor(
+                    None, cfb_players_sync.sync_teams_and_rosters, db_)
+                log.info("CFB roster sync complete: %s", result)
+        except Exception as exc:
+            log.exception("CFB roster sync failed: %s", exc)
+        await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
@@ -292,6 +324,7 @@ async def lifespan(app: FastAPI):
     try:
         store.init_schema(store.get_database())
         fantasy.init_schema(store.get_database())
+        cfb.init_schema(store.get_database())
     except Exception as exc:
         log.warning("store schema init failed: %s", exc)
     # Don't block startup on the (slow) warm-up — the server accepts connections
@@ -299,9 +332,11 @@ async def lifespan(app: FastAPI):
     # board shows "warming up" for a few seconds instead of being unreachable.
     task = asyncio.create_task(_snapshot_loop())
     fantasy_task = asyncio.create_task(_fantasy_sync_loop())
+    cfb_task = asyncio.create_task(_cfb_sync_loop())
     yield
     task.cancel()
     fantasy_task.cancel()
+    cfb_task.cancel()
 
 
 app = FastAPI(title="Sports Edge", lifespan=lifespan)
@@ -315,6 +350,7 @@ app.add_middleware(
 app.include_router(user_router)
 app.include_router(optimizer_router)
 app.include_router(fantasy_router)
+app.include_router(cfb_router)
 
 # Backend hardening: request-id + timing logs, error envelope, optional rate limit (Vol III).
 middleware.install(app)
@@ -538,7 +574,7 @@ def api_simulation(id: str = Query(..., description="line_id to value")):
 
 
 @app.get("/api/model/health")
-def api_model_health(sport: str = Query("", description="MLB | WNBA | Tennis | NFL | empty=all"),
+def api_model_health(sport: str = Query("", description="MLB | WNBA | Tennis | NFL | CFB | empty=all"),
                      proj_kind: str = Query(
                          "", description="empty=no filter | e.g. nfl_regular | nfl_preseason "
                                          "(only meaningful combined with a specific sport)")):
@@ -728,7 +764,7 @@ def api_status():
 
 
 @app.get("/api/scorecard")
-def api_scorecard(sport: str = Query("", description="MLB | Tennis | WNBA | NFL | empty = all"),
+def api_scorecard(sport: str = Query("", description="MLB | Tennis | WNBA | NFL | CFB | empty = all"),
                   proj_kind: str = Query(
                       "", description="empty=no filter | e.g. nfl_regular | nfl_preseason")):
     """Running model-vs-market scorecard: hit-rate vs the close, plays, and CLV.

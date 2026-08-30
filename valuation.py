@@ -25,6 +25,7 @@ offer (PrizePicks standard legs: same flat payout either way, both sides always 
 """
 from __future__ import annotations
 
+import math
 import os
 from typing import Any, Optional
 
@@ -156,7 +157,13 @@ def kelly_fraction(model_prob: float, line: dict[str, Any], cap: float = 0.25) -
 # the two are genuinely different models (a preseason projection's playing time comes from
 # rotation tiers, not from the player's own snap history), and a calibration query must be
 # able to separate them. Both ARE full Monte Carlo runs, so both belong here.
-_FULL_ENGINE_KINDS = frozenset({"engine", "basketball", "tennis", "nfl_regular", "nfl_preseason"})
+# 2026-08: CFB ships three kinds for the same reason — cfb_prior_a/b/c are the three prior
+# tiers (returning production, level-translated transfer, recruiting rating), genuinely
+# different models that a calibration query has to be able to score separately. All three run
+# the same full Monte Carlo simulation; what differs is what feeds its prior, and how thin that
+# prior is already shows up honestly in model_n and the distribution's own width.
+_FULL_ENGINE_KINDS = frozenset({"engine", "basketball", "tennis", "nfl_regular", "nfl_preseason",
+                                "cfb_prior_a", "cfb_prior_b", "cfb_prior_c"})
 
 
 def confidence_score(line: dict[str, Any]) -> int:
@@ -350,16 +357,7 @@ def model_agreement_score(line: dict[str, Any]) -> Optional[float]:
     return round(_juice_components(line, prob)["agreement"][0], 3)
 
 
-def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int:
-    """
-    0–100 composite ranking how attractive a prop is OVERALL — not a re-skin of Confidence
-    or EV, but a blend led by how far the projection sits from the line (proj_diff, the
-    dominant factor as of 2026-08-05) plus EV, confidence, distribution stability,
-    model-vs-market agreement, cross-book market quality, and data completeness (see
-    _JUICE_WEIGHTS and _juice_components). Deliberately selective: a coin-flip, single-book,
-    thin-sample prop should NOT land in the same range as a stable, well-agreed,
-    cross-validated one with a real edge.
-    """
+def _juice_v1_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int:
     prob = model_prob if model_prob is not None else line.get("model_prob")
     if prob is None:
         return 0
@@ -368,10 +366,7 @@ def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> int
     return int(round(_clamp(composite) * 100))
 
 
-def juice_factors(line: dict[str, Any], model_prob: Optional[float] = None) -> list[dict[str, Any]]:
-    """The REAL decomposition of `juice_score` — weighted contribution + a human-readable
-    detail for every component, so the UI can show exactly what makes a prop juicy instead
-    of a single opaque number."""
+def _juice_v1_factors(line: dict[str, Any], model_prob: Optional[float] = None) -> list[dict[str, Any]]:
     prob = model_prob if model_prob is not None else line.get("model_prob")
     if prob is None:
         return []
@@ -384,6 +379,273 @@ def juice_factors(line: dict[str, Any], model_prob: Optional[float] = None) -> l
          "max": round(_JUICE_WEIGHTS[k] * 100, 1), "detail": components[k][1]}
         for k in _JUICE_WEIGHTS
     ]
+
+
+# ─────────────────────────── Juice Score v2 (2026-08-28 rebuild) ───────────────────────────
+#
+# ONE SIGNED number in [-100, +100] measuring the strength and internal consistency of the
+# model's disagreement with the market. Positive = over, negative = under, near zero = no
+# play, null = there is no model opinion to score (or the model contradicts itself — see
+# juice_coherence_fault).
+#
+# Every input is read PRE-ANCHOR (the model_pre_* fields each board stamps from its own raw
+# simulated sample array), never from the final blended projection. Every engine anchors its
+# output toward the market line as `t*model + (1-t)*line`, so `model_proj - line` is
+# mechanically shrunk by t and is IDENTICALLY ZERO at t=0 — a score built on the anchored
+# number measures how much the board trusted the model, not what the model actually said.
+
+# |e| = |p - b| is squashed to [0,1] by a Weibull CDF, 1 - exp(-(|e|/scale)**shape). Both
+# constants were FIT, not chosen: a 2-D grid search minimising the Kolmogorov-Smirnov distance
+# between the squashed values and Uniform[0,1] over the 3,312 real graded MLB close snapshots
+# in clv_seed.db (game_date 2026-06-29 → 2026-07-12). Best fit shape=1.384, scale=0.2033,
+# KS=0.031; the 1-parameter exponential-MLE alternative measured KS=0.110, i.e. visibly worse.
+# Resulting e_norm deciles: 0.078/0.183/0.284/0.389/0.488/0.579/0.710/0.823/0.912 against the
+# 0.1…0.9 an exactly-uniform score would give. Two caveats belong with these numbers: they are
+# MLB-only (no other sport has a single graded row in any accessible ledger) over a 13-day
+# window, and KS=0.031 still exceeds the n=3,312 5% critical value of 0.024 — this is "roughly
+# uniform", not "proven uniform". Refit per sport once each has its own ≥28 days / ≥400 graded
+# outcomes.
+_JUICE_E_SHAPE = 1.384
+_JUICE_E_SCALE = 0.2033
+
+# The normalized projection differential z = (m_med - L)/m_sd was ABLATED out of the score
+# after being measured, not dropped on taste. Combining it geometrically as the spec proposed
+# (sign(e)*sqrt(e_norm*z_norm)*c) scored WORSE than e alone on every cut of the same 3,312
+# graded MLB rows: AUC 0.6693 vs 0.6756 pooled and on 7 of the 9 stat types with n>=200;
+# decile-monotonicity Spearman +0.939 vs +0.988; and z carried almost no discrimination once e
+# was held fixed (over-rate gap between the high-z and low-z half of each e-quintile:
+# +9.7/+1.5/+1.8/-2.1/+2.7 pp, versus +8.8/+13.0/+6.6/+7.9/+8.2 pp for e held inside each
+# z-quintile). That is the expected result rather than an anomaly — p = P(X > L) is the
+# sufficient statistic for a binary over/under outcome and z is a lossier summary of the same
+# simulated distribution. z and the skew gap g are still COMPUTED: they are what the coherence
+# check tests the probability edge against. They just don't scale the score.
+
+# Below this anchor weight the board has already declared it has no usable model opinion and
+# snapped the projection onto the market line — basketball/board.py, tennis/board.py and
+# nfl/board.py all hard-defer at exactly 0.2. Nothing is left to score, so the honest answer
+# is null rather than a small number that reads like a weak-but-real signal.
+_JUICE_MIN_ANCHOR_T = 0.2
+
+# Availability cap: a product safety rule, NOT a measured constant, and labelled as such.
+# Inside an hour of first pitch/tip with no posted lineup we genuinely do not know the player
+# is in it, so the magnitude is halved and the score flagged stale rather than headlining a
+# prop that may not exist.
+_JUICE_LOCK_HORIZON_MIN = 60.0
+_JUICE_UNKNOWN_AVAILABILITY_CAP = 50.0
+
+JUICE_VERSION = os.getenv("JUICE_VERSION", "1")
+
+
+def _sign(x: float) -> int:
+    return (x > 0) - (x < 0)
+
+
+def breakeven_prob(line: dict[str, Any]) -> Optional[float]:
+    """The probability the OVER has to clear for the bet to break even.
+
+    De-vigged from the book's own two-sided price when both sides carry one (proportional
+    de-vig: over/(over+under) — the two implied probabilities sum to >1 by exactly the vig).
+    A pick'em leg pays the same either way, so its break-even is 0.5 no matter what the flat
+    payout is: the payout scales both sides equally and cannot move which side is correct.
+    None for demon/goblin, whose boosted multiplier this feed never exposes — there is no
+    real break-even to compute and inventing one would be a fabricated number.
+    """
+    if is_unpriced(line):
+        return None
+    oi, ui = line.get("over_implied"), line.get("under_implied")
+    if oi and ui and 0.0 < float(oi) < 1.0 and 0.0 < float(ui) < 1.0:
+        return float(oi) / (float(oi) + float(ui))
+    return 0.5
+
+
+def juice_confidence(line: dict[str, Any]) -> float:
+    """0..1 confidence in the model's opinion itself, for scaling the juice magnitude.
+
+    Deliberately NOT confidence_score/100: that one includes decisiveness (distance of
+    P(over) from a coin flip), which is the same quantity the juice edge already measures —
+    multiplying them would square the edge and double-count it. This blends only the three
+    things the spec asks for and that are independent of the edge: effective sample size,
+    availability, and the stat type's own measured reliability.
+
+    Geometric mean, matching the "no single signal rescues a near-zero one" property the
+    score is built around: a prop on a stat the model has PROVEN it has no edge on cannot be
+    dragged back up by a deep sample. Sample size saturates at 30 games (the same threshold
+    confidence_score has used and shipped since 2026-07-29); stat reliability is the measured
+    per-stat edge-regression slope from the graded ledger (analytics.attach_stat_trust →
+    stat_trust_gamma, neutral default 0.5 → factor 1.0, so a stat with too little history to
+    have a measured gamma is never punished for being unmeasured).
+    """
+    n = float(line.get("model_n") or 0.0)
+    sample = _clamp(n / 30.0)
+    status = line.get("lineup_status")
+    availability = 0.0 if status == "out" else (0.5 if status == "questionable" else 1.0)
+    reliability = _clamp(2.0 * float(line.get("stat_trust_gamma", 0.5)))
+    return (sample * availability * reliability) ** (1.0 / 3.0)
+
+
+def juice_v2(line: dict[str, Any]) -> dict[str, Any]:
+    """
+    The signed Juice Score and everything that went into it, as a pure function of fields
+    already on the line. Never raises; always returns a dict with these keys:
+
+      juice            signed float in [-100, +100], or None when there is nothing to score
+      side             "over"/"under"/None — the direction the score points, from sign(juice)
+      reason           why juice is None (None when it isn't)
+      coherence_fault  None, or a dict of diagnostics for a MODEL INTEGRITY ERROR (below)
+      stale            True when availability is unknown inside the lock horizon
+      capped           True when `stale` actually bit and the magnitude was clipped
+      e/z/g/c/p/b/...  the real intermediate values, so the number can always be traced
+
+    A coherence_fault means the model's own P(over) and its own median-vs-line displacement
+    point in OPPOSITE directions by more than the distribution's skew can account for. That is
+    not a weak prop, it is the engine contradicting itself (the same invariant
+    dataos.direction_report enforces at build time, restated in SD units), and surfacing it as
+    a low score would hide a bug behind a plausible-looking number — so juice is null, the
+    fault carries its diagnostics, and callers drop the line from display.
+
+    Skew is what makes that test non-trivial. For a right-skewed counting stat the mean sits
+    above the median, so "mean above the line but P(over) < 0.5" is CORRECT behaviour when the
+    book prices at the median — which is why z is built on m_med, not m_mean, and why a sign
+    disagreement smaller in SD units than the mean/median gap g is treated as explained rather
+    than faulted.
+    """
+    out: dict[str, Any] = {
+        "juice": None, "side": None, "reason": None, "coherence_fault": None,
+        "stale": False, "capped": False,
+        "p": None, "b": None, "e": None, "z": None, "g": None, "c": None, "t": None,
+    }
+    p, ln = line.get("model_pre_prob"), line.get("line")
+    m_med, m_mean, m_sd = (line.get("model_pre_median"), line.get("model_pre_mean"),
+                           line.get("model_pre_sd"))
+    if p is None or ln is None:
+        out["reason"] = "no_pre_anchor_probability"
+        return out
+    if m_med is None or m_mean is None or m_sd is None:
+        out["reason"] = "no_distribution_moments"
+        return out
+    if float(m_sd) <= 0.0:
+        # A zero-spread "distribution" is a stub, not a projection — the model emits one
+        # constant for every player (MLB Doubles did exactly this for all 90 graded rows in
+        # clv_seed.db). There is no scale to normalize against and no real opinion to score.
+        out["reason"] = "degenerate_distribution"
+        return out
+
+    t = 1.0 if line.get("model_anchor_t") is None else float(line["model_anchor_t"])
+    out["t"] = round(t, 4)
+    if t < _JUICE_MIN_ANCHOR_T:
+        out["reason"] = "no_model_signal"
+        return out
+
+    b = breakeven_prob(line)
+    if b is None:
+        out["reason"] = "unpriced"
+        return out
+
+    p, ln, m_med, m_mean, m_sd = float(p), float(ln), float(m_med), float(m_mean), float(m_sd)
+    e = p - b
+    z = (m_med - ln) / m_sd
+    g = (m_mean - m_med) / m_sd
+    out.update({"p": round(p, 4), "b": round(b, 4), "e": round(e, 4),
+                "z": round(z, 4), "g": round(g, 4)})
+
+    # The integrity test compares the model against ITSELF, so it runs on (p - 0.5) rather
+    # than on e = p - b. Beyond a fair line the two are the same number; where they differ,
+    # e < 0 with the median above the line just means the book's de-vigged price is worse
+    # than the model's lean, which is a pricing fact and not an engine contradicting itself.
+    # Testing e here would fault every prop the market happens to have priced past.
+    direction = p - 0.5
+    if _sign(direction) and _sign(z) and _sign(direction) != _sign(z) and abs(z) > abs(g):
+        out["coherence_fault"] = {
+            "kind": "probability_median_sign_disagreement",
+            "detail": "P(over) and the median-vs-line displacement disagree in sign by more "
+                      "than the distribution's own mean/median skew explains",
+            "p": round(p, 4), "b": round(b, 4), "e": round(e, 4), "z": round(z, 4),
+            "g": round(g, 4), "m_mean": round(m_mean, 4), "m_median": round(m_med, 4),
+            "m_sd": round(m_sd, 4), "direction": round(direction, 4), "line": ln,
+            "player": line.get("player"),
+            "stat_type": line.get("stat_type"), "sport": line.get("sport"),
+            "proj_kind": line.get("proj_kind"), "id": line.get("id"),
+        }
+        out["reason"] = "coherence_fault"
+        return out
+
+    c = juice_confidence(line)
+    out["c"] = round(c, 4)
+    e_norm = 1.0 - math.exp(-((abs(e) / _JUICE_E_SCALE) ** _JUICE_E_SHAPE))
+    juice = 100.0 * _sign(e) * e_norm * c
+
+    mtl = line.get("minutes_to_lock")
+    if (mtl is not None and float(mtl) <= _JUICE_LOCK_HORIZON_MIN
+            and line.get("lineup_status") is None):
+        out["stale"] = True
+        if abs(juice) > _JUICE_UNKNOWN_AVAILABILITY_CAP:
+            juice = math.copysign(_JUICE_UNKNOWN_AVAILABILITY_CAP, juice)
+            out["capped"] = True
+
+    out["juice"] = round(juice, 1)
+    out["side"] = "over" if juice > 0 else ("under" if juice < 0 else None)
+    return out
+
+
+def juice_v2_factors(line: dict[str, Any]) -> list[dict[str, Any]]:
+    """The real decomposition of juice_v2's magnitude — the two multiplicands, plus the
+    diagnostics that did NOT scale it but explain the call (z, g). Empty when there's no
+    score to decompose, so the UI shows the null-state note instead of a fake breakdown."""
+    v = juice_v2(line)
+    if v["juice"] is None:
+        return []
+    e_norm = 1.0 - math.exp(-((abs(v["e"]) / _JUICE_E_SCALE) ** _JUICE_E_SHAPE))
+    return [
+        {"factor": "Probability Edge", "value": round(100.0 * e_norm, 1), "max": 100.0,
+         "detail": f"P(over) {v['p']:.3f} vs break-even {v['b']:.3f} ({v['e']:+.3f})"},
+        {"factor": "Confidence", "value": round(100.0 * v["c"], 1), "max": 100.0,
+         "detail": f"{int(round(v['c']*100))}/100 from sample size, availability, stat reliability"},
+        {"factor": "Projection Differential", "value": None, "max": None,
+         "detail": f"median sits {v['z']:+.2f} SD from the line (diagnostic — ablated out of "
+                   f"the score, see valuation.py)"},
+        {"factor": "Skew Gap", "value": None, "max": None,
+         "detail": f"mean sits {v['g']:+.2f} SD above the median (coherence tolerance)"},
+    ]
+
+
+def audit_juice_coherence(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every coherence_fault on the board, for the build's review queue. Same flag-don't-block
+    pattern as audit_ev: callers log these and drop the lines, they never halt a build."""
+    return [f for f in (juice_v2(l).get("coherence_fault") for l in lines) if f]
+
+
+def juice_score(line: dict[str, Any], model_prob: Optional[float] = None) -> Optional[int]:
+    """
+    How attractive this prop is, as a single number. WHICH number depends on JUICE_VERSION:
+
+      "1" (default, live): the 2026-08-05 composite — an UNSIGNED 0–100 blend led by how far
+          the projection sits from the line, plus EV, confidence, distribution stability,
+          model-vs-market agreement, cross-book market quality and data completeness (see
+          _JUICE_WEIGHTS / _juice_components). Never None.
+      "2": the rebuilt SIGNED score in [-100, +100] — positive = over, negative = under, near
+          zero = no play, None when the model has no opinion to score or contradicts itself
+          (see juice_v2). Callers must handle both the sign and the None.
+
+    v2 is flag-gated rather than shipped straight over v1 because its decile-monotonicity
+    validation could only be run on MLB (WNBA/tennis/NFL have zero graded rows in any
+    accessible ledger) over a 13-day window, which this project's own tuning rule treats as
+    too short to act on, and because the sign convention changes what every "sort by juice" /
+    "juice >= 80" surface means. See reports/02-juice.md for the validation and the criteria
+    for flipping the default.
+    """
+    if JUICE_VERSION == "2":
+        v = juice_v2(line)
+        return None if v["juice"] is None else int(round(v["juice"]))
+    return _juice_v1_score(line, model_prob)
+
+
+def juice_factors(line: dict[str, Any], model_prob: Optional[float] = None) -> list[dict[str, Any]]:
+    """The REAL decomposition of `juice_score` — weighted contribution + a human-readable
+    detail for every component, so the UI can show exactly what makes a prop juicy instead
+    of a single opaque number. Follows JUICE_VERSION, same as juice_score."""
+    if JUICE_VERSION == "2":
+        return juice_v2_factors(line)
+    return _juice_v1_factors(line, model_prob)
 
 
 def _std_from_band(line: dict[str, Any]) -> Optional[float]:
@@ -471,7 +733,8 @@ def audit_ev(line: dict[str, Any], threshold: Optional[float] = None) -> Optiona
 def valuation(line: dict[str, Any]) -> dict:
     """Full valuation bundle for one projection: the recommended side + EV, Kelly, confidence,
     and Juice Score. Returns {available: False} when there's nothing to value, or the book
-    offers no side of this leg that we know how to price."""
+    offers no side of this leg that we know how to price. `juiceScore` is signed and may be
+    None under JUICE_VERSION=2 — see juice_score."""
     prob = line.get("model_prob")
     proj = line.get("model_proj")
     if prob is None or proj is None or line.get("line") is None:

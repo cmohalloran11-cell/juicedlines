@@ -309,10 +309,15 @@ def _payload(p, line, correction: float = 0.0, trust: float | None = None,
         w = min(3.0, float(width)) if width and float(width) > 1.0 else 1.0
         def _st(v):                                  # stretch around the mean, never below 0
             return max(0.0, mu + w * (float(v) - mu))
+        # No sample array on this path, so the pre-anchor SD can only be approximated from the
+        # p10–p90 band (≈2.5631 sigma wide) — and nothing anchors here anyway, so the "raw"
+        # moments are simply the reported ones.
         out = {"projection": round(mu, 2), "median": round(med, 1),
                "floor": round(_st(p.floor), 1), "ceiling": round(_st(p.ceiling), 1),
                "p25": round(_st(p.p25), 1), "p75": round(_st(p.p75), 1),
-               "model_raw": round(mu, 2), "method": "engine"}
+               "model_raw": round(mu, 2), "method": "engine",
+               "raw_median": round(med, 2),
+               "raw_sd": round(max(0.0, float(p.ceiling) - float(p.floor)) / 2.5631, 4)}
         # Guarantee the reported band brackets the reported projection. On near-zero skewed
         # stats the p10/p90 round to the same 1-dp value while the mean rounds finer (2 dp),
         # which otherwise leaves ceiling < projection. Clamp so floor ≤ projection ≤ ceiling.
@@ -320,6 +325,7 @@ def _payload(p, line, correction: float = 0.0, trust: float | None = None,
         out["ceiling"] = max(out["ceiling"], out["projection"])
         if line is not None:
             out["prob_over"] = round(float(p.prob_over(float(line))), 3)
+            out["raw_prob_over"] = out["prob_over"]
     out["drivers"] = list(getattr(p, "drivers", []) or [])   # matchup/park factors
     return out
 
@@ -336,6 +342,12 @@ def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None 
     if correction:
         s = np.clip(s + correction, 0, None)     # calibration shift, floored at 0
     raw_mean = float(s.mean())                    # PRE-anchor model mean (for the ledger's γ)
+    # The other PRE-anchor moments, read off the same untouched sample array. The anchor below
+    # is a shift-and-clip, so none of these can be recovered from the anchored distribution —
+    # and at trust=0 the anchored one carries no model information at all.
+    raw_median = float(np.percentile(s, 50))
+    raw_sd = float(s.std())
+    raw_prob_over = float(np.mean(s > float(line))) if line is not None else None
     proj = raw_mean
     if trust is not None and line is not None:
         t = max(0.0, min(1.0, float(trust)))
@@ -366,6 +378,8 @@ def _payload_from_samples(s, line, correction: float = 0.0, trust: float | None 
         "floor": round(lo10, 1), "ceiling": round(hi90, 1),
         "p25": round(lo25, 1), "p75": round(hi75, 1),
         "model_raw": round(raw_mean, 2), "method": "engine",
+        "raw_median": round(raw_median, 2), "raw_sd": round(raw_sd, 4),
+        "raw_prob_over": (round(raw_prob_over, 4) if raw_prob_over is not None else None),
     }
     # Keep the reported band bracketing the reported projection (see note above).
     out["floor"] = min(out["floor"], out["projection"])

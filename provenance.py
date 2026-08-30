@@ -133,6 +133,36 @@ MODEL_VERSIONS: dict[str, str] = {
     # distinguishes nfl_preseason from nfl_regular, unaffected by which fields determine
     # their values.
     "NFL": "nfl-1.2.0",
+    # 0.1.0 (2026-08): DATA/PLUMBING LAYER ONLY -- no projection math exists yet. cfb/board.py's
+    # attach_cfb is a no-op stub (see its own module docstring); every CFB line reaches the
+    # board unprojected. Registered now, rather than left absent (which would fall back to
+    # _DEFAULT_MODEL_VERSION below and read as a real, generic version rather than "no model
+    # shipped"), specifically so a future graded row can never be misattributed to logic that
+    # didn't exist yet. New sport, no math shipped -> CFB starts UNMEASURABLE by definition
+    # (model_health/backtest already report "insufficient_data" honestly for zero graded rows
+    # -- no special-casing needed, see the health()/current_accuracy() paths MLB/WNBA/Tennis
+    # validated on day one). Bump to cfb-1.0.0 on the modeling agent's first real engine --
+    # same "new engine, nothing to orphan" reasoning as NFL's 1.0.0 entry above.
+    #
+    # 1.0.0 (2026-08): the first real CFB engine. attach_cfb now runs a full Monte Carlo
+    # simulation per player-game: projected team plays x usage share x efficiency, a
+    # three-tier prior fallback (returning / transfer / true freshman) blended by
+    # empirical-Bayes rather than merely selected between, an opponent adjustment fitted off
+    # CFBD's defensive PPA plus a measured FCS coefficient, a garbage-time usage discount
+    # fitted on blowout probability, and the two-stage parameter+outcome uncertainty layer
+    # every other engine here uses. Ships three proj_kinds -- cfb_prior_a/b/c -- so the three
+    # tiers can be scored separately.
+    #
+    # BUMPED, and the tradeoff is that there is none to weigh: cfb-0.1.0 wrote no model_proj
+    # at all, so db.log_clv logged zero rows under it (a row with a NULL model_proj is refused
+    # -- see cfb/tests/test_ledger.py) and this bump orphans exactly nothing. The reason to
+    # bump anyway is forward-looking and the same one NFL's 1.0.0 entry gives: a future
+    # calibration query must never be able to attribute a real simulated row to the era when
+    # attach_cfb was a stub. CFB nonetheless stays UNMEASURABLE for now -- there is no live
+    # CFBD response behind any of these fits yet and zero graded CFB rows anywhere, so
+    # model_health/backtest will keep reporting "insufficient_data" honestly until real games
+    # grade under this version.
+    "CFB": "cfb-1.0.0",
 }
 _DEFAULT_MODEL_VERSION = "1.0.0"
 
@@ -256,6 +286,59 @@ MODEL_CHANGELOG: dict[str, list[dict]] = {
                     "after, model_proj=53.0 (the stat's honest skewed mean) / "
                     "model_prob=0.500 (a correct coinflip). Applies to every NFL line, both "
                     "season types."},
+    ],
+    "CFB": [
+        {"version": "cfb-0.1.0", "date": "2026-08",
+         "summary": "Data/plumbing layer only: CFBD team/roster/schedule/box-score client, "
+                    "a swappable OddsProvider (The Odds API adapter for player props -- CFBD "
+                    "carries none), canonical player table with a fuzzy-match id-mapping "
+                    "layer, a manual player-status override table, and the full prop_clv "
+                    "ledger schema (pre-anchor model_raw/model_raw_prob/trust_weight included "
+                    "from day one). No projection math exists yet -- attach_cfb is a no-op "
+                    "stub; every CFB line reaches the board unprojected until the modeling "
+                    "agent's garbage-time/pace/3-tier-prior engine lands."},
+        {"version": "cfb-1.0.0", "date": "2026-08",
+         "summary": "First real CFB engine (cfb/model/, cfb/sim/engine.py, attach_cfb). Every "
+                    "projection is projected team plays x usage share x efficiency -- never a "
+                    "per-game mean -- because play-count spread across FBS offenses is the "
+                    "widest in the sport. Team plays come from the two teams' "
+                    "empirical-Bayes-shrunk tempo plus a least-squares response to CFBD's "
+                    "market spread/total. Roster churn is handled by a three-tier prior that "
+                    "BLENDS rather than selects: a returning player's prior-season production "
+                    "(cfb_prior_a), a transfer's translated by the measured ratio of the two "
+                    "competition levels' own league means (cfb_prior_b), or a true freshman's "
+                    "recruiting-rating-implied usage at the same prior strength as the flat "
+                    "positional mean (cfb_prior_c) -- each feeding a two-stage "
+                    "(observed*n + prior*k)/(n+k) chain whose carryover is the measured "
+                    "year-over-year correlation of that rate. Opponent quality is normalised "
+                    "by a fitted log-yards response to shrunk defensive PPA plus a measured "
+                    "FCS coefficient, and a weak-opponent game contributes proportionally "
+                    "less evidence, not just adjusted production. Garbage time discounts "
+                    "usage by a slope fitted on the starter group's share of team "
+                    "opportunities against the game's blowout probability, which is symmetric "
+                    "in the sign of the spread -- a 35-point favourite and a 35-point "
+                    "underdog get the identical discount. Outcomes are simulated with the "
+                    "two-stage parameter+outcome layer: Gamma(eff_n, 1/eff_n) rate draws "
+                    "before Poisson/Binomial/Gamma outcome draws. "
+                    "NOT ONE FITTED CONSTANT IS WRITTEN INTO THE CODE: every prior, "
+                    "shrinkage strength, per-attempt spread, opponent factor, pace "
+                    "coefficient and garbage-time slope is estimated at runtime from real "
+                    "CFBD rows, and each falls back to an explicit 'unmeasured' basis (no "
+                    "adjustment) below its sample gate rather than to a plausible number -- "
+                    "see cfb/model/config.py. "
+                    "VALIDATION IS MECHANISM-ONLY AND CFB REMAINS UNMEASURABLE. No "
+                    "CFBD_API_KEY has existed in any environment this code has run in, and "
+                    "there are zero graded CFB rows anywhere, so no calibration or accuracy "
+                    "claim is made or possible. What was verified (cfb/tests/test_model.py, "
+                    "27 tests) is that the code does what it says: the empirical-Bayes "
+                    "estimator recovers a closed-form k (0.20/0.0023 = 86.96) from a "
+                    "hand-built league; the opponent fit recovers a planted 1.25x FCS "
+                    "inflation (0.284 vs log 1.25 = 0.223 on a deliberately small 8-games-a-"
+                    "season FCS arm) and a planted 0.60 defensive-PPA slope (0.652); the "
+                    "garbage-time layer returns an identical 0.9057x usage multiplier at "
+                    "+35 and -35 spreads, which moves simulated carries 17.50 -> 15.85 "
+                    "(-9.45%); and the two-stage layer holds the mean at 78.73 rushing yards "
+                    "while widening sd 25.67 -> 41.93 between eff_n 2000 and eff_n 12."},
     ],
 }
 

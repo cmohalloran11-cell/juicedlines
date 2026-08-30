@@ -120,6 +120,10 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
         "ceiling": line.get("model_ceiling"),
         "juiceScore": valuation.juice_score(line),
         "juiceFactors": valuation.juice_factors(line),   # real per-prop breakdown (2026-07-30 rebuild)
+        # v2 only (see valuation.JUICE_VERSION): why a juice is null, and whether availability
+        # was still unknown near lock. Null under v1, which has neither concept.
+        "juiceReason": (valuation.juice_v2(line)["reason"] if valuation.JUICE_VERSION == "2" else None),
+        "juiceStale": (valuation.juice_v2(line)["stale"] if valuation.JUICE_VERSION == "2" else None),
         "confidence": valuation.confidence_score(line),
         "confidenceFactors": valuation.confidence_factors(line),  # real per-prop breakdown (not a constant)
         # The side we'd actually recommend: highest-EV AVAILABLE side (valuation.recommend_side),
@@ -171,6 +175,13 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
         "snapP90": line.get("snap_p90"),
         "snapStdDev": line.get("snap_std_dev"),
         "priorInfluence": line.get("prior_influence"),
+        # CFB-specific (cfb.board.attach_cfb) — which of the 3-tier prior fallback priced
+        # this line (cfb_prior_a/b/c: returning production / transfer / recruiting-rating
+        # freshman) and why, so the board can show it as a discoverable tier badge instead
+        # of an opaque proj_kind string. None for every other sport via .get(), same
+        # zero-risk additive pattern as the NFL-specific block above.
+        "projKind": line.get("proj_kind"),
+        "priorTierReason": line.get("prior_tier_reason"),
     }
 
 
@@ -189,8 +200,22 @@ def _projected(lines: list[dict]) -> list[dict]:
             continue
         if valuation.recommend_side(l.get("model_prob"), l) is None:
             continue
+        # A juice_v2 coherence fault is the engine contradicting itself (P(over) and the
+        # median-vs-line displacement disagreeing beyond what skew explains), not a weak prop.
+        # Showing it at any score would put a known-bad number in front of a user; it goes to
+        # the build's review queue (valuation.audit_juice_coherence) instead.
+        if valuation.JUICE_VERSION == "2" and valuation.juice_v2(l)["coherence_fault"]:
+            continue
         out.append(l)
     return out
+
+
+def _juice_rank(x: Any) -> float:
+    """Ranking key that works for either juice version. v1 is an unsigned 0–100; v2 is signed
+    (and nullable), where a strong Under is exactly as good a play as an equally strong Over —
+    so rank on magnitude, with an un-scoreable prop sorting last rather than mid-pack."""
+    js = x["juiceScore"] if isinstance(x, dict) and "juiceScore" in x else valuation.juice_score(x)
+    return abs(js) if js is not None else -1.0
 
 
 def _tile(line: Optional[dict], value: Any, label: str) -> Optional[dict]:
@@ -317,15 +342,15 @@ def build(lines: list[dict], updated_at: Optional[str],
     standard = [l for l in priced if (l.get("odds_type") or "standard").lower() == "standard"]
 
     acc_map = _accuracy_map()
-    drops = sorted((_drop(l, acc_map) for l in priced), key=lambda d: d["juiceScore"], reverse=True)
+    drops = sorted((_drop(l, acc_map) for l in priced), key=_juice_rank, reverse=True)
 
-    juice_leader = max(priced, key=lambda l: valuation.juice_score(l), default=None)
+    juice_leader = max(priced, key=_juice_rank, default=None)
     top_edge = max(priced, key=lambda l: (_edge_pct(l) or -999), default=None)
     best_value = max(priced, key=lambda l: abs(l.get("model_edge") or 0), default=None)
     highest_confidence = max(priced, key=lambda l: valuation.confidence_score(l), default=None)
-    best_standard = max(standard, key=lambda l: valuation.juice_score(l), default=None)
-    best_demon = max(demons, key=lambda l: valuation.juice_score(l), default=None)
-    best_goblin = max(goblins, key=lambda l: valuation.juice_score(l), default=None)
+    best_standard = max(standard, key=_juice_rank, default=None)
+    best_demon = max(demons, key=_juice_rank, default=None)
+    best_goblin = max(goblins, key=_juice_rank, default=None)
     # Safest = confident AND stable (tight distribution relative to its own projection) —
     # a real, different question than "Highest Confidence" alone (that tile can be a
     # decisive-but-volatile prop; this one downweights volatility on top of confidence).
@@ -371,8 +396,8 @@ def build(lines: list[dict], updated_at: Optional[str],
     movers = _movers()
     movers["steam"] = _steam_moves()
 
-    high_juice = sum(1 for d in drops if d["juiceScore"] >= 80)
-    med_juice = sum(1 for d in drops if 60 <= d["juiceScore"] < 80)
+    high_juice = sum(1 for d in drops if _juice_rank(d) >= 80)
+    med_juice = sum(1 for d in drops if 60 <= _juice_rank(d) < 80)
     coach_context = {
         "total_priced_props_today": len(priced),
         "props_80plus_juice": high_juice,
@@ -419,7 +444,7 @@ def projections(lines: list[dict], sport: Optional[str] = None, stat: Optional[s
         pool = [l for l in pool if s in (l.get("stat_type") or "").lower()]
     rows = [_drop(l) for l in pool]
     keys = {
-        "juice": lambda d: d["juiceScore"],
+        "juice": _juice_rank,
         "edge": lambda d: (d["edgePct"] if d["edgePct"] is not None else -999),
         "confidence": lambda d: d["confidence"],
         "projection": lambda d: (d["projection"] or 0),
