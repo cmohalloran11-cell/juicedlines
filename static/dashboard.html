@@ -411,13 +411,19 @@ const IC2={
   target:'M12 3a9 9 0 100 18 9 9 0 000-18M12 8a4 4 0 100 8 4 4 0 000-8M12 11a1 1 0 100 2 1 1 0 000-2',
   box:'M21 8l-9-5-9 5m18 0l-9 5m9-5v8l-9 5m0-13L3 8m9 5v8m-9-5V8',
   tennis:'M12 3a9 9 0 100 18 9 9 0 000-18M5.2 5.2c4 3 4 11 0 13.6M18.8 5.2c-4 3-4 11 0 13.6',
+  football:'M5 19C3 15 4 9 8 6C12 3 17 2 19 5C21 9 20 15 16 18C12 21 7 22 5 19Z M8 16L16 8 M9.3 14.7L10.7 13.3 M11.3 12.7L12.7 11.3 M13.3 10.7L14.7 9.3',
   users:'M9 11a3 3 0 100-6 3 3 0 000 6zM3 20a6 6 0 0112 0M17 11a3 3 0 100-6M21 20a6 6 0 00-4-5.7',
   research:'M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3',
 };
 const FILLED=new Set(['bolt','star','sparkle','fire']);
 const icon=(n,s=16,color)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" ${FILLED.has(n)?`fill="${color||'currentColor'}" stroke="none"`:`fill="none" stroke="${color||'currentColor'}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"`} style="vertical-align:middle;flex:none"><path d="${IC2[n]}"/></svg>`;
-const LEAGUE={MLB:'mlb',NBA:'nba',WNBA:'wnba',NFL:'nfl',NHL:'nhl',CFB:'college-football'};
-function leagueLogo(sport,size=15){const k=LEAGUE[sport];
+const LEAGUE={MLB:'mlb',NBA:'nba',WNBA:'wnba',NFL:'nfl',NHL:'nhl'};
+function leagueLogo(sport,size=15){
+  // CFB has no single league crest the way NFL/MLB/NBA do (ESPN's "college-football" isn't a
+  // real leagues/500/ slug -- there's no one governing-body logo for 130+ independent
+  // programs) -- draw a real inline icon instead of an <img> that would silently 404-and-hide.
+  if(sport==='CFB')return icon('football',size);
+  const k=LEAGUE[sport];
   return k?`<img src="https://a.espncdn.com/i/teamlogos/leagues/500/${k}.png" width="${size}" height="${size}" style="object-fit:contain;vertical-align:middle;flex:none" onerror="this.style.display='none'">`:icon('tennis',size);}
 function teamBadge(x,size=22){return x&&x.teamLogo?`<img src="${x.teamLogo}" width="${size}" height="${size}" style="object-fit:contain;background:#0e130d;border-radius:5px;flex:none" onerror="this.style.display='none'">`:leagueLogo(x&&x.sport,size);}
 const ico=s=>leagueLogo(s,14);
