@@ -576,7 +576,7 @@ def api_simulation(id: str = Query(..., description="line_id to value")):
 @app.get("/api/model/health")
 def api_model_health(sport: str = Query("", description="MLB | WNBA | Tennis | NFL | CFB | empty=all"),
                      proj_kind: str = Query(
-                         "", description="empty=no filter | e.g. nfl_regular | nfl_preseason "
+                         "", description="empty=no filter | e.g. nfl_regular | cfb_prior_a "
                                          "(only meaningful combined with a specific sport)")):
     """Public transparency: measured accuracy, CLV, and calibration from the graded ledger."""
     return model_health.health(sport or None, proj_kind or None)
@@ -587,7 +587,7 @@ async def api_backtest(sport: str = Query("MLB"),
                        replay: int = Query(0, ge=0, le=800,
                                            description="if >0, run a leakage-free replay of N historical props"),
                        proj_kind: str = Query(
-                           "", description="empty=no filter | e.g. nfl_regular | nfl_preseason"),
+                           "", description="empty=no filter | e.g. nfl_regular | cfb_prior_a"),
                        user: dict = Depends(optional_user)):
     """Model measurement ruler (Vol V Pt4): current accuracy from the ledger, and optionally
     a leakage-free replay of the live model on N past prop-days.
@@ -616,7 +616,7 @@ async def api_backtest(sport: str = Query("MLB"),
 @app.get("/api/model/drift")
 def api_model_drift(sport: str = Query("MLB"),
                     proj_kind: str = Query(
-                        "", description="empty=no filter | e.g. nfl_regular | nfl_preseason")):
+                        "", description="empty=no filter | e.g. nfl_regular | cfb_prior_a")):
     """Drift detection (Vol V Ch 182): recent vs prior accuracy — is the live model degrading?"""
     import backtest
     return backtest.drift(sport, proj_kind=proj_kind or None)
@@ -633,7 +633,7 @@ def api_model_registry(sport: str = Query("", description="empty = all sports"))
 async def api_model_dashboard(sport: str = Query("", description="empty = all-sport summary"),
                               proj_kind: str = Query(
                                   "", description="empty=no filter | e.g. nfl_regular | "
-                                                  "nfl_preseason (only used with a specific sport)")):
+                                                  "cfb_prior_a (only used with a specific sport)")):
     """Model Health dashboard bundle: the self-monitoring surface. No sport = a
     lightweight cross-sport summary (top-line accuracy + drift status per sport, for the
     landing view); a sport = the full deep-dive (accuracy, reliability diagram, drift,
@@ -650,7 +650,7 @@ async def api_model_dashboard(sport: str = Query("", description="empty = all-sp
 def api_model_reliability(sport: str = Query("MLB"),
                           stat: str = Query("", description="empty = whole sport"),
                           proj_kind: str = Query(
-                              "", description="empty=no filter | e.g. nfl_regular | nfl_preseason")):
+                              "", description="empty=no filter | e.g. nfl_regular | cfb_prior_a")):
     """Reliability diagram data for one sport (optionally one stat): predicted P(over)
     vs realized frequency per bucket — the direct evidence for "are the probabilities
     actually calibrated."""
@@ -661,7 +661,7 @@ def api_model_reliability(sport: str = Query("MLB"),
 @app.get("/api/model/drift/by-stat")
 def api_model_drift_by_stat(sport: str = Query("MLB"),
                             proj_kind: str = Query(
-                                "", description="empty=no filter | e.g. nfl_regular | nfl_preseason")):
+                                "", description="empty=no filter | e.g. nfl_regular | cfb_prior_a")):
     """Per-stat drift: which specific statistics are degrading, not just the sport
     overall (a sport-wide 'stable' can hide one stat quietly worsening)."""
     import backtest
@@ -671,7 +671,7 @@ def api_model_drift_by_stat(sport: str = Query("MLB"),
 @app.get("/api/model/archetypes")
 def api_model_archetypes(sport: str = Query("MLB"),
                          proj_kind: str = Query(
-                             "", description="empty=no filter | e.g. nfl_regular | nfl_preseason")):
+                             "", description="empty=no filter | e.g. nfl_regular | cfb_prior_a")):
     """Accuracy by player sample depth (model_n at grading time) — the measured answer
     to "which player archetypes perform worst": thin-sample rookies/call-ups/injury
     returns vs deep-sample established regulars."""
@@ -696,7 +696,7 @@ def api_data_health():
 @app.get("/api/admin/calibration")
 def api_admin_calibration(sport: str = Query("MLB"),
                           proj_kind: str = Query(
-                              "", description="empty=no filter | e.g. nfl_regular | nfl_preseason"),
+                              "", description="empty=no filter | e.g. nfl_regular | cfb_prior_a"),
                           _admin: dict = Depends(require_role("ADMIN", "SUPER_ADMIN"))):
     """AdminOS: full per-stat calibration stack. Requires an ADMIN role."""
     return model_health.calibration_detail(sport, proj_kind=proj_kind or None)
@@ -766,7 +766,7 @@ def api_status():
 @app.get("/api/scorecard")
 def api_scorecard(sport: str = Query("", description="MLB | Tennis | WNBA | NFL | CFB | empty = all"),
                   proj_kind: str = Query(
-                      "", description="empty=no filter | e.g. nfl_regular | nfl_preseason")):
+                      "", description="empty=no filter | e.g. nfl_regular | cfb_prior_a")):
     """Running model-vs-market scorecard: hit-rate vs the close, plays, and CLV.
     Builds up over time as the CLV ledger logs lines and grades outcomes."""
     return db.scorecard(sport or None, proj_kind=proj_kind or None)

@@ -124,9 +124,9 @@ def _sport_health(sport: str, proj_kind: str | None = None) -> dict:
 
 def health(sport: Optional[str] = None, proj_kind: str | None = None) -> dict:
     """Public model-health report. One sport, or all when sport is None. `proj_kind`
-    (default None = no filter) scopes to one proj_kind — e.g. "nfl_preseason" vs
-    "nfl_regular" — see db.stat_gammas's docstring; only meaningful combined with a
-    specific `sport`. Cached (_TTL) — see the module-level comment on why."""
+    (default None = no filter) scopes to one proj_kind — e.g. "cfb_prior_a" — see
+    db.stat_gammas's docstring; only meaningful combined with a specific `sport`.
+    Cached (_TTL) — see the module-level comment on why."""
     def _compute() -> dict:
         sports = [sport] if sport else list(_SPORTS)
         reports = {}
@@ -211,9 +211,9 @@ def dashboard_detail(sport: str = "MLB", proj_kind: str | None = None) -> dict:
     trend charts. Every field answers one of: is it improving? is it getting worse?
     which markets perform best/worst? which archetypes perform worst? which stats are
     drifting? what changed, and did it help? `proj_kind` (default None = no filter)
-    scopes to one proj_kind — see health()'s docstring; e.g. "NFL" with proj_kind=
-    "nfl_regular" vs "nfl_preseason" gives the two season types' own dashboards rather
-    than a blend. Cached (_TTL) — this alone was measured at ~2.5s uncached."""
+    scopes to one proj_kind — see health()'s docstring; e.g. "CFB" with proj_kind=
+    "cfb_prior_a" gives that prior tier's own dashboard rather than a blend of all three.
+    Cached (_TTL) — this alone was measured at ~2.5s uncached."""
     def _compute() -> dict:
         try:
             accuracy = backtest.current_accuracy(sport, proj_kind=proj_kind)

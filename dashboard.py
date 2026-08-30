@@ -51,17 +51,17 @@ def _opp_by_abbr() -> dict:
 
 _ACCURACY_CACHE: dict = {"t": 0.0, "v": {}}
 _ACCURACY_SPORTS = ("MLB", "WNBA", "Tennis")
-# NFL shares one sport+model_version across two real engines (nfl_regular/nfl_preseason —
-# see db.stat_gammas's proj_kind docstring), so it can't reuse the plain per-sport lookup
-# above without blending a preseason rotation-tier hit rate into a regular-season one.
-_ACCURACY_NFL_PROJ_KINDS = ("nfl_regular", "nfl_preseason")
+# NFL's ledger still carries graded rows from the removed preseason engine under the same
+# sport+model_version (see db.stat_gammas's proj_kind docstring), so it can't reuse the plain
+# per-sport lookup above without blending those into the regular-season hit rate.
+_ACCURACY_NFL_PROJ_KINDS = ("nfl_regular",)
 
 
 def _accuracy_map() -> dict:
     """{sport: {stat_type_lower: hit_rate}} from the real graded-ledger backtest — the
     per-stat "Historical Accuracy" shown on a play card. NFL is additionally keyed
-    {(sport, proj_kind): {...}} for its two engines. Memoized 10 min (backtest.
-    current_accuracy scans the ledger, not free to call per-request)."""
+    {(sport, proj_kind): {...}} so its ledger's retired-engine rows stay out. Memoized
+    10 min (backtest.current_accuracy scans the ledger, not free to call per-request)."""
     import time as _time
     if _time.time() - _ACCURACY_CACHE["t"] < 600 and _ACCURACY_CACHE["v"]:
         return _ACCURACY_CACHE["v"]
@@ -148,8 +148,6 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
         "historicalAccuracy": acc,
         # NFL-specific fields (nfl.board.NFL_FIELDS) — None for every other sport via .get(),
         # same zero-risk additive pattern as model_version/data_snapshot above.
-        "seasonType": line.get("season_type"),
-        "seasonTypeConfirmed": line.get("season_type_confirmed"),
         "expectedSnaps": line.get("expected_snaps"),
         "snapRange": line.get("snap_range"),
         "expectedRoutes": line.get("expected_routes"),
@@ -159,8 +157,6 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
         "playingTimeConfidence": line.get("playing_time_confidence"),
         "playingTimeProbability": line.get("playing_time_probability"),
         "roleConfidence": line.get("role_confidence"),
-        "preseasonRisk": line.get("preseason_risk"),
-        "rotationTier": line.get("rotation_tier"),
         "role": line.get("role"),
         "depthChartPosition": line.get("depth_chart_position"),
         "redZoneOpportunities": line.get("red_zone_opportunities"),
@@ -174,7 +170,6 @@ def _drop(line: dict, acc_map: Optional[dict] = None) -> dict:
         "snapP10": line.get("snap_p10"),
         "snapP90": line.get("snap_p90"),
         "snapStdDev": line.get("snap_std_dev"),
-        "priorInfluence": line.get("prior_influence"),
         # CFB-specific (cfb.board.attach_cfb) — which of the 3-tier prior fallback priced
         # this line (cfb_prior_a/b/c: returning production / transfer / recruiting-rating
         # freshman) and why, so the board can show it as a discoverable tier badge instead

@@ -591,7 +591,7 @@ function closeSide(){$('.side').classList.remove('open');$('#sidescrim').classLi
 // from the real mean (model_proj) server-side and are untouched by this.
 const dispProj=x=>x.median!=null?(x.projection+x.median)/2:x.projection;
 const propRow=x=>`<tr onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
-  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${nflBadge(x)}${cfbBadge(x)}</div><div class="tm">${esc(x.team)||''} ${x.position?'· '+esc(x.position):''}${nflSub(x)}</div></div></div></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${cfbBadge(x)}</div><div class="tm">${esc(x.team)||''} ${x.position?'· '+esc(x.position):''}${nflSub(x)}</div></div></div></td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${esc(x.stat)||''}</div></td>
   <td><div class="p1" style="font-size:12px;display:inline-flex;align-items:center;gap:5px">${teamBadge(x,16)} ${esc(x.team)||''}${x.opponent?`<span class="muted" style="font-weight:500"> ${x.isHome?'vs':'@'} ${esc(x.opponent)}</span>`:''}</div><div class="p2" style="display:flex;align-items:center;gap:5px;margin-top:2px">${leagueLogo(x.sport,13)}${timeOf(x.startTime)?`<span>${timeOf(x.startTime)}</span>`:''}</div></td>
   <td class="mono" style="font-weight:800" title="Average of the model's mean and median projection">${fmt(dispProj(x))}</td>
@@ -882,7 +882,7 @@ let PROJ=[], PROJUP=null, SELID=null;
 // structurally inflated by design (that's how the boosted payout works), so mixed in they'd
 // swamp real priced props out of every top-N view. Lazy-loaded only when the filter is enabled.
 let BOOSTED=[], BOOSTED_LOADED=false;
-const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25,lineMode:'normal',side:'all',nflSeason:'all',cfbTier:'all'};
+const PF={sources:new Set(['prizepicks','underdog','sleeper']),catsOff:new Set(),catsExpanded:false,juiceMin:50,confMin:0,edgeMin:-20,sort:'juice',dir:-1,high:false,onlyWatch:false,q:'',projSport:'all',page:1,per:25,lineMode:'normal',side:'all',cfbTier:'all'};
 const skelRows=(n=9,cols=14)=>Array.from({length:n},()=>`<tr class="skrow">${Array.from({length:cols},(_,i)=>`<td><span class="sk" style="width:${i?30+Math.floor(Math.random()*55):70}%"></span></td>`).join('')}</tr>`).join('');
 // Only books we actually pull. Logos via Google's favicon service (real brand marks, CORS-ok).
 const BOOKS=[
@@ -896,31 +896,18 @@ const bookLogo=(s,size=20)=>{const b=bookMeta(s);return b?`<img src="${b[2]}" wi
 // is shown for these (see valuation.is_unpriced); the badge is why.
 const oddsTypeBadge=x=>x.oddsType==='demon'?'<span class="chip r" style="padding:1px 6px;font-size:9px" title="Boosted line — payout not exposed, no EV shown">DEMON</span>'
   :x.oddsType==='goblin'?'<span class="chip g" style="padding:1px 6px;font-size:9px" title="Boosted line — payout not exposed, no EV shown">GOBLIN</span>':'';
-// NFL-only badges — season type + preseason role/risk need to be visually distinct from
-// regular season, not buried in the drawer (a preseason "starter" line means something very
-// different from a regular-season one). Regular season renders nothing extra here.
-const ROTATION_TIER_LABEL={confirmed_starter:'STARTER',second_team:'ROTATION',fringe:'FRINGE',unknown:'ROLE UNKNOWN'};
-function nflBadge(x){
-  if(x.sport!=='NFL'||x.seasonType!=='preseason')return '';
-  const parts=[`<span class="chip y" style="padding:1px 6px;font-size:9px" title="Preseason line${x.seasonTypeConfirmed===false?' — season type inferred (no matching regular-season schedule row), not read directly off the schedule':''}">PRESEASON</span>`];
-  const rt=ROTATION_TIER_LABEL[x.rotationTier];
-  if(rt)parts.push(`<span class="chip ${x.rotationTier==='confirmed_starter'?'g':x.rotationTier==='fringe'?'r':''}" style="padding:1px 6px;font-size:9px" title="Rotation tier — preseason depth-chart read">${rt}</span>`);
-  if(x.preseasonRisk!=null)parts.push(`<span class="chip r" style="padding:1px 6px;font-size:9px" title="Playing-time risk — chance this player's real role/snaps differ from what's assumed">RISK ${Math.round(x.preseasonRisk*100)}%</span>`);
-  return parts.join(' ');
-}
 function nflSub(x){
   if(x.sport!=='NFL')return '';
   const bits=[];
-  if(x.seasonType!=='preseason'&&x.role&&x.role!=='unknown')bits.push(cap(x.role));
+  if(x.role&&x.role!=='unknown')bits.push(cap(x.role));
   if(x.expectedSnaps!=null)bits.push(Math.round(x.expectedSnaps)+' snaps proj');
   return bits.length?' · '+bits.join(' · '):'';
 }
 // CFB's three-tier prior fallback (cfb/model/rates.py) — which tier actually priced a given
 // row matters more here than for any other sport (they're three genuinely different models,
-// tier C being the weakest by construction), so it's a discoverable badge exactly like NFL's
-// preseason rotation-tier chip above. `projKind`/`priorTierReason` are additive fields (same
-// zero-risk pattern as seasonType) — render nothing until the backend exposes them, never a
-// guessed label.
+// tier C being the weakest by construction), so it's a discoverable badge rather than an
+// opaque proj_kind string. `projKind`/`priorTierReason` are additive fields — render nothing
+// until the backend exposes them, never a guessed label.
 const CFB_TIER_LABEL={cfb_prior_a:'RETURNING PROD.',cfb_prior_b:'TRANSFER',cfb_prior_c:'FRESHMAN/RECRUIT'};
 function cfbBadge(x){
   if(x.sport!=='CFB'||!x.projKind)return '';
@@ -963,7 +950,6 @@ function renderFilters(){
    <div class="fg"><div class="gt">Sportsbooks</div>${BOOKS.map(([k,n])=>`<label class="chk"><input type="checkbox" ${PF.sources.has(k)?'checked':''} onchange="togSrc('${k}',this.checked)">${bookLogo(k,16)}${n}</label>`).join('')}</div>
    ${PF.sources.has('prizepicks')?`<div class="fg"><div class="gt">PrizePicks Lines</div><div class="segbar">${[['normal','Normal'],['demon','Demon'],['goblin','Goblin']].map(([k,n])=>`<span class="seg ${PF.lineMode===k?'on':''}" onclick="setLineMode('${k}')" title="${k==='normal'?'Standard/boosted PrizePicks lines (priced)':'PrizePicks boosted lines — no known payout multiplier, so no Edge %/EV, just the raw projection'}">${n}</span>`).join('')}</div></div>`:''}
    <div class="fg"><div class="gt">Side</div><div class="segbar">${[['all','All'],['over','Over'],['under','Under']].map(([k,n])=>`<span class="seg ${PF.side===k?'on':''}" onclick="PF.side='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>
-   ${PF.projSport==='NFL'?`<div class="fg"><div class="gt">NFL Season Type</div><div class="segbar">${[['all','All'],['regular','Regular'],['preseason','Preseason']].map(([k,n])=>`<span class="seg ${PF.nflSeason===k?'on':''}" onclick="PF.nflSeason='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>`:''}
    ${PF.projSport==='CFB'?`<div class="fg"><div class="gt">CFB Prior Tier <span class="muted" style="font-weight:600;text-transform:none;letter-spacing:0">— which prior fed this player's projection</span></div><div class="segbar">${[['all','All'],['cfb_prior_a','Returning'],['cfb_prior_b','Transfer'],['cfb_prior_c','Freshman']].map(([k,n])=>`<span class="seg ${PF.cfbTier===k?'on':''}" onclick="PF.cfbTier='${k}';PF.page=1;renderFilters();applyProj()">${n}</span>`).join('')}</div></div>`:''}
    <div class="fg"><div class="gt">Prop Categories <span style="color:var(--dim);font-weight:600;margin-left:4px">${PF.projSport==='all'?'All Sports':PF.projSport}</span></div>${all.length?`<div class="catsAll"><span class="rst" onclick="togAllCats(true)">Select All</span><span class="rst" onclick="togAllCats(false)">Clear All</span></div>`:''}${shown.map(catRow).join('')||'<span class="muted" style="font-size:11px">—</span>'}${more>0?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=true;renderFilters()">+ ${more} more</span>`:(PF.catsExpanded&&all.length>10?`<span class="rst" style="display:inline-block;margin-top:6px" onclick="PF.catsExpanded=false;renderFilters()">Show less</span>`:'')}</div>
    <div class="fg"><div class="gt">Juice Score</div><div class="frange"><div class="lab"><span>${PF.juiceMin}</span><span>100</span></div><input type="range" min="0" max="100" value="${PF.juiceMin}" oninput="PF.juiceMin=+this.value;this.previousElementSibling.firstChild.textContent=this.value;applyProj()"></div></div>
@@ -988,7 +974,7 @@ async function setLineMode(mode){
 }
 function togCat(c,on){on?PF.catsOff.delete(c):PF.catsOff.add(c);PF.page=1;applyProj()}
 function togAllCats(on){PF.catsOff=on?new Set():new Set(catsForSport().map(([c])=>c));PF.page=1;renderFilters();applyProj()}
-function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;PF.lineMode='normal';PF.side='all';PF.nflSeason='all';PF.cfbTier='all';render()}
+function resetPF(){PF.sources=new Set(['prizepicks','underdog','sleeper']);PF.juiceMin=50;PF.confMin=0;PF.edgeMin=-20;PF.high=false;PF.onlyWatch=false;PF.q='';PF.catsOff=new Set();PF.projSport='all';PF.catsExpanded=false;PF.lineMode='normal';PF.side='all';PF.cfbTier='all';render()}
 function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.juice_leader,te=t.top_edge,lm=t.biggest_line_move;
   const tile=(cap,big,cls,sub)=>`<div class="tile"><div class="cap">${cap}</div><div class="big ${cls||''}">${big}</div><div class="sub">${sub||''}</div></div>`;
   $('#ptiles').innerHTML=
@@ -999,14 +985,10 @@ function renderPTiles(d){const t=d.tiles||{},dh=d.data_health||{};const jl=t.jui
     tile('Model Health',dh.quality_score>=80?'Excellent':dh.quality_score>=60?'Good':'Fair','pos','Data '+(dh.quality_score??'—')+'/100');
 }
 function dsAvg(){if(!PROJ.length)return null;return Math.round(PROJ.reduce((s,p)=>s+(p.confidence||0),0)/PROJ.length)}
-function pickNfl(season){PF.projSport='NFL';PF.nflSeason=season;PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()}
 function renderToolbar(){
   const vt=(k,n)=>`<span class="qf ${(k==='high'&&PF.high)||(k==='watch'&&PF.onlyWatch)?'on':''}" onclick="tbClick('${k}')">${n}</span>`;
   const sports=[['all','All Sports'],['MLB','MLB'],['WNBA','WNBA'],['Tennis','Tennis'],['NFL','NFL'],['CFB','CFB']];
-  // NFL Preseason gets its own chip (not just a sidebar toggle) so it's discoverable without
-  // first clicking into NFL — one click sets both the sport AND the season-type filter.
-  const nflPreOn=PF.projSport==='NFL'&&PF.nflSeason==='preseason';
-  const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k&&!(k==='NFL'&&nflPreOn)?'on':''}" onclick="PF.projSport='${k}';PF.nflSeason='all';PF.cfbTier='all';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}<span class="seg ${nflPreOn?'on':''}" onclick="pickNfl('preseason')">${leagueLogo('NFL',14)}NFL Preseason</span></div>`;
+  const sp=`<div class="segbar">${sports.map(([k,n])=>`<span class="seg ${PF.projSport===k?'on':''}" onclick="PF.projSport='${k}';PF.cfbTier='all';PF.page=1;PF.catsExpanded=false;renderToolbar();renderFilters();applyProj()">${k==='all'?'':leagueLogo(k,14)}${n}</span>`).join('')}</div>`;
   // Required by the CFBD Patreon Tier 3 license — must be visible near the CFB board, not
   // buried in a footer nobody scrolls to (cfb/README.md's license-constraints section).
   const cfbAttr=PF.projSport==='CFB'?`<span class="muted" style="font-size:10.5px;flex-basis:100%">Data provided by <a href="https://collegefootballdata.com" target="_blank" rel="noopener" style="color:var(--muted);text-decoration:underline">CollegeFootballData.com</a> · CFB is a newly added sport with no graded history yet — see Model Health for real calibration once it exists</span>`:'';
@@ -1022,7 +1004,6 @@ function applyProj(){
   const base=PF.lineMode==='normal'?PROJ:BOOSTED.filter(p=>p.oddsType===PF.lineMode);
   let rows=base.filter(p=>PF.sources.has(p.source));
   if(PF.projSport!=='all')rows=rows.filter(p=>(p.sport||'').toLowerCase()===PF.projSport.toLowerCase());
-  if(PF.projSport==='NFL'&&PF.nflSeason!=='all')rows=rows.filter(p=>p.seasonType===PF.nflSeason);
   if(PF.projSport==='CFB'&&PF.cfbTier!=='all')rows=rows.filter(p=>p.projKind===PF.cfbTier);
   if(PF.catsOff.size)rows=rows.filter(p=>!PF.catsOff.has((p.stat||'').trim()));
   rows=rows.filter(p=>p.juiceScore>=PF.juiceMin && (p.confidence||0)>=PF.confMin && (p.edgePct==null||p.edgePct>=PF.edgeMin));
@@ -1044,7 +1025,7 @@ function applyProj(){
 }
 const richRow=x=>`<tr class="${SELID===x.id?'sel':''}" onclick='openProp(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
   <td onclick="event.stopPropagation();toggleWatch(${JSON.stringify(x).replace(/'/g,'&#39;')})"><span class="star">${starIcon(isWatched(x.id))}</span></td>
-  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${nflBadge(x)}${cfbBadge(x)}</div><div class="tm">${esc(x.position)||''} ${x.startTime?'· '+timeOf(x.startTime):''}${nflSub(x)}</div></div></div></td>
+  <td><div class="pl"><img src="${ph(x.headshot)}"><div><div class="nm">${esc(x.player)||'—'} ${cfbBadge(x)}</div><div class="tm">${esc(x.position)||''} ${x.startTime?'· '+timeOf(x.startTime):''}${nflSub(x)}</div></div></div></td>
   <td><span style="display:inline-flex;align-items:center;gap:6px;font-weight:600">${teamBadge(x,18)} ${esc(x.team)||''}</span></td>
   <td class="muted">${x.opponent?`${x.isHome?'vs':'@'} ${esc(x.opponent)}`:'—'}</td>
   <td class="prop"><div class="p1">${cap(x.side)} ${fmt(x.line)} ${oddsTypeBadge(x)}</div><div class="p2">${esc(x.stat)||''}</div></td>
@@ -1910,7 +1891,7 @@ async function vGamePage(team){
 // archetypes perform best/worst, which stats are drifting, and what changed between
 // versions. Every number here is read from the graded CLV ledger (backtest.py /
 // model_health.py) — nothing simulated or invented for display.
-let MH_SPORT='MLB', MH_SUMMARY=null, MH_DETAIL=null, MH_NFL_SEASON='all';
+let MH_SPORT='MLB', MH_SUMMARY=null, MH_DETAIL=null;
 
 function driftChip(status){
   if(status==='drifting')return `<span class="chip r">drifting</span>`;
@@ -1962,7 +1943,9 @@ function trendChart(runs,key,fmtFn){
 
 async function vModelHealth(){
   $('#view').innerHTML=`<div class="empty"><div class="em">${icon('heart',30)}</div>Loading model health…</div>`;
-  const nflPk=MH_SPORT==='NFL'&&MH_NFL_SEASON!=='all'?'&proj_kind=nfl_'+MH_NFL_SEASON:'';
+  // NFL's ledger still holds graded rows from the removed preseason engine under the same
+  // sport+model_version — scope to nfl_regular so they can never blend into what's shown.
+  const nflPk=MH_SPORT==='NFL'?'&proj_kind=nfl_regular':'';
   const [summary,detail]=await Promise.all([
     MH_SUMMARY||api('/api/model/dashboard').catch(()=>({sports:{}})),
     api('/api/model/dashboard?sport='+MH_SPORT+nflPk).catch(()=>({})),
@@ -1982,9 +1965,6 @@ async function vModelHealth(){
       ${driftChip(sm.drift_status)}
     </div>`;
   }).join('');
-  // Regular vs preseason are separate calibration buckets — never blended by default;
-  // "All" is an explicit, user-chosen combined view, not a silent merge.
-  const nflSeasonToggle=MH_SPORT==='NFL'?`<div class="fg" style="border-top:1px solid var(--line);padding:12px 16px 4px;margin:0"><div class="gt">NFL Season Type <span class="muted" style="font-weight:600;text-transform:none;letter-spacing:0">— regular and preseason are graded separately and never blended unless "All" is chosen</span></div><div class="segbar">${[['all','All'],['regular','Regular'],['preseason','Preseason']].map(([k,n])=>`<span class="seg ${MH_NFL_SEASON===k?'on':''}" onclick="mhSetNflSeason('${k}')">${n}</span>`).join('')}</div></div>`:'';
 
   const statRows=Object.entries(s.accuracy&&s.accuracy.per_stat||{})
     .sort((a,b)=>(b[1].n||0)-(a[1].n||0))
@@ -2001,7 +1981,7 @@ async function vModelHealth(){
 
   $('#view').innerHTML=`
    <div class="ph2"><div><h2>Model Health</h2><p>Self-monitoring: is each model improving, and where does it earn — or lose — trust? Every number below is read from graded outcomes, nothing simulated for display.</p></div></div>
-   <div class="panel" style="margin-bottom:16px">${sportTabs}${nflSeasonToggle}</div>
+   <div class="panel" style="margin-bottom:16px">${sportTabs}</div>
 
    <div class="kv" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
      <div class="b"><div class="l">MAE</div><div class="v">${acc.mae??'—'}</div><div class="muted" style="font-size:10.5px">mean absolute error</div></div>
@@ -2034,8 +2014,7 @@ async function vModelHealth(){
    <div class="panel"><div class="phead"><h3>Version Changelog</h3><span class="hint">what changed, in plain language</span></div>${changelogRows}</div>
    <p class="muted" style="font-size:11px;margin-top:4px">Daily snapshots are recorded automatically once per sport per day (backtest.record_run). Metrics below the 50-graded-row floor (or below-30/60-row floors for per-stat/archetype/drift splits) are shown as insufficient data rather than a noisy guess.</p>`;
 }
-function mhGoSport(sp){MH_SPORT=sp;if(sp!=='NFL')MH_NFL_SEASON='all';vModelHealth()}
-function mhSetNflSeason(v){MH_NFL_SEASON=v;vModelHealth()}
+function mhGoSport(sp){MH_SPORT=sp;vModelHealth()}
 
 const ROUTES={dashboard:vDashboard,projections:()=>vProjections(),props:()=>vProjections('Props Center','The full prop explorer — filter, sort, and open any prop.'),players:vPlayers,games:vGames,teams:vTeams,simulations:vSimulations,research:()=>vResearch(),'ai-juice':vAI,movers:vMovers,injuries:vInjuries,market:vMarket,'model-health':vModelHealth,leaderboards:vLeaderboards,correlations:vCorrelations,optimizer:vOptimizer,watchlist:vWatchlist,alerts:vAlerts,portfolio:vPortfolio,journal:vPortfolio,fantasy:vFantasy,weather:vWeather,community:vCommunity,learn:vLearn,settings:vSettings,help:vHelp,upgrade:vUpgrade,admin:vAdmin};
 
@@ -2113,13 +2092,12 @@ function nflConfBreakdown(x){
   if(head>0.5)items.push(['Headroom',head,'#26311f']);
   return `<div class="dsec"><h5>NFL Playing-Time Confidence <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">· separate from Confidence above</span></h5><div style="display:flex;align-items:center;gap:16px">${donutSVG(items,(x.nflConfidence??Math.round(sum))+'%','NFL')}<div class="legend" style="flex:1">${f.map((z,i)=>`<div class="row" title="${esc(z.detail||'')}"><span class="dot" style="background:${NFL_FACTOR_PALETTE[i%NFL_FACTOR_PALETTE.length]}"></span>${esc(z.factor)}<span class="pct">${z.value} / ${z.max}</span></div>`).join('')}</div></div></div>`;
 }
-// Task's explicit ask: preseason STARTER/ROTATION/PLAYING-TIME-RISK must be prominent, not
-// buried — this whole section sits right under the headline EV/Edge kv, before Juice Score.
+// Sits right under the headline EV/Edge kv, before Juice Score — role and playing time are
+// what actually drive an NFL projection, so they lead rather than being buried in the drawer.
 function nflSection(x){
   if(x.sport!=='NFL')return '';
   const snapRangeStr=Array.isArray(x.snapRange)&&x.snapRange.length===2?`${fmt(x.snapRange[0])}–${fmt(x.snapRange[1])}`:null;
   const roleLabel=x.role&&x.role!=='unknown'?cap(x.role):'not enough data yet';
-  const rotLabel=ROTATION_TIER_LABEL[x.rotationTier]||(x.rotationTier?cap(x.rotationTier.replace(/_/g,' ')):null);
   const playTimeConf=x.playingTimeConfidence?cap(x.playingTimeConfidence):'—';
   const roleConf=x.roleConfidence?cap(x.roleConfidence):'—';
   const usage=`<div class="kv">
@@ -2132,19 +2110,14 @@ function nflSection(x){
     <div class="b"><div class="l">Playing-Time Prob.</div><div class="v">${x.playingTimeProbability!=null?prob(x.playingTimeProbability):'not available'}</div><div class="muted" style="font-size:10.5px">confidence: ${playTimeConf}</div></div>
     <div class="b"><div class="l">Red Zone Opps</div><div class="v">not available</div><div class="muted" style="font-size:10.5px">no free play-by-play source yet</div></div>
   </div>`;
-  const preseasonBlock=x.seasonType==='preseason'?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;padding:10px;border-radius:8px;background:#1c1608;border:1px solid #3a2a0c">
-      ${rotLabel?`<span class="chip ${x.rotationTier==='confirmed_starter'?'g':x.rotationTier==='fringe'?'r':'y'}" style="font-size:11px">${esc(rotLabel)}</span>`:''}
-      ${x.preseasonRisk!=null?`<span class="chip r" style="font-size:11px">Playing-Time Risk ${Math.round(x.preseasonRisk*100)}%</span>`:''}
-      <span class="muted" style="font-size:10.5px">${x.seasonTypeConfirmed===false?'Season type inferred — no matching regular-season schedule row was found, treat with extra caution':'Season type confirmed directly off the schedule'}</span>
-    </div>`:'';
   const gameCtx=`<div class="kv" style="margin-top:10px">
     <div class="b"><div class="l">Game Total</div><div class="v">${x.gameTotal!=null?fmt(x.gameTotal):'—'}</div></div>
     <div class="b"><div class="l">Team Total</div><div class="v">${x.teamTotal!=null?fmt(x.teamTotal):'—'}</div></div>
     <div class="b"><div class="l">Spread</div><div class="v">${x.spread!=null?signed(x.spread):'—'}</div></div>
     <div class="b"><div class="l">Weather</div><div class="v" style="font-size:13px">${x.weather?esc(x.weather):'—'}</div></div>
   </div>`;
-  return `<div class="dsec"><h5>NFL Usage &amp; Role <span class="chip ${x.seasonType==='preseason'?'y':''}" style="margin-left:6px;font-size:9px;padding:1px 6px;vertical-align:middle">${x.seasonType==='preseason'?'PRESEASON':'REGULAR SEASON'}</span></h5>
-    ${usage}${preseasonBlock}${gameCtx}
+  return `<div class="dsec"><h5>NFL Usage &amp; Role</h5>
+    ${usage}${gameCtx}
   </div>${nflConfBreakdown(x)}`;
 }
 // CFB's three-tier prior (cfb/model/rates.py) plus honest "no track record yet" messaging —

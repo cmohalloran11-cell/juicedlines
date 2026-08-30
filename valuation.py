@@ -153,16 +153,12 @@ def kelly_fraction(model_prob: float, line: dict[str, Any], cap: float = 0.25) -
 # entire time on the board — a genuine bug, not a deliberate demotion. "model" (MLB's
 # empirical-average fallback) and "market" (tennis fully deferred to the market line, no real
 # model call) correctly stay at the lower 0.5 — they aren't full simulations.
-# 2026-08: NFL ships two kinds rather than one — "nfl_regular" and "nfl_preseason" — because
-# the two are genuinely different models (a preseason projection's playing time comes from
-# rotation tiers, not from the player's own snap history), and a calibration query must be
-# able to separate them. Both ARE full Monte Carlo runs, so both belong here.
 # 2026-08: CFB ships three kinds for the same reason — cfb_prior_a/b/c are the three prior
 # tiers (returning production, level-translated transfer, recruiting rating), genuinely
 # different models that a calibration query has to be able to score separately. All three run
 # the same full Monte Carlo simulation; what differs is what feeds its prior, and how thin that
 # prior is already shows up honestly in model_n and the distribution's own width.
-_FULL_ENGINE_KINDS = frozenset({"engine", "basketball", "tennis", "nfl_regular", "nfl_preseason",
+_FULL_ENGINE_KINDS = frozenset({"engine", "basketball", "tennis", "nfl_regular",
                                 "cfb_prior_a", "cfb_prior_b", "cfb_prior_c"})
 
 

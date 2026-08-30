@@ -1,28 +1,15 @@
 """
-NFL projection system — regular season AND preseason.
+NFL projection system — regular season.
 
-Two DISTINCT models sharing one data layer and one simulation engine:
-
-  regular season  usage.py fits per-snap opportunity + per-attempt efficiency from the
-                  player's own recent games (recency-weighted, empirical-Bayes shrunk toward
-                  a positional prior measured from the whole league), playing_time.py
-                  projects the snap share, environment.py sizes the game (plays, pass rate)
-                  off the market's own spread/total, matchup.py scales efficiency by the
-                  opponent's measured defense.
-
-  preseason       rotation.py replaces playing_time.py entirely. A preseason snap share is
-                  NOT a regular-season snap share with a knob turned down — it is a coaching
-                  decision about rotation tiers, so players are classified into tiers
-                  (confirmed starter … fringe/unknown) and each tier carries its own
-                  playing-time distribution SHAPE. No free data source publishes preseason
-                  snap counts (see config.PRESEASON_TIER_SNAP_SHARE), so those shapes are
-                  labelled assumptions and preseason confidence is structurally low, which
-                  makes board.py lean much harder on the market line for the LEVEL while the
-                  model supplies the SPREAD.
+usage.py fits per-snap opportunity + per-attempt efficiency from the player's own recent
+games (recency-weighted, empirical-Bayes shrunk toward a positional prior measured from the
+whole league), playing_time.py projects the snap share, environment.py sizes the game (plays,
+pass rate) off the market's own spread/total, matchup.py scales efficiency by the opponent's
+measured defense.
 
 Layout mirrors basketball/:
   data/         swappable source adapters (nflverse releases) behind an ABC
-  model/        usage, playing time, preseason rotation, matchup, environment, combo corr
+  model/        usage, playing time, matchup, environment, combo corr
   sim/          Monte-Carlo engine -> per-market distributions
   projections   public API (fit/cache per player, project a player-game, read markets)
   board         attach_nfl(lines) — writes model_proj/prob/edge/floor/ceiling onto live lines
@@ -57,5 +44,3 @@ COMBOS = {
 }
 
 MARKETS = BASE_MARKETS + tuple(COMBOS)
-
-SEASON_TYPES = ("regular", "preseason")

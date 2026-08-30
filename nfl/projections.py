@@ -3,12 +3,8 @@ Public API — fit a player from real nflverse data, project one game to a distr
 market, and read any prop market off it.
 
     from nfl import projections as P
-    proj = P.project_player("Ja'Marr Chase", team="CIN", season_type="regular")
+    proj = P.project_player("Ja'Marr Chase", team="CIN")
     P.market_prob(proj, "Receiving Yards", 84.5, "over")
-
-The regular-season and preseason paths differ in exactly one place — where playing time comes
-from (`model/playing_time.py` vs `model/rotation.py`) — and that difference propagates
-everywhere downstream because every opportunity rate is per-snap.
 """
 
 from __future__ import annotations
@@ -27,7 +23,6 @@ from .data import nfl_source
 from .data.base import ScheduleGame
 from .model import usage as U
 from .model import playing_time as PT
-from .model import rotation as ROT
 from .model import matchup as MU
 from .model import environment as ENV
 from .model.combo_corr import empirical_combo_corr
@@ -59,9 +54,7 @@ def norm_team(code: Optional[str]) -> Optional[str]:
 
 def current_season(today: Optional[str] = None) -> int:
     """The NFL season a date belongs to. An NFL season is named for the calendar year it
-    STARTS in and runs into February, so January/February belong to the previous season. This
-    is a calendar fact about how seasons are labelled, not a guess about whether a given game
-    is preseason — that comes from the schedule (see board.resolve_season_type)."""
+    STARTS in and runs into February, so January/February belong to the previous season."""
     d = datetime.fromisoformat(today) if today else datetime.now(timezone.utc)
     return d.year - 1 if d.month <= 2 else d.year
 
@@ -82,8 +75,6 @@ def _resolve_market(label: str) -> Optional[str]:
     # module's docstring). Found live 2026-08 (production verification): Underdog ships these
     # under the same "NFL" league as real per-game props, distinguished only by this "season"
     # qualifier in the label text, so it has to be caught here rather than at the league-key
-    # level. "preseason" is a different token ("preseason" != "season" in this token set) and
-    # is unaffected — a preseason GAME's per-game props still resolve normally.
     if "season" in tokens:
         return None
     # Touchdown props: passing TDs ARE modelled; rushing/receiving TDs deliberately are not
@@ -172,7 +163,6 @@ def league_data(season: Optional[int] = None) -> dict:
     data["priors"] = U.positional_priors(weeks, snaps)
     data["defense"] = MU.fit_defense([w for w in weeks if w.season == season] or weeks)
     data["depth_rank"] = {(d.team, _norm(d.player)): d.rank for d in data["depth"] if d.rank}
-    data["roster_status"] = {(r.team, _norm(r.player)): r.status for r in data["rosters"]}
     data["positions"] = {}
     for w in weeks:
         data["positions"][_norm(w.player)] = w.position
@@ -212,9 +202,8 @@ def _confidence(eff_games: float) -> str:
 
 
 def project_player(name: str, team: Optional[str] = None, position: Optional[str] = None,
-                   season_type: str = "regular", game: Optional[ScheduleGame] = None,
-                   season: Optional[int] = None, n: Optional[int] = None,
-                   rng=None) -> Optional[dict]:
+                   game: Optional[ScheduleGame] = None, season: Optional[int] = None,
+                   n: Optional[int] = None, rng=None) -> Optional[dict]:
     """One player-game projection. None when the player can't be resolved to a position at all
     (no stat history, no depth-chart entry, no roster row) — that is a genuine "we know
     nothing", and projecting it would be inventing a player."""
@@ -225,7 +214,7 @@ def project_player(name: str, team: Optional[str] = None, position: Optional[str
     if pos is None:
         return None
 
-    ck = (nname, team, pos, season_type, game.game_id if game else None, n)
+    ck = (nname, team, pos, game.game_id if game else None, n)
     hit = _proj_cache.get(ck)
     if hit and time.time() - hit[0] < _PROJ_TTL:
         return hit[1]
@@ -240,43 +229,20 @@ def project_player(name: str, team: Optional[str] = None, position: Optional[str
     fit.player = fit.player or name
     fit.team = fit.team or (team or "")
 
-    environment = ENV.game_environment(game, team or "", season_type=season_type)
+    environment = ENV.game_environment(game, team or "")
     depth_rank = data["depth_rank"].get((team, nname)) if team else None
 
-    if season_type == "preseason":
-        prior_share = float(np.mean(fit.snap_sample)) if fit.snap_sample else None
-        on_roster = (team, nname) in data["roster_status"] if team else False
-        tier, tier_reason = ROT.classify_tier(depth_rank, prior_share, len(fit.snap_sample),
-                                              on_roster)
-        tendency = ROT.team_tendency(team, data["weeks"], data["schedule"]) if team else None
-        team_pass_rate = tendency.preseason_pass_rate if tendency else None
-        # Player's OWN preseason history — top of the hierarchy (see rotation.py's module
-        # docstring). Always empty with today's data source: nflverse publishes no PRE snap
-        # rows at all (season_type is "REG"|"POST" only). Real, tested code for the day one
-        # is wired, rather than a hook that only exists on paper.
-        pre_snaps = sorted(
-            (s for s in data["snaps"] if s.season_type == "PRE" and _norm(s.player) == nname),
-            key=lambda s: (s.season, s.week), reverse=True)
-        own_preseason_sample = [s.offense_pct for s in pre_snaps if s.offense_pct is not None]
-        pt = ROT.tier_playing_time(tier, environment.expected_team_snaps, depth_rank, pos,
-                                   team_pass_rate=team_pass_rate,
-                                   own_preseason_snap_sample=own_preseason_sample or None)
-        risk = ROT.preseason_risk(tier, pt)
-        rotation_nudge = ROT.team_rotation_nudge(pos, team_pass_rate)
-    else:
-        # Availability has to be counted against the TEAM's games, not the player's own rows:
-        # a missed game leaves no player row at all, so counting only his own rows would make
-        # every player look 100% available. The window is his most recent 17 appearances.
-        played = {(w.season, w.week) for w in weeks[:17]}
-        team_played = ({(w.season, w.week) for w in data["weeks"]
-                        if w.team == team and (w.season, w.week) >= min(played)}
-                       if played and team else set())
-        pt = PT.project_playing_time(fit.snap_sample, pos, depth_rank,
-                                     environment.expected_team_snaps,
-                                     active_games=len(played),
-                                     team_games=len(team_played) or None)
-        tier, tier_reason, risk, tendency = None, None, None, None
-        own_preseason_sample, rotation_nudge = [], 0.0
+    # Availability has to be counted against the TEAM's games, not the player's own rows:
+    # a missed game leaves no player row at all, so counting only his own rows would make
+    # every player look 100% available. The window is his most recent 17 appearances.
+    played = {(w.season, w.week) for w in weeks[:17]}
+    team_played = ({(w.season, w.week) for w in data["weeks"]
+                    if w.team == team and (w.season, w.week) >= min(played)}
+                   if played and team else set())
+    pt = PT.project_playing_time(fit.snap_sample, pos, depth_rank,
+                                 environment.expected_team_snaps,
+                                 active_games=len(played),
+                                 team_games=len(team_played) or None)
 
     defense = data["defense"].get(environment.opponent) if environment.opponent else None
     multipliers = MU.matchup_multipliers(defense)
@@ -292,23 +258,17 @@ def project_player(name: str, team: Optional[str] = None, position: Optional[str
     # Real Monte Carlo output, not re-derived from the Beta shape alone: `sim["snaps"]` already
     # carries BOTH stages of playing-time uncertainty (the team-snaps draw and the snap-share
     # draw — see sim/engine.py's module docstring), so its own percentiles are the honest
-    # distribution, asymmetric where the underlying Beta is (a low-mean tier is right-skewed —
+    # distribution, asymmetric where the underlying Beta is (a low-mean share is right-skewed —
     # see model/playing_time.py's PlayingTime.beta_params) rather than a forced-symmetric range.
     snap_percentiles = E.summary(sim["snaps"]) if "snaps" in sim else None
-    snap_diag = None
-    if season_type == "preseason":
-        snap_diag = ROT.snap_diagnostic(
-            tier, tier_reason, pos, pt, tendency, snap_percentiles, pt.confidence,
-            depth_rank, len(own_preseason_sample), abs(rotation_nudge))
 
     proj = {
         "player": fit.player, "team": team, "position": pos,
-        "season": data["season"], "season_type": season_type,
+        "season": data["season"],
         "usage": fit, "playing_time": pt, "environment": environment,
         "matchup": multipliers, "opponent_defense": defense,
         "pass_rush_matchup": MU.pass_rush_pressure(defense),
-        "rotation_tier": tier, "rotation_reason": tier_reason, "preseason_risk": risk,
-        "team_tendency": tendency, "depth_rank": depth_rank,
+        "depth_rank": depth_rank,
         "expected_snaps": pt.expected_snaps,
         "snap_range": ([round(snap_lo * plays, 1), round(snap_hi * plays, 1)]
                        if pt.expected_snaps is not None else None),
@@ -325,8 +285,6 @@ def project_player(name: str, team: Optional[str] = None, position: Optional[str
         "sample_weight": fit.sample_weight,
         "confidence": _confidence(fit.eff_games),
         "snap_percentiles": snap_percentiles,
-        "snap_diagnostic": snap_diag,
-        "prior_influence": snap_diag["prior_influence"] if snap_diag else None,
         "sim": sim,
     }
     _proj_cache[ck] = (time.time(), proj)

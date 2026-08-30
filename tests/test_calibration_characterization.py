@@ -182,8 +182,11 @@ def test_interval_width_stretches_when_band_undercovers():
         _db.DB_PATH = orig
 
 
-# ── proj_kind scoping (2026-08 NFL wiring): nfl_regular/nfl_preseason share sport="NFL" and
-# model_version, so every calibration function must not blend them unless asked to. ──────────
+# ── proj_kind scoping: nfl_regular and the retired preseason engine's nfl_preseason rows
+# share sport="NFL" AND model_version (the preseason model's removal was deliberately not
+# version-bumped -- see provenance.MODEL_CHANGELOG), so proj_kind is the ONLY thing keeping
+# those graded rows out of a regular-season calibration fit. Every calibration function must
+# not blend them unless explicitly asked to. Same guarantee CFB's three prior tiers rely on. ─
 
 def test_stat_gammas_never_pools_rows_across_proj_kind_by_default():
     import db as _db
@@ -235,7 +238,7 @@ def test_prob_calibration_and_interval_width_respect_proj_kind_filter():
                      "actual": actual, "close_prob": p, "model_raw_prob": p,
                      "model_floor": line - 15, "model_ceiling": line + 15,
                      "proj_kind": "nfl_regular"})
-        # preseason: badly overconfident + badly undercovering band
+        # retired preseason engine's rows: badly overconfident + badly undercovering band
         p2 = float(rng.uniform(0.05, 0.95))
         true_p2 = 0.5 + (p2 - 0.5) * 0.45
         y2 = 1.0 if rng.uniform() < true_p2 else 0.0
@@ -253,11 +256,11 @@ def test_prob_calibration_and_interval_width_respect_proj_kind_filter():
         cal_reg = _db.prob_calibration("NFL", min_n=400, proj_kind="nfl_regular")
         cal_pre = _db.prob_calibration("NFL", min_n=400, proj_kind="nfl_preseason")
         assert cal_reg and 0.8 < cal_reg["a"] < 1.2, "regular season is honestly calibrated"
-        assert cal_pre and cal_pre["a"] < 0.6, "preseason is measurably overconfident"
+        assert cal_pre and cal_pre["a"] < 0.6, "the other kind is measurably overconfident"
 
         w_reg = _db.interval_width("NFL", min_n=300, proj_kind="nfl_regular")
         w_pre = _db.interval_width("NFL", min_n=300, proj_kind="nfl_preseason")
-        assert w_reg < w_pre, "the undercovering preseason band must stretch more"
+        assert w_reg < w_pre, "the undercovering band must stretch more"
     finally:
         _db.DB_PATH = orig
 
@@ -290,7 +293,7 @@ def test_stat_biases_respects_proj_kind_filter():
 def test_scorecard_respects_proj_kind_filter():
     """db.scorecard's hit_rate/CLV feed model_health's graded_props/hit_rate_vs_close card —
     same blending risk as stat_gammas/prob_calibration/interval_width/stat_biases above, since
-    nfl_regular and nfl_preseason share sport="NFL"."""
+    nfl_regular and the ledger's retired nfl_preseason rows share sport="NFL"."""
     import db as _db
     import tempfile, os
     rows = []
@@ -300,7 +303,7 @@ def test_scorecard_respects_proj_kind_filter():
                      "game_date": f"2026-08-{(i % 28) + 1:02d}", "close_line": 40.5,
                      "close_proj": 45.0, "model_raw_prob": 0.9, "actual": 50.0,
                      "open_line": 40.5, "open_proj": 45.0, "proj_kind": "nfl_regular"})
-        # preseason: model's pick_over always disagrees -> hit_rate 0.0
+        # the other kind: model's pick_over always disagrees -> hit_rate 0.0
         rows.append({"sport": "NFL", "player": f"Q{i}", "stat_type": "Rec Yards",
                      "game_date": f"2026-08-{(i % 28) + 1:02d}", "close_line": 40.5,
                      "close_proj": 45.0, "model_raw_prob": 0.9, "actual": 30.0,

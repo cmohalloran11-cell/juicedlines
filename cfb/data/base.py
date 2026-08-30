@@ -146,7 +146,7 @@ class CfbDataSource(ABC):
     """Teams + rosters + schedule + per-game player/team stats for one season.
 
     Every method returns [] rather than raising when a season/week genuinely isn't published
-    yet (e.g. a preseason board asks for the current season before any games exist) -- a
+    yet (e.g. an August board asks for the current season before any games exist) -- a
     caller must treat [] as "unknown", not "zero", the same contract nfl/data/base.py's
     NflDataSource documents.
     """

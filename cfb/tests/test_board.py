@@ -5,7 +5,7 @@ Driven entirely by cfb/tests/fakes.py's synthetic league: no CFBD_API_KEY exists
 environment this repo has run in, so there is no live response to test against and nothing
 here is an accuracy claim. What is asserted is the CONTRACT: which fields land on a line, that
 the market anchor is applied on the median (the mean-vs-median bug that had 94% of the live
-NFL preseason board recommending Under would reproduce exactly here, since CFB yardage is
+NFL board recommending Under would reproduce exactly here, since CFB yardage is
 Gamma-shaped), that a line the engine cannot price stays unprojected rather than getting a
 fabricated one, and that a projected CFB line is juice-scoreable under JUICE_VERSION=2.
 """

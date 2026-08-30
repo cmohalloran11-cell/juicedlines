@@ -14,7 +14,7 @@ A market line IS the book's implied 50/50 threshold by definition, so the model'
 the apples-to-apples quantity to blend it with; blending the mean and recentering the array
 pins the MEAN to the line and leaves the MEDIAN -- which model_prob is computed from -- below
 it by the distribution's own skew, which is exactly the bug that had 94% of the live NFL
-preseason board recommending Under in 2026-08 (see nfl/board.py's own comment and
+board recommending Under in 2026-08 (see nfl/board.py's own comment and
 provenance.MODEL_CHANGELOG's nfl-1.2.0 / wnba-1.2.0 / tennis-1.3.0 entries). CFB yardage is
 Gamma-shaped and right-skewed, so it would reproduce that bug exactly if it blended the mean.
 

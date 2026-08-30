@@ -1,1 +1,1 @@
-"""Usage, playing time, preseason rotation, matchup, environment, combo correlation."""
+"""Usage, playing time, matchup, environment, combo correlation."""
