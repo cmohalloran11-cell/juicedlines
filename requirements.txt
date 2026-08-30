@@ -13,8 +13,11 @@ numpy~=2.4.6
 # scipy powers the vendored stat-projector engine's Monte-Carlo (projector/models/montecarlo.py).
 # Without it the board silently falls back to the empirical median for every MLB prop.
 scipy~=1.18.0
-# Server-side Supabase JWT verification (auth.py). Fail-closed if unset.
-pyjwt~=2.13.0
+# Server-side JWT verification (auth.py). Fail-closed if unset. The [crypto] extra is
+# required -- without it PyJWT raises on every asymmetric algorithm (ES256/RS256/EdDSA),
+# so any clean install (Docker, Render, CI) 401s every authenticated request. This is not
+# a Supabase-specific fix: the same failure reproduces with any JWKS-based provider.
+pyjwt[crypto]~=2.13.0
 # Postgres backend for the store/ layer (DATABASE_URL → Postgres; SQLite otherwise).
 psycopg[binary]~=3.3.4
 # Error monitoring (main.py). Fully optional -- only activates if SENTRY_DSN is set; a
