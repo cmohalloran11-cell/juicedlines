@@ -72,11 +72,18 @@ jobs:
           # WNBA data source (basketball/data/balldontlie.py). Absent, WNBA stays without
           # real projections/logos/headshots — the build still succeeds either way.
           BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}
+          # CFB data sources (cfb/data/cfbd_client.py, cfb/data/odds_provider.py). Absent,
+          # attach_cfb no-ops and CFB props post unprojected — same degrade-safe pattern as
+          # BALLDONTLIE_API_KEY above. This is the static/Option-A build path: Vercel never
+          # runs this Python code, so setting these in Vercel's dashboard instead of here
+          # does nothing — see DEPLOY.md.
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: |
           set -u
           echo "::group::secret check (yes/no only — never prints values)"
           for v in SUPABASE_URL SUPABASE_ANON_KEY XWEATHER_CLIENT_ID XWEATHER_CLIENT_SECRET \
-                   BALLDONTLIE_API_KEY; do
+                   BALLDONTLIE_API_KEY CFBD_API_KEY ODDS_API_KEY; do
             val="${!v:-}"
             if [ -n "$val" ]; then echo "$v: set (len=${#val})"; else echo "$v: MISSING/empty"; fi
           done
