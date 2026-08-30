@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 import random
+import zlib
 from typing import Optional
 
 from ..data.base import (CfbDataSource, PlayerGameStats, PlayerRef, RecruitRating,
@@ -78,10 +79,17 @@ def team_strength(team: str) -> float:
     return offense_ppa(team) - defense_ppa(team)
 
 
+def _stable_seed(*parts: object) -> int:
+    """A seed that's the same value on every process run, unlike Python's builtin hash() (salted
+    per-process by PEP 456 since 3.3 -- see the generator section below for why that matters
+    here)."""
+    return zlib.crc32("|".join(str(p) for p in parts).encode()) % (2 ** 31)
+
+
 def _skill(player_id: str) -> float:
     """A stable per-player multiplier, so the league has a real between-player spread for the
     empirical-Bayes estimator to find rather than pure sampling noise."""
-    return 0.75 + 0.5 * ((hash(player_id) % 1000) / 1000.0)
+    return 0.75 + 0.5 * ((_stable_seed(player_id) % 1000) / 1000.0)
 
 
 def _rounds(teams: list, week: int) -> list:
@@ -202,9 +210,19 @@ class FakeSource(CfbDataSource):
         return out
 
     # ── generator ────────────────────────────────────────────────────────────────────────
+    #
+    # Seeding uses zlib.crc32 on a stable string, not Python's built-in hash(). Builtin hash()
+    # of a str/tuple is salted per-process (PEP 456, on by default since Python 3.3) -- every
+    # fresh `pytest` invocation gets a different salt, so a seed derived from hash() produces
+    # different "random" fixture data on every real run. Locally that's invisible (one process,
+    # one hidden salt, always looks deterministic); in CI it means the exact numbers this
+    # fixture generates -- and therefore how close a fitted coefficient lands to the planted
+    # value -- silently change from run to run. That's what made
+    # test_the_opponent_fit_recovers_the_planted_fcs_and_defense_effects fail intermittently:
+    # not test order, the interpreter's hash salt. crc32 has no such randomization.
 
     def _plays(self, season: int, game: ScheduleGame, team: str) -> float:
-        rng = random.Random(hash((season, game.id, team)) % (2 ** 31))
+        rng = random.Random(_stable_seed(season, game.id, team))
         return max(40.0, base_plays(team) + rng.gauss(0.0, 5.0))
 
     def _team_box(self, season: int, game: ScheduleGame, team: str,
@@ -217,7 +235,7 @@ class FakeSource(CfbDataSource):
         rows = []
         for role in ROLES:
             pid = f"{team}-{role}"
-            rng = random.Random(hash((season, game.id, pid)) % (2 ** 31))
+            rng = random.Random(_stable_seed(season, game.id, pid))
             skill = _skill(pid)
             usage = 1.0
             if blowout:
