@@ -9,10 +9,13 @@ measured block is still in the repo and re-runnable:
     model/usage.py:positional_priors        -> POSITIONAL_PRIORS
     model/usage.py (holdout sweep)          -> SHRINK_K            [see MEASURED below]
     model/playing_time.py:measure_snap_prior-> SNAP_SHARE
-    model/rotation.py:measure_tier_shares   -> DEPTH_RANK_SNAP_SHARE
+    model/playing_time.py:measure_depth_rank_shares -> DEPTH_RANK_SNAP_SHARE
     model/matchup.py:fit_defense            -> DEFENSE
     model/environment.py:measure_environment-> ENVIRONMENT
     model/combo_corr.py                     -> COMBO_CORR
+
+Regular season only — the preseason rotation model this engine once shipped alongside it was
+removed (see provenance.MODEL_CHANGELOG's NFL entries).
 
 MEASUREMENT WINDOW for everything tagged 2022-2025: nflverse `stats_player`
 (stats_player_week_{season}.csv), `snap_counts`, `depth_charts` and `schedules` releases,
@@ -104,7 +107,7 @@ CONFIG = {
                "completion_rate": 1000, "yards_per_attempt": 1000},
     },
 
-    # ── playing time (regular season) ────────────────────────────────────────────────────
+    # ── playing time ─────────────────────────────────────────────────────────────────────
     "snap_share": {
         # MEASURED 2022-2025 REG: league mean offense_pct by position.
         "prior": {"QB": 0.8292, "RB": 0.3638, "WR": 0.5311, "TE": 0.5128},
@@ -125,7 +128,7 @@ CONFIG = {
         "concentration_full_games": 8,
     },
 
-    # ── depth-chart tier -> snap share (regular season) ──────────────────────────────────
+    # ── depth-chart tier -> snap share ───────────────────────────────────────────────────
     # MEASURED 2022-2024 REG, depth_charts joined to snap_counts on
     # (season, week, team, player), offense formation only, 17,943 matched player-weeks.
     # Used as the playing-time prior for a player with no usable snap history of their own
@@ -138,98 +141,6 @@ CONFIG = {
         "RB": {1: (0.5675, 0.2131, 1496), 2: (0.3012, 0.2028, 1415), 3: (0.1375, 0.1603, 1423)},
         "WR": {1: (0.7283, 0.2222, 3509), 2: (0.3390, 0.2679, 2832), 3: (0.2541, 0.2598, 725)},
         "TE": {1: (0.6396, 0.2249, 1759), 2: (0.3836, 0.2210, 1622), 3: (0.2364, 0.1889, 1202)},
-    },
-
-    # ── preseason rotation tiers ─────────────────────────────────────────────────────────
-    # DRIVES-FIRST model: expected_snaps = tier_drives_mean(tier) * position_snaps_per_drive
-    # (position), not a single flat "tier snap-share x league-baseline-snaps" lookup. The old
-    # single-factor version (one snap_share mean per tier, multiplied by the SAME constant
-    # league-baseline team-snaps number for every preseason game, since no preseason
-    # schedule/spread ever exists to vary it) is exactly why the board clustered: two tiers
-    # (confirmed_starter and third_team) happened to share the same 0.30 mean share, so every
-    # player in either tier produced the literal same expected_snaps number regardless of
-    # position. Two independent, position/tier-varying factors instead of one flat table
-    # entry per tier structurally cannot collide that way — see rotation.py:tier_playing_time.
-    #
-    # BASIS: ASSUMED, NOT MEASURED — and this is the one block in this file that is. No free
-    # data source publishes PRESEASON snap counts OR drive-level data: verified live
-    # 2026-08-15, the nflverse `snap_counts` release contains 0 rows with game_type PRE across
-    # every season it publishes (2022-2025 all resolve to REG/WC/DIV/CON/SB only), and the
-    # `schedules` release contains 0 preseason games at all (7,548 rows, game_type in
-    # {REG,WC,DIV,CON,SB}). So a preseason snap/drive distribution has never been measured in
-    # this codebase and a "measured-looking" table here would be a fabrication. Every
-    # preseason projection carries playing_time_confidence "low" because of exactly this, and
-    # board.py market-anchors accordingly.
-    #
-    # rotation.measure_tier_shares() is the real measurement pipeline this table would be
-    # replaced by the day a real preseason snap/drive source is wired.
-    "preseason_tiers": {
-        "basis": "assumed",
-        "reason": "no free source publishes preseason snap counts or drive-level data "
-                  "(nflverse snap_counts has 0 PRE rows; nflverse schedules has 0 preseason "
-                  "games)",
-        # Real, well-documented mechanics of how a drive is played, not a fitted number: a QB
-        # in the game is on the field for literally every snap of his drives (no rotation
-        # within a drive is possible at the position); RB/WR/TE corps rotate by personnel
-        # package and play-type even within a single drive they are nominally part of, so
-        # their effective snaps-per-drive-they're-in is lower. ~5.8 plays/drive is the
-        # commonly-cited NFL-average drive length (external football convention, not measured
-        # from this repo's own data — this repo has no drive-level release to measure it
-        # from). "" is the fallback for a position this table doesn't cover.
-        "position_snaps_per_drive": {"QB": 5.8, "RB": 3.4, "WR": 4.1, "TE": 3.7, "": 4.0},
-        # ASSUMED mean/sd of DRIVES a player in this tier is involved in, in one preseason
-        # game. The ordering is the real, widely-reported coaching pattern for how preseason
-        # snaps are actually allocated: starters get a short, scripted look (limit injury
-        # exposure) and are pulled early; the rotation/second-team groups get the bulk of the
-        # game (this is when a team evaluates its roster bubble); fringe/unknown players are
-        # the least predictable — some weeks inactive, others playing deep into the second
-        # half. This is the SAME relative pattern the old single-factor table encoded
-        # (confirmed_starter < second_team, unknown widest) — decomposed into two factors and
-        # extended to 7 tiers instead of asserted as one flat number per tier.
-        # Means are deliberately kept numerically distinct across every tier (not just
-        # monotonic) — two tiers sharing a mean is exactly the collision the old flat
-        # snap-share table had (confirmed_starter and third_team both sat at 0.30), so the
-        # SAME conceptual bug could resurface here at the tier_drives level even after
-        # decomposing into two factors. See
-        # test_core.py::test_seven_tiers_produce_seven_distinct_expected_snaps_for_the_same_position.
-        "tier_drives": {
-            "confirmed_starter":   (3.2, 1.1),
-            "likely_starter":      (3.6, 1.4),
-            "first_team_rotation": (5.0, 1.7),
-            "second_team":         (6.5, 2.1),
-            "third_team":          (5.2, 2.5),
-            "fringe":              (2.8, 2.6),
-            "unknown":             (3.9, 3.0),
-        },
-        # A team's actual preseason pass/rush split is unmeasurable (no PRE play-by-play), but
-        # its REGULAR-season split (team_tendency's own "regular_season_measured" field) is a
-        # real, if imperfect, proxy for offensive identity, and offensive identity plausibly
-        # carries into who a preseason coach chooses to feature. Small, capped nudge — never
-        # large enough to be a de-facto second global multiplier: +/-10% on skill-position
-        # drives at the observed extremes of team pass rate (~0.42-0.62 measured range).
-        "team_pass_rate_nudge_cap": 0.10,
-        "team_pass_rate_league_mean": 0.5673,   # = environment.league_dropback_share
-        # Depth-chart rank + prior-season snap share -> tier. The 0.60 confirmed-starter
-        # threshold IS measured: it sits between the measured rank-1 mean (0.5675 RB … 0.7283
-        # WR) and the rank-2 mean (0.3012 … 0.4385), so a player above it is playing a
-        # genuinely rank-1 workload rather than merely being listed there. The 0.35
-        # first-team-rotation threshold is the same logic one rung down: it sits between the
-        # measured rank-2 mean (0.30-0.44) and rank-3 mean (0.14-0.25), separating a real
-        # rotational rank-2 workload from a token one.
-        "confirmed_snap_share": 0.60,
-        "first_team_rotation_snap_share": 0.35,
-        "min_games_for_confirmation": 4,
-        "min_games_for_rotation": 3,
-    },
-
-    # ── preseason team tendency ──────────────────────────────────────────────────────────
-    # Which TeamTendency fields can be filled from real data at all. Everything listed under
-    # "unavailable" resolves to None with a stated reason rather than a plausible number —
-    # see model/rotation.py:TeamTendency.
-    "team_tendency": {
-        "measurable": ("team", "coach", "preseason_pass_rate", "preseason_rush_rate"),
-        "unavailable": ("starter_snap_rate", "avg_first_team_drives",
-                        "qb_rotation_pattern", "second_team_usage"),
     },
 
     # ── game environment ─────────────────────────────────────────────────────────────────
@@ -257,8 +168,8 @@ CONFIG = {
         "plays_intercept": 58.045, "plays_per_spread": 0.1800, "plays_per_total": 0.0983,
         "dropback_intercept": 0.4628, "dropback_per_spread": -0.002641,
         "dropback_per_total": 0.002373,
-        # League baselines, used when a game has no spread/total (every preseason game, and
-        # any regular-season game the schedules release hasn't priced yet).
+        # League baselines, used when a game has no spread/total (a game the schedules
+        # release hasn't priced yet, or a line the schedule lookup can't match at all).
         "league_snaps_mean": 65.325, "league_snaps_sd": 8.847,
         "league_plays_mean": 62.376, "league_plays_sd": 8.356,
         "league_dropback_share": 0.5673, "league_dropback_sd": 0.1064,
@@ -355,19 +266,11 @@ CONFIG = {
     # ── nfl_confidence blend ─────────────────────────────────────────────────────────────
     # Supplementary DISPLAY score (see confidence.py). Does not replace valuation.py's
     # generic confidence_score, which keeps working off model_n/model_prob/proj_kind.
-    # The preseason weighting is the product spec's; the regular-season one mirrors it with
-    # playing time demoted (a regular-season role is knowable) and matchup/environment/market
-    # promoted (they're knowable, and preseason's aren't).
     "nfl_confidence": {
-        "regular": {
+        "weights": {
             "playing_time": 0.20, "usage_stability": 0.18, "model_agreement": 0.12,
             "injury_certainty": 0.10, "matchup": 0.10, "game_environment": 0.10,
             "historical_model_accuracy": 0.10, "market_agreement": 0.10,
-        },
-        "preseason": {
-            "playing_time": 0.35, "role_stability": 0.20, "rotation_certainty": 0.15,
-            "injury_certainty": 0.10, "model_agreement": 0.10, "matchup": 0.05,
-            "game_environment": 0.05,
         },
         "high": 70, "medium": 45,
     },
@@ -375,10 +278,9 @@ CONFIG = {
     # ── board ────────────────────────────────────────────────────────────────────────────
     # Market anchoring, same mechanism as basketball/board.py and tennis/board.py: the
     # projected mean is blended toward the market's standard line in proportion to how much
-    # real evidence backs the projection. Preseason sits below full trust by construction.
+    # real evidence backs the projection.
     "board": {
         "full_trust_at": 0.6,
-        "preseason_max_trust": 0.35,
         "min_trust": 0.2,
     },
 

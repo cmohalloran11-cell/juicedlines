@@ -7,8 +7,8 @@ target share is a role (it survives a bad game), a yards-per-target is a skill p
 noise (it does not). Averaging the product throws away the fact that we know the role far
 better than the efficiency, and it makes a playing-time change impossible to apply.
 
-Opportunity is expressed PER OFFENSIVE SNAP so playing_time.py (or, in preseason,
-rotation.py) can scale it without the two models having to agree about anything else.
+Opportunity is expressed PER OFFENSIVE SNAP so playing_time.py can scale it without the two
+models having to agree about anything else.
 
 Every rate is shrunk the codebase-standard way — (observed*n + prior*k)/(n+k), the same form
 as projector.regress_to_prior / basketball.fit_rates / tennis._shrink — where n is the rate's

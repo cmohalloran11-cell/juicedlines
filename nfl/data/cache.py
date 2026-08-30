@@ -30,8 +30,7 @@ def cache_dir() -> Path:
 
 def memoize(key: tuple, ttl: float, build):
     """In-process TTL cache. `key` is a tuple — the parsed caches are keyed by
-    ("NFL", season_type, release, season) so a regular-season pull and a preseason pull of
-    the same release never overwrite each other."""
+    ("NFL", release, season) so two releases' parsed results never overwrite each other."""
     hit = _memory.get(key)
     now = time.time()
     if hit is not None and now - hit[0] < ttl:

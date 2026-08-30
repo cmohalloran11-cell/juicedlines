@@ -43,10 +43,11 @@ def _ledger_rows(sport: str, stat: Optional[str] = None,
     explicitly (e.g. for a long-horizon registry view) to intentionally pool across
     versions; a bare, unscoped read of the full ledger is never the default.
 
-    `proj_kind` (default None = no filter) additionally scopes to one proj_kind, e.g.
-    "nfl_regular" vs "nfl_preseason" — two engines that share `sport`="NFL" and the same
-    `model_version` but must not have their measured accuracy pooled by default (see
-    db.py's stat_gammas docstring for the same reasoning)."""
+    `proj_kind` (default None = no filter) additionally scopes to one proj_kind, e.g. CFB's
+    "cfb_prior_a" vs "cfb_prior_c", or NFL's "nfl_regular" against the "nfl_preseason" rows
+    its ledger still holds from the retired preseason engine — different models that share a
+    `sport` and `model_version` but must not have their measured accuracy pooled by default
+    (see db.py's stat_gammas docstring for the same reasoning)."""
     q = ("SELECT player, stat_type, game_date, close_line AS L, close_proj AS P, "
          "actual AS Y, COALESCE(model_raw_prob, close_prob) AS RP, "
          "model_floor AS FL, model_ceiling AS CE, proj_kind AS PK, source AS SRC, "
@@ -154,8 +155,7 @@ def current_accuracy(sport: str = "MLB", min_n: int = 50,
     Scoped to `model_version` (default: current) so a deliberate engine change can't have
     its accuracy quietly averaged with the era before the change — see _ledger_rows.
     `proj_kind` (default None = no filter) additionally scopes to one proj_kind, e.g.
-    `current_accuracy("NFL", proj_kind="nfl_preseason")` vs `"nfl_regular"` — see
-    _ledger_rows's docstring."""
+    `current_accuracy("CFB", proj_kind="cfb_prior_a")` — see _ledger_rows's docstring."""
     mv = model_version if model_version is not None else provenance.model_version(sport)
     rows = _ledger_rows(sport, model_version=mv, proj_kind=proj_kind)
     overall = metrics(rows)
@@ -308,9 +308,9 @@ def diagnostics(sport: str = "MLB", proj_kind: str | None = None) -> dict:
     """The full self-diagnostic bundle for one sport — confidence-signal honesty,
     method comparison, per-book accuracy. Everything measured, nothing attributed.
     `proj_kind` (default None) scopes confidence/book comparison to one proj_kind — see
-    _ledger_rows's docstring. method_comparison is left unfiltered: for NFL, proj_kind
-    itself IS the method split (nfl_regular vs nfl_preseason), so it already reports the
-    breakdown a proj_kind filter would otherwise collapse to a single group."""
+    _ledger_rows's docstring. method_comparison is left unfiltered: for a sport whose
+    proj_kind itself IS the method split (CFB's three prior tiers), filtering would collapse
+    the breakdown it exists to report down to a single group."""
     return {
         "sport": sport,
         "confidence_calibration": calibration_by_confidence(sport, proj_kind=proj_kind),
@@ -447,8 +447,8 @@ def drift(sport: str = "MLB", recent_frac: float = 0.2, min_n: int = 60,
     reports insufficient_data rather than silently falling back to a cross-version compare.
 
     `proj_kind` (default None) additionally scopes to one proj_kind — see _ledger_rows's
-    docstring; without it, an NFL preseason-vs-regular transition (weeks with only
-    preseason rows, then only regular-season ones) would look identical to genuine drift.
+    docstring; without it, a shift in which of a sport's proj_kinds is on the board (weeks of
+    only one kind, then only another) would look identical to genuine drift.
     """
     mv = provenance.model_version(sport)
     rows = [r for r in _ledger_rows(sport, model_version=mv, proj_kind=proj_kind)

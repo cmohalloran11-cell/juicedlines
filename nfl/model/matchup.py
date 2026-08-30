@@ -79,7 +79,7 @@ def fit_defense(weeks) -> dict[str, DefenseProfile]:
 def matchup_multipliers(profile: Optional[DefenseProfile]) -> dict[str, float]:
     """{model rate: multiplier} for one opponent. {} — a completely neutral matchup — when the
     opponent is unknown or has too little history to say anything, which is exactly the state
-    every team is in during preseason and week 1."""
+    every team is in during week 1."""
     if profile is None:
         return {}
     league = cfg("defense", "league", default={})

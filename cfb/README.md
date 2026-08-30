@@ -55,7 +55,7 @@ point estimate, and it is the same construction MLB, WNBA, tennis and NFL all us
 
 On the **median**, never the mean — `cfb/board.py`'s docstring explains why. CFB yardage is
 Gamma-shaped and right-skewed, so blending the mean would reproduce exactly the bug that had
-94% of the live NFL preseason board recommending Under (`provenance.MODEL_CHANGELOG`,
+94% of the live NFL board recommending Under (`provenance.MODEL_CHANGELOG`,
 `nfl-1.2.0`). Anytime TD is anchored on the probability instead, because a 0/1 array has no
 meaningful median. Trust is computed **per market**, over only the rates that market's
 simulation consumes.

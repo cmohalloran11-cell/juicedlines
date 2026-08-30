@@ -28,9 +28,8 @@ row before anything here was written:
 
 WHAT THIS SOURCE DOES NOT HAVE (so the model marks these unknown rather than inventing them):
   * PRESEASON anything. snap_counts has 0 rows with game_type PRE in every published season;
-    schedules has 0 preseason games (7,548 rows, game_type in {REG,WC,DIV,CON,SB}). A
-    preseason game is therefore identified by its ABSENCE from the schedule release, and
-    preseason playing time falls to the rotation model's tier priors.
+    schedules has 0 preseason games (7,548 rows, game_type in {REG,WC,DIV,CON,SB}). This
+    engine projects regular and postseason games only.
   * ROUTES RUN. Not published in any free nflverse release (it's an NGS/PFF field). The usage
     model reports pass-play snaps instead and labels it as such — see model/usage.py.
   * RED-ZONE opportunity splits. Only derivable from the play-by-play release, which this
@@ -205,33 +204,33 @@ def to_rosters(rows: list[dict], season: int) -> list[RosterWeek]:
 
 
 class NflverseSource(NflDataSource):
-    """The live adapter. Each accessor is memoized per (season_type, release, season) — see
-    data/cache.py for why both an in-process and an on-disk layer exist."""
+    """The live adapter. Each accessor is memoized per (release, season) — see data/cache.py
+    for why both an in-process and an on-disk layer exist."""
 
     def _ttl(self) -> float:
         return float(cfg("data", "cache_ttl", default=21600))
 
     def player_weeks(self, season: int) -> list[PlayerWeek]:
         return cache.memoize(
-            ("NFL", "regular", "stats_player", season), self._ttl(),
+            ("NFL", "stats_player", season), self._ttl(),
             lambda: to_player_weeks(fetch_rows(_STATS_URL.format(season=season))))
 
     def snap_counts(self, season: int) -> list[SnapWeek]:
         return cache.memoize(
-            ("NFL", "regular", "snap_counts", season), self._ttl(),
+            ("NFL", "snap_counts", season), self._ttl(),
             lambda: to_snap_weeks(fetch_rows(_SNAPS_URL.format(season=season))))
 
     def schedule(self, season: int) -> list[ScheduleGame]:
         return cache.memoize(
-            ("NFL", "regular", "schedules", season), self._ttl(),
+            ("NFL", "schedules", season), self._ttl(),
             lambda: to_schedule(fetch_rows(_SCHEDULE_URL), season))
 
     def depth_charts(self, season: int) -> list[DepthChartEntry]:
         return cache.memoize(
-            ("NFL", "preseason", "depth_charts", season), self._ttl(),
+            ("NFL", "depth_charts", season), self._ttl(),
             lambda: to_depth_charts(fetch_rows(_DEPTH_URL.format(season=season)), season))
 
     def rosters(self, season: int) -> list[RosterWeek]:
         return cache.memoize(
-            ("NFL", "preseason", "weekly_rosters", season), self._ttl(),
+            ("NFL", "weekly_rosters", season), self._ttl(),
             lambda: to_rosters(fetch_rows(_ROSTER_URL.format(season=season)), season))

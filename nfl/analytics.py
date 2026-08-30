@@ -49,12 +49,7 @@ def _drivers(proj: dict, line: dict) -> list[str]:
                    f"({pt.expected_snap_share*100:.0f}% share, 80% range "
                    f"{lo*100:.0f}-{hi*100:.0f}%) as the {pt.role}.")
 
-    if proj["season_type"] == "preseason":
-        out.append(f"Preseason rotation tier: {(proj['rotation_tier'] or 'unknown').replace('_', ' ')} "
-                   f"— {proj['rotation_reason']}.")
-        out.append("Playing-time confidence is low because no data source publishes preseason "
-                   "snap counts, so the rotation tiers are priors rather than measurements.")
-    elif pt.basis == "own_snap_history":
+    if pt.basis == "own_snap_history":
         out.append(f"Playing time is off his own last {pt.n_games} games of snap counts.")
     elif pt.basis == "depth_chart":
         out.append(f"No snap history for this player, so playing time comes from the measured "
@@ -126,27 +121,17 @@ def analyze(line: dict) -> dict:
              f"-> league_data() failed: {type(exc).__name__}: {exc}", flush=True)
         return {"available": False, "reason": "NFL data source unavailable right now."}
 
-    from .board import _schedule_index, resolve_season_type
-    season_type, game, confirmed = resolve_season_type(line, _schedule_index(data["schedule"]))
-    proj = P.project_player(player, team=team, position=line.get("position"),
-                            season_type=season_type, game=game)
+    from .board import _schedule_index, match_game
+    game = match_game(line, _schedule_index(data["schedule"]))
+    proj = P.project_player(player, team=team, position=line.get("position"), game=game)
     if not proj:
         return {"available": False,
                 "reason": f"{player} has no stat history, depth-chart entry or roster row in "
                           f"the NFL data feed, so there is nothing to project from."}
 
     nname = P._norm(player)
-    all_weeks = [w for w in data["weeks"] if P._norm(w.player) == nname]
-    # A preseason prop's "Recent Games" must show recent PRESEASON games (any season, not
-    # just this one) -- never the player's regular-season log, which is a different context
-    # and would misleadingly read as "how they've done in preseason." nflverse's PlayerWeek
-    # season_type is "REG"|"POST" only (it publishes no preseason box scores at all -- see
-    # PlayerWeek's own docstring), so this filter is honest-but-currently-always-empty for
-    # preseason until a real preseason box-score source exists, rather than silently
-    # substituting regular-season stats.
-    weeks = sorted(
-        [w for w in all_weeks if (w.season_type == "PRE") == (season_type == "preseason")],
-        key=lambda w: (w.season, w.week), reverse=True)
+    weeks = sorted([w for w in data["weeks"] if P._norm(w.player) == nname],
+                   key=lambda w: (w.season, w.week), reverse=True)
     idx = data["snap_index"]
 
     label = line.get("stat_type") or ""
@@ -184,7 +169,6 @@ def analyze(line: dict) -> dict:
 
     env = proj["environment"]
     pt = proj["playing_time"]
-    tendency = proj.get("team_tendency")
     return {
         "available": True,
         "sport": "NFL",
@@ -197,11 +181,6 @@ def analyze(line: dict) -> dict:
         "line": line_val,
         "hit_rate": hit_rate,
         "recent": recent,
-        "recent_note": (
-            "No preseason game log data is published anywhere free (nflverse's own weekly "
-            "stats only cover regular/postseason), so recent preseason games can't be shown "
-            "yet even though this is a preseason prop." if season_type == "preseason" and not recent
-            else None),
         "view_cols": _VIEW_COLS.get(position, _VIEW_COLS["WR"]),
         "model_proj": line.get("model_proj"),
         "model_edge": line.get("model_edge"),
@@ -210,8 +189,6 @@ def analyze(line: dict) -> dict:
         "proj_kind": line.get("proj_kind"),
         "confidence": line.get("nfl_confidence"),
         "confidence_factors": line.get("nfl_confidence_factors"),
-        "season_type": season_type,
-        "season_type_confirmed": confirmed,
         "role": pt.role,
         "playing_time_confidence": pt.confidence,
         "expected_snaps": proj["expected_snaps"],
@@ -223,20 +200,7 @@ def analyze(line: dict) -> dict:
         "red_zone_opportunities": proj["red_zone_opportunities"],
         "red_zone_note": "Not available: red-zone splits require the play-by-play release, "
                          "which this engine does not pull.",
-        "rotation_tier": proj["rotation_tier"],
-        "preseason_risk": proj["preseason_risk"],
         "snap_percentiles": proj.get("snap_percentiles"),
-        "snap_diagnostic": proj.get("snap_diagnostic"),
-        "team_tendency": (None if tendency is None else {
-            "team": tendency.team, "coach": tendency.coach,
-            "starter_snap_rate": tendency.starter_snap_rate,
-            "avg_first_team_drives": tendency.avg_first_team_drives,
-            "qb_rotation_pattern": tendency.qb_rotation_pattern,
-            "second_team_usage": tendency.second_team_usage,
-            "preseason_pass_rate": tendency.preseason_pass_rate,
-            "preseason_rush_rate": tendency.preseason_rush_rate,
-            "basis": tendency.basis, "unavailable": tendency.reasons,
-        }),
         "drivers": _drivers(proj, line),
         "note": "Projection is expected opportunity x efficiency, simulated "
                 f"{cfg('model', 'n_sims', default=10000):,} times with uncertainty in team "

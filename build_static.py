@@ -133,13 +133,13 @@ _KEEP = (
     "bball_confidence", "tennis_confidence",
     "surface", "model_agreement", "elo_eff_matches",   # tennis engine transparency fields
     # NFL engine transparency fields (nfl.board.NFL_FIELDS) — mirrors dashboard.py's _drop.
-    "season_type", "season_type_confirmed", "expected_snaps", "snap_range",
+    "expected_snaps", "snap_range",
     "expected_routes", "expected_routes_basis", "expected_targets", "expected_carries",
     "playing_time_confidence", "playing_time_probability", "role_confidence",
-    "preseason_risk", "rotation_tier", "role", "depth_chart_position",
+    "role", "depth_chart_position",
     "red_zone_opportunities", "pass_rush_matchup", "game_total", "team_total", "spread",
     "weather", "nfl_confidence", "nfl_confidence_factors",
-    "snap_p10", "snap_p90", "snap_std_dev", "prior_influence",   # preseason snap-model diagnostics
+    "snap_p10", "snap_p90", "snap_std_dev",   # the simulator's own snap distribution
     "lineup_status", "lineup_slot",     # the OUT badge + edge/parlay exclusions read these
     "workload_status", "layoff_days", "workload_outs",   # IL badge + "why" tooltip
     "market_book_count",                # juice_score's market-quality component (attach_market_quality)
@@ -168,13 +168,13 @@ _PREMIUM_FIELDS = frozenset({
     "model_proj_b", "model_prob_b", "model_proj_c", "model_prob_c",
     "model_pre_mean", "model_pre_median", "model_pre_sd", "model_pre_prob", "model_anchor_t",
     "lineup_slot", "lineup_status", "workload_status", "layoff_days", "workload_outs",
-    "season_type", "season_type_confirmed", "expected_snaps", "snap_range",
+    "expected_snaps", "snap_range",
     "expected_routes", "expected_routes_basis", "expected_targets", "expected_carries",
     "playing_time_confidence", "playing_time_probability", "role_confidence",
-    "preseason_risk", "rotation_tier", "role", "depth_chart_position",
+    "role", "depth_chart_position",
     "red_zone_opportunities", "pass_rush_matchup", "game_total", "team_total", "spread",
     "weather", "nfl_confidence", "nfl_confidence_factors",
-    "snap_p10", "snap_p90", "snap_std_dev", "prior_influence",
+    "snap_p10", "snap_p90", "snap_std_dev",
 })
 
 

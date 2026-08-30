@@ -7,10 +7,7 @@ prop actually needs, in the same shape WNBA's `bball_confidence` ships in. It is
 line as `nfl_confidence` (0-100 plus a high/medium/low flag) and `nfl_confidence_factors` (the
 real weighted contributions, so the UI can show WHY rather than an opaque number).
 
-Regular season and preseason use DIFFERENT factor sets, because the questions differ: in
-September playing time is close to known and the matchup/environment carry real information;
-in August playing time is the whole ballgame and the matchup is meaningless. Both weight sets
-live in config.nfl_confidence.
+The weights live in config.nfl_confidence.weights.
 
 Every factor is computed from a field the model actually produced. A factor with no real
 input returns None and is DROPPED from the blend, with the remaining weights renormalised —
@@ -60,19 +57,8 @@ def _factors(proj: dict, line: dict) -> dict[str, tuple[Optional[float], str]]:
         out["usage_stability"] = (_scale(usage.sample_weight, 0.0, 0.7),
                                   f"{usage.sample_weight*100:.0f}% of the usage estimate is "
                                   f"his own sample ({usage.n_games} games)")
-        out["role_stability"] = (_scale(usage.eff_games, 0.0, 8.0),
-                                 f"{usage.eff_games:.1f} recency-weighted games of history")
     else:
         out["usage_stability"] = (None, "no usage sample")
-        out["role_stability"] = (None, "no usage sample")
-
-    tier = proj.get("rotation_tier")
-    if tier:
-        risk = proj.get("preseason_risk")
-        out["rotation_certainty"] = (None if risk is None else _clamp(1.0 - float(risk)),
-                                     f"{tier.replace('_', ' ')}")
-    else:
-        out["rotation_certainty"] = (None, "not a preseason projection")
 
     status = line.get("lineup_status")
     if status == "out":
@@ -84,7 +70,7 @@ def _factors(proj: dict, line: dict) -> dict[str, tuple[Optional[float], str]]:
                                    f"played in {pt.playing_time_probability*100:.0f}% of recent games")
     else:
         # nflverse publishes no injury report; weekly roster status is the only availability
-        # signal and it doesn't exist for a preseason week.
+        # signal there is.
         out["injury_certainty"] = (None, "no availability signal in this feed")
 
     agreement = line.get("model_agreement")
@@ -123,13 +109,12 @@ def _factors(proj: dict, line: dict) -> dict[str, tuple[Optional[float], str]]:
 
 
 def nfl_confidence(proj: dict, line: dict) -> dict:
-    """{"score": 0-100, "level": high|medium|low, "factors": [...], "season_type": ...}.
+    """{"score": 0-100, "level": high|medium|low, "factors": [...]}.
 
     `score` is None when NOT ONE factor could be computed — the honest answer for a projection
     with nothing behind it, rather than a number built from defaults.
     """
-    season_type = proj.get("season_type", "regular")
-    weights = cfg("nfl_confidence", season_type, default={}) or cfg("nfl_confidence", "regular")
+    weights = cfg("nfl_confidence", "weights", default={})
     computed = _factors(proj, line)
 
     available = {k: w for k, w in weights.items()
@@ -146,10 +131,9 @@ def nfl_confidence(proj: dict, line: dict) -> dict:
             "detail": detail,
         })
     if not total_w:
-        return {"score": None, "level": None, "factors": factors, "season_type": season_type,
+        return {"score": None, "level": None, "factors": factors,
                 "note": "not enough real signal to score confidence for this projection yet"}
     score = int(round(100.0 * sum(available[k] * computed[k][0] for k in available) / total_w))
     hi, md = cfg("nfl_confidence", "high", default=70), cfg("nfl_confidence", "medium", default=45)
     level = "high" if score >= hi else "medium" if score >= md else "low"
-    return {"score": score, "level": level, "factors": factors, "season_type": season_type,
-            "note": None}
+    return {"score": score, "level": level, "factors": factors, "note": None}

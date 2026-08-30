@@ -21,13 +21,10 @@ exists yet — see `cfb/README.md` for the current state and its extension point
     project so a deploy that only checks out this repo still runs the real engine.
   - `basketball/` — WNBA, per-possession rate model with measured combo correlation.
   - `tennis/` — ATP/WTA, serve/return point model with an exact game/set/match DP.
-  - `nfl/` — regular season AND preseason, off the free nflverse-data releases. Per-snap
-    opportunity fitted separately from per-attempt efficiency, a sampled playing-time
-    distribution, and game environment read straight off the market's own spread/total.
-    Preseason is a genuinely separate model built on depth-chart rotation tiers, because no
-    free source publishes preseason snap counts — see `nfl/config.py`, which records the
-    measurement window and sample size behind every constant and flags the one block that
-    is an assumption.
+  - `nfl/` — regular season, off the free nflverse-data releases. Per-snap opportunity
+    fitted separately from per-attempt efficiency, a sampled playing-time distribution, and
+    game environment read straight off the market's own spread/total. See `nfl/config.py`,
+    which records the measurement window and sample size behind every constant.
 - **`projector_bridge.py`** — the MLB glue layer (feature building, correlation-aware
   combo simulation, ensemble blending) between the raw engine and the board.
 - **`valuation.py`** — EV, Kelly fraction, Confidence, and the 7-component Juice Score,

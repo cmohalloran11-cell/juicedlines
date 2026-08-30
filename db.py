@@ -381,9 +381,10 @@ def stat_gammas(sport: str = "MLB", min_n: int = 120, prior: float = 0.20,
     until we actually have enough to trust" behavior this function already had for thin data.
 
     `proj_kind` (default None = no filter) additionally scopes to one `proj_kind` value, e.g.
-    "nfl_preseason" vs "nfl_regular" — two engines that already share `sport`/`model_version`
-    but must not have their trust weights blended (a preseason rotation-tier projection and a
-    regular-season measured-snap-history one are different models in practice)."""
+    CFB's "cfb_prior_a" vs "cfb_prior_c" — genuinely different models that already share
+    `sport`/`model_version` but must not have their trust weights blended. It also excludes a
+    retired engine's rows: NFL's ledger still holds "nfl_preseason" rows from before the
+    preseason model was removed, and only a proj_kind filter keeps them out of "nfl_regular"."""
     mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
         q = """SELECT LOWER(stat_type) st, close_line L, COALESCE(model_raw, close_proj) m, actual y
@@ -484,7 +485,7 @@ def prob_calibration(sport: str = "MLB", min_n: int = 400,
     stat_gammas's docstring for why pooling graded rows across a deliberate model change would
     apply one model's measured overconfidence correction to a different model's output.
     `proj_kind` (default None = no filter) additionally scopes to one proj_kind value, same as
-    stat_gammas — e.g. NFL preseason and regular season must not share a Platt fit."""
+    stat_gammas — e.g. CFB's three prior tiers must not share a Platt fit."""
     import numpy as np
     mv = model_version if model_version is not None else provenance.model_version(sport)
     with _lock, _conn() as c:
@@ -593,8 +594,8 @@ def scorecard(sport: str | None = None, edge: float = 0.5,
       • CLV: how often / how much the line moved toward the model after we first saw it.
 
     `proj_kind` (default None = no filter) additionally scopes to one proj_kind value — see
-    stat_gammas's docstring. Needed for NFL: without it, graded_props/hit_rate/CLV here blend
-    nfl_regular and nfl_preseason under the shared sport="NFL".
+    stat_gammas's docstring. Needed for CFB (three prior tiers under one sport), and for NFL,
+    whose ledger still holds the retired preseason engine's rows under sport="NFL".
     """
     q = "SELECT * FROM prop_clv WHERE actual IS NOT NULL"
     args: list[Any] = []

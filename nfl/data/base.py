@@ -135,7 +135,7 @@ class NflDataSource(ABC):
     """Weekly stats + snap counts + schedule + depth charts + rosters for one season.
 
     Every method returns [] rather than raising when a season genuinely isn't published yet
-    (a preseason board asks for the current season before any of it exists). A caller must
+    (an August board asks for the current season before any of it exists). A caller must
     treat [] as "unknown", not as "zero" — see model/playing_time.py, which drops to a
     depth-chart prior and then to a positional prior, lowering confidence at each step.
     """

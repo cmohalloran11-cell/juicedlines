@@ -47,13 +47,13 @@ def _isolated_source():
     ESPN.set_test_override(None, None)
 
 
-def _rich_board(season_type="regular"):
+def _rich_board(schedule=None):
     weeks, snaps = F.full_season("Star Receiver", "WR", "CIN", n=10, offense_pct=0.86,
                                  targets=9.0, receptions=6.0, rec_yards=84.0)
     fw, fs = F.league_filler(n_players=40, weeks_per=6)
-    schedule = [F.game(home="CIN", away="CLE", gameday="2026-09-13")]
-    _install(weeks + fw, snaps + fs, schedule if season_type == "regular" else [],
-             [_depth()], [_roster()])
+    if schedule is None:
+        schedule = [F.game(home="CIN", away="CLE", gameday="2026-09-13")]
+    _install(weeks + fw, snaps + fs, schedule, [_depth()], [_roster()])
     return weeks, snaps
 
 
@@ -72,11 +72,10 @@ def test_attach_nfl_writes_the_shared_valuation_fields_and_the_nfl_contract():
     assert 0.0 <= l["model_prob"] <= 1.0
     assert l["model_floor"] <= l["model_median"] <= l["model_ceiling"]
     assert l["model_edge"] == pytest.approx(l["model_proj"] - l["line"], abs=0.06)
-    for f in ("season_type", "expected_snaps", "snap_range", "expected_targets",
+    for f in ("expected_snaps", "snap_range", "expected_targets",
               "expected_carries", "playing_time_confidence", "role_confidence",
               "game_total", "team_total", "spread", "role", "depth_chart_position"):
         assert f in l, f
-    assert l["season_type"] == "regular" and l["season_type_confirmed"] is True
     assert l["role"] == "starter" and l["depth_chart_position"] == 1
     assert l["game_total"] == 45.5 and l["spread"] == -3.5
     assert l["nfl_confidence"] is not None and l["nfl_confidence_factors"]
@@ -97,13 +96,12 @@ def test_attach_nfl_resolves_opponent_and_is_home_from_the_real_matched_schedule
     assert lines[0]["is_home"] is True
 
 
-def test_attach_nfl_opponent_is_unknown_for_preseason_by_construction():
-    """Preseason games are never in the matched schedule (see resolve_season_type's
-    docstring) -- opponent must be honestly None, not guessed."""
-    _rich_board(season_type="preseason")
+def test_attach_nfl_opponent_is_unknown_when_no_schedule_row_matches():
+    """A line the schedules release carries no row for still projects, but its opponent must
+    be honestly None rather than guessed from anything but the real schedule."""
+    _rich_board(schedule=[])
     lines = [F.line(stat="Receiving Yards", value=72.5, team="CIN")]
-    B.attach_nfl(lines)
-    assert lines[0]["season_type"] == "preseason"
+    assert B.attach_nfl(lines) == 1
     assert lines[0]["opponent"] is None
     assert lines[0]["is_home"] is None
 
@@ -179,40 +177,9 @@ def test_attach_nfl_returns_zero_with_no_nfl_lines():
     assert B.attach_nfl([{"sport": "MLB", "player": "X", "stat_type": "Hits", "line": 1.5}]) == 0
 
 
-def test_preseason_lines_are_tagged_separately_and_trusted_less():
-    """A game absent from the schedule release is a preseason game — see
-    board.resolve_season_type. It must get its own proj_kind and a capped market trust."""
-    weeks, snaps = F.full_season("Star Receiver", "WR", "CIN", n=10, offense_pct=0.86,
-                                 targets=9.0, receptions=6.0, rec_yards=84.0)
-    fw, fs = F.league_filler(40, weeks_per=6)
-    _install(weeks + fw, snaps + fs, [F.game(gameday="2026-09-13")], [_depth()], [_roster()])
-
-    # BOTH in the same call: a board carrying a preseason and a regular-season line for the
-    # same player+market must not collapse them into one group and project both with
-    # whichever season type the first line happened to resolve to.
-    board = [F.line(stat="Receiving Yards", value=72.5, start="2026-09-13T17:00:00Z"),
-             F.line(stat="Receiving Yards", value=72.5, start="2026-08-16T17:00:00Z")]
-    board[1]["id"] = "pp_preseason"
-    assert B.attach_nfl(board) == 2
-    reg, pre = [board[0]], [board[1]]
-    assert reg[0]["proj_kind"] == "nfl_regular"
-    assert pre[0]["proj_kind"] == "nfl_preseason"
-    assert pre[0]["season_type"] == "preseason" and pre[0]["season_type_confirmed"] is False
-    assert pre[0]["trust_weight"] <= 0.35 < reg[0]["trust_weight"]
-    assert pre[0]["preseason_risk"] is not None and pre[0]["rotation_tier"]
-    assert pre[0]["playing_time_confidence"] == "low"
-    assert pre[0]["game_total"] is None and pre[0]["spread"] is None
-    # "trusted less" means the projection is pulled a larger FRACTION of the way from the
-    # model's own raw mean back to the posted line — the raw means themselves differ, so
-    # comparing raw edges would compare two different questions.
-    def pull(l):
-        return abs(l["model_proj"] - l["line"]) / abs(l["model_raw"] - l["line"])
-    assert pull(pre[0]) < pull(reg[0])
-
-
 def test_zero_trust_line_reads_as_a_coinflip_not_a_systematic_under():
     """The mean-vs-median anchoring bug, reproduced and fixed. Real live evidence (2026-08):
-    94% of the live preseason board recommended Under, even on lines where model_proj sat
+    94% of the live board recommended Under, even on lines where model_proj sat
     EXACTLY on the market line (zero visible edge). Root cause: the old code blended the
     model's MEAN toward the market anchor and shifted the whole (right-skewed, Gamma-shaped)
     simulated array by (blended_mean - raw_mean) to match — which recenters the array so its
@@ -255,44 +222,17 @@ def test_low_trust_edge_still_reflects_a_right_skewed_stats_true_mean_not_the_ba
     assert l["model_median"] == pytest.approx(l["line"], abs=1.0)
 
 
-# ── book_season_type (PrizePicks' NFLP league code) — confirmed live 2026-08 ────────────
+# ── schedule matching ────────────────────────────────────────────────────────────────────
 
-def test_resolve_season_type_trusts_book_preseason_hint_over_a_real_schedule_match():
-    """PrizePicks' own NFLP classification (pullers._pp_nfl_season_type) must win even when
-    our OWN schedule lookup would otherwise resolve the game as regular season -- the book's
-    real classification is more trustworthy than our absence-based inference, not less."""
-    game = F.game(home="CIN", away="CLE", gameday="2026-09-13")
-    idx = B._schedule_index([game])
-    line = F.line(stat="Receiving Yards", value=72.5, team="CIN",
-                  start="2026-09-13T17:00:00Z", book_season_type="preseason")
-    season_type, matched_game, confirmed = B.resolve_season_type(line, idx)
-    assert season_type == "preseason"
-    assert matched_game is None
-    assert confirmed is True
-
-
-def test_resolve_season_type_trusts_book_regular_hint_even_with_no_schedule_match():
-    """The book saying "NFL" (regular) must be trusted even if our schedule lookup fails to
-    match (e.g. a team-alias/date edge case) -- better a real book classification with no
-    environment enrichment than a wrongly-inferred preseason label."""
-    idx = B._schedule_index([])   # no games at all -- lookup will find nothing
-    line = F.line(stat="Receiving Yards", value=72.5, team="CIN",
-                  start="2026-09-13T17:00:00Z", book_season_type="regular")
-    season_type, matched_game, confirmed = B.resolve_season_type(line, idx)
-    assert season_type == "regular"
-    assert matched_game is None
-    assert confirmed is True
-
-
-def test_resolve_season_type_falls_back_to_inference_with_no_book_hint():
-    """Unchanged behavior for lines with no book_season_type (Underdog, or any PrizePicks
-    league string the detector doesn't recognize) -- still infers from schedule presence."""
+def test_match_game_finds_the_scheduled_game_and_returns_none_when_there_is_no_row():
     game = F.game(home="CIN", away="CLE", gameday="2026-09-13")
     idx = B._schedule_index([game])
     matched = F.line(stat="Receiving Yards", value=72.5, team="CIN", start="2026-09-13T17:00:00Z")
-    assert B.resolve_season_type(matched, idx) == ("regular", game, True)
+    assert B.match_game(matched, idx) is game
     unmatched = F.line(stat="Receiving Yards", value=72.5, team="CIN", start="2026-08-16T17:00:00Z")
-    assert B.resolve_season_type(unmatched, idx) == ("preseason", None, False)
+    assert B.match_game(unmatched, idx) is None
+    assert B.match_game(F.line(team=None), idx) is None
+    assert B.match_game(F.line(start=""), idx) is None
 
 
 def test_a_thin_sample_defers_to_the_market_line_instead_of_shipping_a_noisy_edge():
@@ -383,7 +323,7 @@ def test_analyze_returns_real_drivers_built_from_the_model_fields():
     out = A.analyze(lines[0])
     assert out["available"] is True
     assert out["sport"] == "NFL" and out["player_type"] == "WR"
-    assert out["season_type"] == "regular" and out["role"] == "starter"
+    assert out["role"] == "starter"
     assert out["hit_rate"]["n"] == 10 and out["hit_rate"]["over_pct"] == 100
     assert len(out["recent"]) == 10 and out["recent"][0]["cells"]["TGT"] == 9
     assert out["view_cols"] == ["SNP", "TGT", "REC", "RECYD", "CAR", "RYD"]
@@ -394,26 +334,16 @@ def test_analyze_returns_real_drivers_built_from_the_model_fields():
     assert out["expected_routes_note"]
 
 
-def test_analyze_preseason_explains_the_rotation_tier_and_its_limits():
-    weeks, snaps = F.full_season("Star Receiver", "WR", "CIN", n=10, offense_pct=0.86,
-                                 targets=9.0, receptions=6.0, rec_yards=84.0)
-    qw, qs = F.full_season("CIN Passer", "QB", "CIN", n=10, offense_pct=0.98,
-                           pass_attempts=34.0, completions=22.0, pass_yards=245.0,
-                           sacks=2.0, carries=4.0, rush_yards=18.0)
-    fw, fs = F.league_filler(40, weeks_per=6)
-    _install(weeks + qw + fw, snaps + qs + fs, [], [_depth()], [_roster()])
-    lines = [F.line(stat="Receiving Yards", value=45.5, start="2026-08-16T17:00:00Z")]
-    B.attach_nfl(lines)
-    out = A.analyze(lines[0])
-    assert out["season_type"] == "preseason"
-    assert out["rotation_tier"] == "confirmed_starter"
-    drivers = " ".join(out["drivers"])
-    assert "rotation tier" in drivers and "confirmed starter" in drivers
-    assert "no data source publishes preseason snap counts" in drivers
-    t = out["team_tendency"]
-    assert t["preseason_pass_rate"] is not None
-    assert t["starter_snap_rate"] is None and t["avg_first_team_drives"] is None
-    assert "preseason" in t["unavailable"]["starter_snap_rate"]
+def test_projection_ships_a_real_monte_carlo_snap_distribution():
+    """`snap_percentiles` comes from the simulator's own snaps array, so it carries BOTH
+    stages of playing-time uncertainty and is asymmetric wherever the underlying Beta is."""
+    _rich_board(schedule=[])
+    proj = P.project_player("Star Receiver", team="CIN", position="WR")
+    sp = proj["snap_percentiles"]
+    assert sp is not None
+    for k in ("p10", "p25", "p50", "p75", "p90", "mean", "median", "std_dev"):
+        assert k in sp, k
+    assert sp["p10"] < sp["p50"] < sp["p90"]
 
 
 def test_analyze_says_so_when_the_player_cannot_be_resolved():
@@ -424,15 +354,13 @@ def test_analyze_says_so_when_the_player_cannot_be_resolved():
 
 # ── confidence ───────────────────────────────────────────────────────────────────────────
 
-def test_nfl_confidence_uses_the_right_weight_set_and_drops_missing_factors():
+def test_nfl_confidence_scores_every_real_factor_and_drops_missing_ones():
     from nfl.confidence import nfl_confidence
     _rich_board()
     lines = [F.line(stat="Receiving Yards", value=72.5)]
     B.attach_nfl(lines)
-    proj = P.project_player("Star Receiver", team="CIN", season_type="regular",
-                            game=F.game(gameday="2026-09-13"))
+    proj = P.project_player("Star Receiver", team="CIN", game=F.game(gameday="2026-09-13"))
     reg = nfl_confidence(proj, lines[0])
-    assert reg["season_type"] == "regular"
     assert {f["factor"] for f in reg["factors"]} >= {"Playing Time", "Usage Stability",
                                                      "Matchup", "Game Environment"}
     # historical accuracy has no graded NFL rows yet -> dropped, not scored at a default
@@ -440,14 +368,10 @@ def test_nfl_confidence_uses_the_right_weight_set_and_drops_missing_factors():
     assert hist["value"] is None and "no graded NFL history" in hist["detail"]
     assert 0 <= reg["score"] <= 100 and reg["level"] in ("high", "medium", "low")
 
-    pre = nfl_confidence(dict(proj, season_type="preseason"), lines[0])
-    assert {f["factor"] for f in pre["factors"]} >= {"Rotation Certainty", "Role Stability"}
-    assert "Usage Stability" not in {f["factor"] for f in pre["factors"]}
-
 
 def test_nfl_confidence_is_none_when_nothing_real_can_be_scored():
     from nfl.confidence import nfl_confidence
-    empty = {"season_type": "regular", "playing_time": None, "usage": None,
+    empty = {"playing_time": None, "usage": None,
              "environment": None, "opponent_defense": None, "matchup": {}}
     out = nfl_confidence(empty, {})
     assert out["score"] is None and out["level"] is None

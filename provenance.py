@@ -89,10 +89,11 @@ MODEL_VERSIONS: dict[str, str] = {
     # per-attempt efficiency, both empirical-Bayes shrunk toward positional priors measured
     # from the league (config priors and shrinkage k are holdout-fitted on 2022-2025, not
     # chosen), scaled by a sampled playing-time distribution and simulated with two-stage
-    # uncertainty. Regular season and preseason are separate models sharing the data layer and
-    # the simulator; they are tagged proj_kind "nfl_regular" vs "nfl_preseason" specifically so
-    # a calibration query can never blend a projection built on measured snap history with one
-    # built on assumed preseason rotation tiers.
+    # uncertainty. Shipped alongside a SEPARATE preseason model (rotation tiers instead of
+    # snap history), tagged proj_kind "nfl_preseason" vs "nfl_regular" so a calibration query
+    # could never blend the two. The preseason model was removed in 2026-08 (see the
+    # NOT BUMPED note below); every graded "nfl_preseason" row in the ledger belongs to this
+    # entry and 1.1.0/1.2.0 below.
     # 1.1.0 (2026-08): preseason playing-time model rebuilt after live production data showed
     # it clustering -- 25 of 34 real preseason board lines projected the literal identical
     # 19.6 expected_snaps (76.5% landed within +-2 of 20), because the old model multiplied
@@ -106,9 +107,9 @@ MODEL_VERSIONS: dict[str, str] = {
     # factors instead of one shared table entry structurally cannot collide the old way.
     # Preseason-only: proj_kind already tags nfl_preseason separately from nfl_regular
     # (unaffected by this change), and NFL preseason has only ever been live a few days, so
-    # this orphans a negligible amount of graded history. See model/rotation.py's module
-    # docstring for the full hierarchy and provenance.MODEL_CHANGELOG for the measured
-    # before/after distribution.
+    # this orphans a negligible amount of graded history. The preseason model this rebuilt was
+    # itself removed in 2026-08 (see the NOT BUMPED note below); the entry stays because the
+    # graded rows it produced are still in the ledger and must stay attributable to it.
     #
     # 1.2.0 (2026-08): fixed a mean-vs-median anchoring bug in board.py's market blend that
     # systematically biased model_prob toward Under. board.py blends the model's own MEAN
@@ -132,6 +133,18 @@ MODEL_VERSIONS: dict[str, str] = {
     # (a correct coinflip). Applies to every NFL line, both season types -- proj_kind still
     # distinguishes nfl_preseason from nfl_regular, unaffected by which fields determine
     # their values.
+    #
+    # NOT BUMPED (2026-08): the preseason model was REMOVED outright -- nfl/model/rotation.py,
+    # the rotation-tier config blocks, the "nfl_preseason" proj_kind and the season-type
+    # routing are all gone (product decision: preseason is not being maintained). Deliberately
+    # left at 1.2.0 because the regular-season math is byte-for-byte unchanged by that
+    # deletion: every removed code path was reachable only from the preseason branch, so a
+    # graded nfl_regular row from before it and one from after it were produced by identical
+    # logic and belong in the same calibration bucket. Bumping would orphan the entire live
+    # nfl_regular calibration history to buy nothing. The already-graded nfl_preseason rows
+    # are NOT deleted; they stay attributable to nfl-1.0.0/1.1.0/1.2.0 above, and every
+    # calibration query that touches NFL is proj_kind-scoped (see db.stat_gammas,
+    # dashboard._ACCURACY_NFL_PROJ_KINDS) so they can never blend into a regular-season fit.
     "NFL": "nfl-1.2.0",
     # 0.1.0 (2026-08): DATA/PLUMBING LAYER ONLY -- no projection math exists yet. cfb/board.py's
     # attach_cfb is a no-op stub (see its own module docstring); every CFB line reaches the
@@ -286,6 +299,22 @@ MODEL_CHANGELOG: dict[str, list[dict]] = {
                     "after, model_proj=53.0 (the stat's honest skewed mean) / "
                     "model_prob=0.500 (a correct coinflip). Applies to every NFL line, both "
                     "season types."},
+        {"version": "nfl-1.2.0 (no bump)", "date": "2026-08",
+         "summary": "REMOVED the preseason model. The whole "
+                    "preseason path is gone: the rotation-tier playing-time engine "
+                    "(nfl/model/rotation.py), its assumed tier/drives config blocks, the "
+                    "team-tendency block, the preseason confidence weight set, the "
+                    "preseason market-trust cap, PrizePicks' NFLP preseason league code (now "
+                    "excluded at ingestion rather than projected), and the \"nfl_preseason\" "
+                    "proj_kind. Product decision: preseason is not being maintained going "
+                    "forward. NOT version-bumped, deliberately: the regular-season math is "
+                    "unchanged -- every deleted code path was reachable only from the "
+                    "preseason branch, so a graded nfl_regular row from before the removal "
+                    "and one from after it came out of identical logic, and bumping would "
+                    "orphan the entire live nfl_regular calibration history in exchange for "
+                    "nothing. Already-graded nfl_preseason rows are kept in the ledger and "
+                    "stay attributable to nfl-1.0.0/1.1.0/1.2.0; every NFL calibration query "
+                    "is proj_kind-scoped, so they can never blend into a regular-season fit."},
     ],
     "CFB": [
         {"version": "cfb-0.1.0", "date": "2026-08",

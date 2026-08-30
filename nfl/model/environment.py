@@ -41,7 +41,6 @@ from ..data.base import ScheduleGame
 class GameEnvironment:
     team: str
     opponent: Optional[str]
-    season_type: str                    # "regular" | "preseason"
     game_id: Optional[str]
     spread: Optional[float]             # positive = THIS team favoured
     game_total: Optional[float]
@@ -72,18 +71,17 @@ def _weather_text(roof: Optional[str], temp: Optional[float], wind: Optional[flo
     return roof or None
 
 
-def game_environment(game: Optional[ScheduleGame], team: str,
-                     season_type: str = "regular") -> GameEnvironment:
-    """One team's view of one game. A game with no schedule row at all (every preseason game —
-    the schedules release publishes none) or with an unpriced spread/total falls back to the
-    measured league baseline and says so via `basis`, rather than pretending to a total."""
+def game_environment(game: Optional[ScheduleGame], team: str) -> GameEnvironment:
+    """One team's view of one game. A line the schedule lookup can't match, or a game with an
+    unpriced spread/total, falls back to the measured league baseline and says so via `basis`,
+    rather than pretending to a total."""
     e = cfg("environment", default={})
     snaps = float(e.get("league_snaps_mean", 65.3))
     plays = float(e.get("league_plays_mean", 62.4))
     dropback = float(e.get("league_dropback_share", 0.567))
 
     if game is None:
-        return GameEnvironment(team=team, opponent=None, season_type=season_type, game_id=None,
+        return GameEnvironment(team=team, opponent=None, game_id=None,
                                spread=None, game_total=None, team_total=None,
                                expected_team_snaps=round(snaps, 2),
                                expected_scrimmage_plays=round(plays, 2),
@@ -114,7 +112,7 @@ def game_environment(game: Optional[ScheduleGame], team: str,
             dropback += float(e["high_wind_dropback_share"]) - float(e["normal_dropback_share"])
 
     return GameEnvironment(
-        team=team, opponent=opponent, season_type=season_type, game_id=game.game_id,
+        team=team, opponent=opponent, game_id=game.game_id,
         spread=spread, game_total=total, team_total=team_total,
         expected_team_snaps=round(max(38.0, min(95.0, snaps)), 2),
         expected_scrimmage_plays=round(max(35.0, min(90.0, plays)), 2),

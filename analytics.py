@@ -1278,9 +1278,9 @@ def attach_stat_trust(lines: list[dict]) -> None:
         stat = l.get("stat_type")
         if not sport or not stat:
             continue
-        # NFL carries two engines (nfl_regular/nfl_preseason) under one sport+model_version —
-        # cache and query per proj_kind so a preseason rotation-tier stat's measured trust
-        # never blends with the regular-season one (see db.stat_gammas's proj_kind docstring).
+        # NFL's ledger still holds rows from the removed preseason engine under the same
+        # sport+model_version — cache and query per proj_kind so those never blend into the
+        # regular-season stat's measured trust (see db.stat_gammas's proj_kind docstring).
         pk = l.get("proj_kind") if sport == "NFL" else None
         cache_key = (sport, pk)
         if cache_key not in by_sport:
@@ -1822,7 +1822,7 @@ def attach_projections(lines: list[dict]) -> dict[str, str]:
         sub_errors["basketball"] = str(exc)
         print(f"[basketball] attach failed: {exc}")
 
-    # nfl: opportunity x efficiency Monte Carlo on live NFL prop lines (regular + preseason)
+    # nfl: opportunity x efficiency Monte Carlo on live NFL prop lines
     try:
         from nfl.board import attach_nfl
         attach_nfl(lines)

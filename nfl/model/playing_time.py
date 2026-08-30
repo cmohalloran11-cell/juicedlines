@@ -1,5 +1,5 @@
 """
-Playing-Time Engine (regular season) — a SAMPLED DISTRIBUTION, not a number.
+Playing-Time Engine — a SAMPLED DISTRIBUTION, not a number.
 
 Everything downstream is opportunity-per-snap times snaps, so the snap share is the single
 largest source of uncertainty in an NFL projection and the one place a point estimate does
@@ -22,6 +22,7 @@ point estimate rather than the same band as an established starter.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
 
@@ -166,3 +167,33 @@ def measure_snap_prior(snaps, positions=("QB", "RB", "WR", "TE")) -> dict[str, t
         if p in acc and s.offense_pct is not None:
             acc[p].append(float(s.offense_pct))
     return {p: (round(float(np.mean(v)), 4), len(v)) for p, v in acc.items() if v}
+
+
+def measure_depth_rank_shares(snap_rows, depth_entries, season_type: str = "REG",
+                              min_n: int = 30) -> dict[str, dict[int, tuple]]:
+    """{position: {rank: (mean, sd, n)}} measured off real snap rows joined to the depth
+    charts — the pipeline that produced config.depth_rank_snap_share, kept runnable so that
+    table can be refreshed rather than trusted forever. Ranks 3+ are pooled into rank 3, the
+    same way depth_rank_prior reads them (see the config block's own comment on why a raw
+    rank-3 mean is survivorship, not depth). A (position, rank) bucket with fewer than
+    `min_n` rows is omitted rather than published at a sample too thin to mean anything."""
+    rank: dict[tuple, int] = {}
+    for d in depth_entries:
+        if d.rank is None:
+            continue
+        key = (d.team, d.player.strip().lower())
+        if key not in rank or d.rank < rank[key]:
+            rank[key] = d.rank
+    buckets: dict[tuple, list] = defaultdict(list)
+    for s in snap_rows:
+        if s.season_type != season_type or s.offense_pct is None:
+            continue
+        r = rank.get((s.team, s.player.strip().lower()))
+        if r is None:
+            continue
+        buckets[((s.position or "").upper(), min(int(r), 3))].append(float(s.offense_pct))
+    out: dict[str, dict[int, tuple]] = defaultdict(dict)
+    for (pos, r), v in buckets.items():
+        if len(v) >= min_n:
+            out[pos][r] = (round(float(np.mean(v)), 4), round(float(np.std(v)), 4), len(v))
+    return dict(out)
