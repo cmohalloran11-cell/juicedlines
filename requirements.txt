@@ -5,14 +5,14 @@
 # fixes to install automatically (e.g. 0.138.1 -> 0.138.2) while blocking any minor/major
 # bump, which is where a breaking API change is actually likely to land. Bump deliberately,
 # not accidentally: change a pin here, run the full test suite, then commit.
-fastapi~=0.138.1
-uvicorn[standard]~=0.49.0
+fastapi~=0.141.1
+uvicorn[standard]~=0.52.4
 requests~=2.34.2
 urllib3~=2.7.0
-numpy~=2.4.6
+numpy~=2.5.2
 # scipy powers the vendored stat-projector engine's Monte-Carlo (projector/models/montecarlo.py).
 # Without it the board silently falls back to the empirical median for every MLB prop.
-scipy~=1.18.0
+scipy~=1.18.1
 # Server-side JWT verification (auth.py). Fail-closed if unset. The [crypto] extra is
 # required -- without it PyJWT raises on every asymmetric algorithm (ES256/RS256/EdDSA),
 # so any clean install (Docker, Render, CI) 401s every authenticated request. This is not
@@ -23,4 +23,4 @@ psycopg[binary]~=3.3.4
 # Error monitoring (main.py). Fully optional -- only activates if SENTRY_DSN is set; a
 # local dev run with no env vars never talks to Sentry at all. Installed unconditionally
 # (small, pure-Python, no native deps) so it's always available if an operator sets the DSN.
-sentry-sdk[fastapi]~=2.66.1
+sentry-sdk[fastapi]~=2.68.1
