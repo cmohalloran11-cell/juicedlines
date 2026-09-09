@@ -7,7 +7,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from nfl.data.base import NflDataSource, PlayerWeek, SnapWeek, ScheduleGame
+from nfl.data.base import (DepthChartEntry, NflDataSource, PlayerWeek, RosterWeek, ScheduleGame,
+                           SnapWeek)
 
 SEASON = 2026
 
@@ -82,6 +83,48 @@ def full_season(player="Star Receiver", position="WR", team="CIN", n=10, season=
                   offense_snaps=round(offense_pct * 62), offense_pct=offense_pct)
              for w in range(1, n + 1)]
     return weeks, snaps
+
+
+# A whole offensive skill group at roughly the per-game production and snap share the measured
+# positional priors imply for each role — the shape a real team's board actually takes, so a
+# team-level check run against it is being tested on a HEALTHY board, not a strawman.
+STARTER_OFFENSE = (
+    dict(player="Gun Slinger", position="QB", offense_pct=0.99, depth_rank=1,
+         pass_attempts=34.0, completions=22.0, pass_yards=245.0, pass_tds=1.6,
+         carries=4.0, rush_yards=18.0),
+    dict(player="Bell Cow", position="RB", offense_pct=0.62, depth_rank=1,
+         carries=15.0, rush_yards=65.0, targets=4.0, receptions=3.0, rec_yards=24.0),
+    dict(player="Change Up", position="RB", offense_pct=0.33, depth_rank=2,
+         carries=6.0, rush_yards=25.0, targets=2.0, receptions=1.5, rec_yards=12.0),
+    dict(player="Alpha Receiver", position="WR", offense_pct=0.88, depth_rank=1,
+         targets=9.0, receptions=6.0, rec_yards=84.0),
+    dict(player="Second Receiver", position="WR", offense_pct=0.74, depth_rank=2,
+         targets=6.0, receptions=4.0, rec_yards=52.0),
+    dict(player="Slot Receiver", position="WR", offense_pct=0.55, depth_rank=3,
+         targets=4.0, receptions=3.0, rec_yards=31.0),
+    dict(player="Seam Tight End", position="TE", offense_pct=0.71, depth_rank=1,
+         targets=5.0, receptions=3.5, rec_yards=40.0),
+)
+
+
+def offense(specs=STARTER_OFFENSE, team="CIN", season=SEASON, n=10):
+    """(weeks, snaps, depth, rosters) for a whole offensive skill group. Each spec is a
+    `player`/`position`/`offense_pct`/`depth_rank` plus that player's per-game stat line, which
+    is repeated over `n` identical games — the same construction full_season uses for one
+    player, so a fit against it recovers exactly the planted rates."""
+    weeks, snaps, depth, rosters = [], [], [], []
+    for spec in specs:
+        s = dict(spec)
+        name, pos = s.pop("player"), s.pop("position")
+        pct, rank = s.pop("offense_pct"), s.pop("depth_rank", None)
+        w, sn = full_season(name, pos, team, n=n, season=season, offense_pct=pct, **s)
+        weeks += w
+        snaps += sn
+        depth.append(DepthChartEntry(season=season, team=team, position=pos, rank=rank,
+                                     player=name))
+        rosters.append(RosterWeek(season=season, week=1, team=team, player=name,
+                                  position=pos, status="ACT"))
+    return weeks, snaps, depth, rosters
 
 
 def league_filler(n_players=40, season=SEASON, weeks_per=6):

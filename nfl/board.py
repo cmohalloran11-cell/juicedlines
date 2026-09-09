@@ -25,6 +25,7 @@ from .config import cfg
 from .confidence import nfl_confidence
 from .data import espn as ESPN
 from .data.base import ScheduleGame
+from .model import reconciliation as RECON
 
 _SPORTS = ("NFL",)
 
@@ -261,4 +262,11 @@ def attach_nfl(lines: list[dict]) -> int:
             if espn_headshot:
                 l["headshot"] = espn_headshot
             done += 1
+
+    # Nothing upstream of here is aware that the players on one team share a finite pool of
+    # pass attempts and carries — every fit and every simulation is per-player. This is the
+    # only point at which a whole team-game's projections exist together, so it is the only
+    # place the shared constraint can be checked at all. Reported, never corrected.
+    for v in RECON.reconcile_board(proj_cache.values()):
+        print(f"[nfl.board] {v.message()}", flush=True)
     return done
