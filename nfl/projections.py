@@ -100,7 +100,13 @@ def _resolve_market(label: str) -> Optional[str]:
         if rec:
             return "rec_yards"
         return None
+    # "Completion Percentage" is a RATE the engine has no distribution for — only the raw
+    # completions COUNT is modelled. Collapsing both onto "completions" compared a
+    # percentage-scaled line (e.g. 65.6) against a completions-count projection (e.g. 19.6),
+    # producing a spurious "Under" on every single QB prop of this type. Found live 2026-09.
     if "completion" in l:
+        if "percent" in l or "pct" in tokens:
+            return None
         return "completions"
     if "attempt" in l:
         if "pass" in l:
