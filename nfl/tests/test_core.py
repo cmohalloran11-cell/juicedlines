@@ -382,6 +382,11 @@ def test_market_resolution():
     for label in ("Rushing TDs", "Receiving TDs", "Anytime Touchdown", "1H Passing Yards",
                   "Longest Reception", "Fantasy Score", "Sacks Taken"):
         assert P._resolve_market(label) is None, label
+    # Completion Percentage is a RATE stat with no fitted distribution — must not collide
+    # with the "completions" COUNT market just because both labels contain "completion".
+    for label in ("Completion Percentage", "Completion Pct", "Comp %"):
+        assert P._resolve_market(label) is None, label
+    assert P._resolve_market("Completions") == "completions"
 
 
 def test_season_long_futures_never_resolve_to_a_per_game_market():
