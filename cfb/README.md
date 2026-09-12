@@ -77,10 +77,15 @@ and the engine applies **no adjustment** rather than a plausible-looking one.
    rate) — the modeling agent's opponent-adjustment and pace inputs. Requires
    `CFBD_API_KEY`; unset, every method returns an honestly-empty result, never a crash.
 2. **`data/odds_provider.py`** — a swappable `OddsProvider` interface (same spirit as
-   `basketball/data/base.py`'s `GameLogSource`) plus `TheOddsApiAdapter`, the only source of
-   CFB **player props** — CFBD does not carry them. Markets: `player_pass_yds`,
-   `player_rush_yds`, `player_reception_yds`, `player_receptions`, `player_anytime_td`.
-   Requires `ODDS_API_KEY`; unset, returns `[]`.
+   `basketball/data/base.py`'s `GameLogSource`) plus `TheOddsApiAdapter`, a source of CFB
+   **player props** from real sportsbooks — CFBD does not carry them. Markets:
+   `player_pass_yds`, `player_rush_yds`, `player_reception_yds`, `player_receptions`,
+   `player_anytime_td`. Requires `ODDS_API_KEY`; unset, returns `[]`. Not the only CFB prop
+   source reaching the board, and predated by the other one: `pullers.fetch_prizepicks`
+   carries PrizePicks' own CFB slate straight through the same keyless partner API every
+   other sport already uses (`_sport_from_pp_league` in `pullers.py` maps its `CFB` league
+   code) — no key required at all. `attach_cfb` (item 8 below) prices any line tagged
+   `sport="CFB"` regardless of which of the two posted it.
 3. **Canonical player table + id mapping** (`schema.py`, `repositories.py`,
    `player_matching.py`) — `cfb_players` is the single source of truth every other CFB table
    keys off, `cfb_player_ids` maps a source's own id (CFBD athlete id, or an Odds-API player
@@ -115,7 +120,9 @@ We sync all 134 FBS teams' rosters internally (`players_sync.py`) independently 
 that's the *internal* player universe the modeling agent projects against. `lines.py` never
 walks that roster to synthesize a prop; it only ever transforms what
 `TheOddsApiAdapter.player_props()` actually returned for an event. Books price props on a
-fraction of the slate — a player/market nobody posted never becomes a line.
+fraction of the slate — a player/market nobody posted never becomes a line. The PrizePicks
+path (`pullers.fetch_prizepicks`) follows the identical rule for a different reason: it only
+ever transforms the partner API's own response, same as every other sport it already pulls.
 
 ## License constraints (CFBD, Patreon Tier 3) — enforced in code, non-negotiable
 

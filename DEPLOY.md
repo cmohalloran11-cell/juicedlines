@@ -169,7 +169,7 @@ All optional — the app runs with none set. Configure on the host (Render/Railw
 | `NFL_CACHE_DIR` | `data/nfl_cache/` | Where the NFL engine caches the fetched nflverse-data release CSVs (tens of MB). Relocate off a read-only or ephemeral filesystem if needed. |
 | `BALLDONTLIE_API_KEY` | *(unset)* | WNBA's data source (`basketball/data/balldontlie.py`) — rosters, game logs, pace, upcoming opponents. Sign up free at [balldontlie.io](https://balldontlie.io) for a key. Unset ⇒ WNBA has no real projections (props still post, but with no `model_proj` — the board hides them from the picks list, same as any unprojected line). Two prior free/keyless sources (ESPN, then stats.wnba.com) were tried and both failed in production — see the module's own docstring for the history. |
 | `CFBD_API_KEY` | *(unset)* | College Football (`cfb/data/cfbd_client.py`) — teams, rosters, schedule + market spread/total, per-player box scores, per-team advanced efficiency. Requires a [CollegeFootballData.com](https://collegefootballdata.com) Patreon Tier 3 key. **Server-side only** — never exposed to the browser or written into `build_static.py`'s output JSON (license constraint). Unset ⇒ every CFBD-backed CFB endpoint returns an honestly-empty result; the roster sync loop (`cfb/players_sync.py`) idles as a no-op. **On the static deploy (Option A) this must be a GitHub repo secret, not a Vercel env var** — Vercel only serves the prebuilt `board.json`; `refresh.yml` (GitHub Actions) is what actually runs `cfb/data/cfbd_client.py`, same as `BALLDONTLIE_API_KEY` above. Set it at Settings → Secrets and variables → Actions. |
-| `ODDS_API_KEY` | *(unset)* | College Football player props (`cfb/data/odds_provider.py`, [the-odds-api.com](https://the-odds-api.com)) — CFBD carries no player props, so this is the only source of CFB prop lines. Unset ⇒ `cfb.lines.fetch_cfb_props` returns `([], None)`, a clean no-op (same as any other optional book in `books.py`). **Same static-deploy caveat as `CFBD_API_KEY` above** — a GitHub Actions secret, not a Vercel env var, on Option A. |
+| `ODDS_API_KEY` | *(unset)* | College Football player props from real sportsbooks via `cfb/data/odds_provider.py` ([the-odds-api.com](https://the-odds-api.com)) — CFBD itself carries no player props. **Not the only CFB prop source**: PrizePicks' own CFB board also flows in for free, no key required, via `pullers.fetch_prizepicks` (see the "Notes" section below) — `ODDS_API_KEY` adds the other sportsbooks on top of that. Unset ⇒ `cfb.lines.fetch_cfb_props` returns `([], None)`, a clean no-op (same as any other optional book in `books.py`). **Same static-deploy caveat as `CFBD_API_KEY` above** — a GitHub Actions secret, not a Vercel env var, on Option A. |
 
 New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/ai/explain?id=`, and the authenticated `/api/me`, `/api/watchlists*`, `/api/portfolio*`.
 
@@ -180,15 +180,21 @@ New endpoints: `/api/version` (model/feature versions), `/api/ai/status`, `/api/
   no-auth nflverse-data GitHub releases. Auth and AI features activate only when their env
   vars are set. WNBA is the one exception: it needs `BALLDONTLIE_API_KEY` for real
   projections (see the table above) — without it the sport still loads, just with no
-  model-projected props.
-- **CFB needs BOTH keys to be useful, and each does a different job.** `ODDS_API_KEY` is the
-  only source of CFB prop *lines* (CFBD carries no player props); `CFBD_API_KEY` is the only
-  source of the *data the engine fits on* — the engine estimates every prior, shrinkage
-  strength, opponent factor and pace coefficient at runtime from real CFBD rows rather than
-  from constants, so with no CFBD key there is nothing to fit and `cfb.projections.league_data`
-  returns `None`. Neither key set ⇒ CFB is entirely inert (no teams synced, no props pulled).
-  `ODDS_API_KEY` only ⇒ real prop lines post with no `model_proj`, the same visible state as
-  WNBA with no `BALLDONTLIE_API_KEY`. Both set ⇒ full projections
+  model-projected props. CFB prop lines are the same story as WNBA now that PrizePicks'
+  own CFB board flows in through the same keyless partner API — they post with no keys at
+  all; `CFBD_API_KEY` is what turns them into real projections (see below).
+- **CFB prop lines have two independent sources; projecting them needs a separate key.**
+  PrizePicks' own CFB board pulls in for free through the same cookie-free partner API every
+  other sport already uses (`pullers.fetch_prizepicks` — `_sport_from_pp_league` maps its `CFB`
+  league code, excluding period/season-long sub-leagues the same way it does for NFL/WNBA).
+  `ODDS_API_KEY` (`cfb/data/odds_provider.py`) adds real sportsbook lines from The Odds API on
+  top of that. Neither is required to see CFB prop lines post. `CFBD_API_KEY` is the *only*
+  source of the data the engine projects with — it estimates every prior, shrinkage strength,
+  opponent factor and pace coefficient at runtime from real CFBD rows rather than from
+  constants, so with no CFBD key there is nothing to fit and `cfb.projections.league_data`
+  returns `None`. No `CFBD_API_KEY` ⇒ real prop lines (PrizePicks and/or Odds API, whichever is
+  configured) post with no `model_proj`, the same visible state as WNBA with no
+  `BALLDONTLIE_API_KEY`. `CFBD_API_KEY` set ⇒ full projections
   (`proj_kind` = `cfb_prior_a`/`b`/`c`, see `cfb/README.md`). Also run the roster sync
   (`cfb/players_sync.py`, wired into `main.py`'s lifespan): the box-score feed carries no
   position, so an unsynced `cfb_players` table leaves every player in the pooled prior bucket.

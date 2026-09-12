@@ -217,6 +217,60 @@ def test_fetch_prizepicks_resolves_real_nfl_projection_to_sport_nfl(monkeypatch)
     assert lines[0]["player"] == "Justin Jefferson"
 
 
+# ── CFB (PrizePicks league code unverified against a live response -- see pullers.py's own
+# comment above the "cfb" in l check and cfb/README.md's "What's genuinely NOT verified") ──
+
+def test_pp_league_cfb_maps_to_cfb():
+    assert pullers._sport_from_pp_league("CFB") == "CFB"
+    assert pullers._sport_from_pp_league("cfb") == "CFB"
+
+
+def test_pp_league_cfb_period_subleagues_excluded():
+    for league in ("CFB1H", "CFB1Q", "CFBSZN", "CFB 1H"):
+        assert pullers._sport_from_pp_league(league) == "other"
+
+
+def test_pp_league_cfb_does_not_regress_other_sports():
+    assert pullers._sport_from_pp_league("NFL") == "NFL"
+    assert pullers._sport_from_pp_league("MLB") == "MLB"
+    assert pullers._sport_from_pp_league("CFL") == "other"
+
+
+def test_fetch_prizepicks_resolves_real_cfb_projection_to_sport_cfb(monkeypatch):
+    pullers._pp_result_cache.clear()
+
+    cfb_proj = {
+        "id": "c1", "type": "projection",
+        "attributes": {"stat_type": "Passing Yards", "line_score": 245.5,
+                       "odds_type": "standard", "description": None,
+                       "start_time": "2026-09-13T17:00:00Z", "status": "pre_game"},
+        "relationships": {
+            "new_player": {"data": {"type": "new_player", "id": "cp1"}},
+            "league": {"data": {"type": "league", "id": "lgcfb"}},
+        },
+    }
+    included = [
+        {"type": "new_player", "id": "cp1",
+         "attributes": {"display_name": "Starting QB", "team": "OSU",
+                        "position": "QB", "league": "CFB", "image_url": None}},
+        {"type": "league", "id": "lgcfb", "attributes": {"name": "CFB"}},
+    ]
+    payload = {"data": [cfb_proj], "included": included}
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(pullers, "_pp_get", lambda *a, **k: FakeResp())
+
+    lines, err = pullers.fetch_prizepicks()
+    assert err is None
+    assert len(lines) == 1
+    assert lines[0]["sport"] == "CFB"
+    assert lines[0]["player"] == "Starting QB"
+
+
 def test_fetch_underdog_resolves_real_nfl_prop_to_sport_nfl():
     over = _prop(sport="NFL", stat="receiving_yards", player_name="Justin Jefferson O/U",
                  choice="over", over_under_id="ounfl1", line_id="lnfl1")

@@ -106,6 +106,14 @@ def _sport_from_pp_league(league: str | None) -> str:
     if "nfl" in l:
         return ("other" if (any(t in l for t in _period) or "nflp" in l or "preseason" in l)
                 else "NFL")
+    # CFB (College Football) -- same period/season-long exclusion as WNBA/NFL above
+    # (CFB1H, CFB2H, CFBSZN etc. would carry a partial-game or rest-of-season stat_type the
+    # full-game cfb/ engine would misproject against). PrizePicks' league code is UNVERIFIED
+    # against a live response in this environment (same status as cfb/data/odds_provider.py's
+    # market shapes -- see cfb/README.md's "What's genuinely NOT verified") -- confirm on the
+    # first real deploy that sees a live partner-api payload with a CFB slate on the board.
+    if "cfb" in l:
+        return "other" if any(t in l for t in _period) else "CFB"
     # Guard against leagues that share a token (e.g. "EUROGOLF", regular-season NBA).
     if any(x in l for x in ("golf", "basket", "hockey", "nascar",
                             "cricket", "rugby", "nba")):
@@ -266,7 +274,7 @@ def fetch_underdog(sport_filter: str | None = None) -> tuple[list[dict], str | N
 # fingerprints the browser. The PARTNER API host serves the identical JSON:API feed
 # with NO bot wall and NO auth, so we read straight from it. No cookie, no library.
 _PP_PARTNER = "https://partner-api.prizepicks.com"
-_PP_WANTED = ("MLB", "Tennis", "WNBA", "NFL")
+_PP_WANTED = ("MLB", "Tennis", "WNBA", "NFL", "CFB")
 
 # PrizePicks is a flat pick'em — no per-pick moneyline. A STANDARD leg's implied
 # price is the break-even of a 2-pick Power play (pays 3x → each leg needs a

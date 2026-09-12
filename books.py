@@ -171,9 +171,11 @@ REGISTRY = [
     {"key": "prizepicks", "name": "PrizePicks", "status": "live", "where": "core"},
     {"key": "underdog", "name": "Underdog", "status": "live", "where": "core"},
     {"key": "sleeper", "name": "Sleeper", "status": "live", "where": "extra", "fetch": fetch_sleeper},
-    # CFB player props: real sportsbook lines via The Odds API (event-odds), not a fantasy-
-    # site scrape -- CFBD itself carries no player props (see cfb/README.md). Silently
-    # returns ([], None) with no ODDS_API_KEY set, so this is a safe no-op until configured.
+    # CFB player props from real sportsbooks via The Odds API (event-odds) -- CFBD itself
+    # carries no player props (see cfb/README.md). This is NOT the only CFB prop source: the
+    # "prizepicks" entry above already carries PrizePicks' own CFB slate (pullers.py's
+    # _sport_from_pp_league maps its CFB league code), no key required. Silently returns
+    # ([], None) with no ODDS_API_KEY set, so this is a safe no-op until configured.
     {"key": "cfb_odds", "name": "CFB (The Odds API)", "status": "live", "where": "extra",
      "fetch": fetch_cfb},
 ]
