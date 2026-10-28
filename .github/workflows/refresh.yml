@@ -52,7 +52,7 @@ jobs:
       ACTIVE_END_UTC: "7"         # 13:00–07:00 UTC ≈ 9am–3am ET — props post in the morning,
                                   # late West-coast games end ~2am ET, so this covers the day
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
